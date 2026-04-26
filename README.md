@@ -1,9 +1,17 @@
-# nevos trading extension
+<p align="center">
+  <img src="extension/assets/icons/logo128.png" width="92" alt="nevos trading extension logo">
+</p>
 
-Readable source for the Roblox trading browser extension.
+<h1 align="center">nevos trading extension</h1>
 
-Website: https://nevos-extension.com  
-YouTube: https://www.youtube.com/watch?v=_KB9yUQk95I
+<p align="center">
+  Readable source for the Roblox trading browser extension.
+</p>
+
+<p align="center">
+  <a href="https://nevos-extension.com">Website</a> ·
+  <a href="https://www.youtube.com/watch?v=_KB9yUQk95I">YouTube</a>
+</p>
 
 Release builds stay minified. This repo keeps the readable source, manifests, and assets.
 
