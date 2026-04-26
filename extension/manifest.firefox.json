@@ -1,0 +1,189 @@
+{
+  "action": {
+    "default_icon": {
+      "16": "assets/icons/logo16.png",
+      "32": "assets/icons/logo32.png",
+      "48": "assets/icons/logo48.png",
+      "64": "assets/icons/logo64.png"
+    },
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background/background.js",
+    "scripts": ["background/background.js"]
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "nevos-trading@nevok.local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    },
+    "gecko_android": {
+      "strict_min_version": "142.0"
+    }
+  },
+  "content_scripts": [
+    {
+      "js": ["shared/browser_compat.js", "content/trade_request_bootstrap.js"],
+      "matches": ["https://*.roblox.com/trades*", "https://*.roblox.com/*/trades*"],
+      "run_at": "document_start"
+    },
+    {
+      "js": ["scripts/trade_list_request_patch.js"],
+      "matches": ["https://*.roblox.com/trades*", "https://*.roblox.com/*/trades*"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_icons.js", "content/analyze_trade.js", "content/trade_page.js"],
+      "matches": [
+        "https://*.roblox.com/trades*",
+        "https://*.roblox.com/*/trades*",
+        "https://*.roblox.com/users/*/trade*",
+        "https://*.roblox.com/*/users/*/trade*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_icons.js", "content/catalog_page.js", "content/catalog_item_intel.js"],
+      "matches": [
+        "https://*.roblox.com/catalog/*",
+        "https://*.roblox.com/*/catalog/*",
+        "https://*.roblox.com/catalog*",
+        "https://*.roblox.com/*/catalog*",
+        "https://*.roblox.com/bundles/*",
+        "https://*.roblox.com/*/bundles/*",
+        "https://*.roblox.com/bundles*",
+        "https://*.roblox.com/*/bundles*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_icons.js", "content/user_profile_page.js"],
+      "matches": [
+        "https://*.roblox.com/users/*/profile*",
+        "https://*.roblox.com/*/users/*/profile*",
+        "https://*.roblox.com/users/*/inventory*",
+        "https://*.roblox.com/*/users/*/inventory*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "all_frames": true,
+      "js": ["shared/browser_compat.js", "content/roblox_totp_autofill.js"],
+      "matches": ["https://*.roblox.com/*", "https://roblox.com/*"],
+      "run_at": "document_idle"
+    }
+  ],
+  "description": "Trading-focused Roblox extension with values, inbound filters, inventory search, and profile utilities.",
+  "host_permissions": [
+    "https://api.rolimons.com/*",
+    "https://www.rolimons.com/*",
+    "https://rolimons.com/*",
+    "https://routility.io/*",
+    "https://roautotrade.com/*",
+    "https://nevos-extension.com/*",
+    "https://www.nevos-extension.com/*",
+    "https://*.roblox.com/*",
+    "https://roblox.com/*",
+    "https://thumbnails.roblox.com/*"
+  ],
+  "icons": {
+    "128": "assets/icons/logo128.png",
+    "16": "assets/icons/logo16.png",
+    "32": "assets/icons/logo32.png",
+    "48": "assets/icons/logo48.png",
+    "64": "assets/icons/logo64.png"
+  },
+  "manifest_version": 3,
+  "name": "Nevos Trading Extension",
+  "options_ui": {
+    "open_in_tab": true,
+    "page": "popup/popup.html"
+  },
+  "permissions": ["storage", "alarms", "notifications"],
+  "short_name": "Nevos Trade",
+  "version": "3.10.29",
+  "web_accessible_resources": [
+    {
+      "matches": ["https://*.roblox.com/*"],
+      "resources": [
+        "assets/Averta.otf",
+        "assets/AvertaExtraBold.otf",
+        "assets/loading.svg",
+        "assets/projected.png",
+        "assets/rare.png",
+        "assets/serials_on.svg",
+        "assets/serials_on_lightmode.svg",
+        "assets/routility.png",
+        "assets/void-logo.png",
+        "assets/rolimons.png",
+        "assets/rolimonsLink.svg",
+        "assets/rolimonsLinkDark.svg",
+        "assets/x.svg",
+        "assets/xDark.svg",
+        "assets/icons/logo.svg",
+        "assets/icons/logo.png",
+        "assets/icons/logo128.png",
+        "assets/icons/logo16.png",
+        "assets/icons/logo32.png",
+        "assets/icons/logo48.png",
+        "assets/icons/logo64.png",
+        "assets/roliBadges/booster.svg",
+        "assets/roliBadges/contributor.svg",
+        "assets/roliBadges/create_10000_trade_ads.svg",
+        "assets/roliBadges/create_100_trade_ads.svg",
+        "assets/roliBadges/create_10_trade_ads.svg",
+        "assets/roliBadges/event_winner.svg",
+        "assets/roliBadges/game_night_winner.svg",
+        "assets/roliBadges/own_1000_items.svg",
+        "assets/roliBadges/own_100_items.svg",
+        "assets/roliBadges/own_100_of_1_item.svg",
+        "assets/roliBadges/own_10_items.svg",
+        "assets/roliBadges/own_10_of_1_item.svg",
+        "assets/roliBadges/own_10_pct_of_1_item.svg",
+        "assets/roliBadges/own_10_rares.svg",
+        "assets/roliBadges/own_15_noob.svg",
+        "assets/roliBadges/own_1_big_dominus.svg",
+        "assets/roliBadges/own_1_dominus.svg",
+        "assets/roliBadges/own_1_immortal_sword.svg",
+        "assets/roliBadges/own_1_kotn_item.svg",
+        "assets/roliBadges/own_1_rare.svg",
+        "assets/roliBadges/own_1_sequential_serial.svg",
+        "assets/roliBadges/own_1_serial_1.svg",
+        "assets/roliBadges/own_1_serial_1337.svg",
+        "assets/roliBadges/own_1_serial_1_to_9.svg",
+        "assets/roliBadges/own_1_stf.svg",
+        "assets/roliBadges/own_1_valued_federation_item.svg",
+        "assets/roliBadges/own_25_pct_of_1_item.svg",
+        "assets/roliBadges/own_3_rares.svg",
+        "assets/roliBadges/own_50_of_1_item.svg",
+        "assets/roliBadges/own_50_pct_of_1_item.svg",
+        "assets/roliBadges/own_5_noob.svg",
+        "assets/roliBadges/own_all_asset_types.svg",
+        "assets/roliBadges/own_epic_katana_set.svg",
+        "assets/roliBadges/own_lucky_cat_uaid.svg",
+        "assets/roliBadges/roligang.svg",
+        "assets/roliBadges/roli_award_nominee.svg",
+        "assets/roliBadges/roli_award_winner.svg",
+        "assets/roliBadges/sword_fighting_champion.svg",
+        "assets/roliBadges/value_1000_trade_ads.svg",
+        "assets/roliBadges/value_100k.svg",
+        "assets/roliBadges/value_10m.svg",
+        "assets/roliBadges/value_1m.svg",
+        "assets/roliBadges/value_20m.svg",
+        "assets/roliBadges/value_500k.svg",
+        "assets/roliBadges/value_5m.svg",
+        "assets/roliBadges/verified.svg",
+        "elements/robux.png",
+        "scripts/init_tooltips.js",
+        "scripts/add_trade_id_to_row.js",
+        "scripts/trade_bridge.js",
+        "scripts/trade_list_request_patch.js"
+      ]
+    }
+  ]
+}
+
