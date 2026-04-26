@@ -10,7 +10,17 @@
 
 <p align="center">
   <a href="https://nevos-extension.com">Website</a> ·
-  <a href="https://www.youtube.com/watch?v=_KB9yUQk95I">YouTube</a>
+  <a href="https://www.youtube.com/watch?v=_KB9yUQk95I">YouTube</a> ·
+  <a href="https://discord.gg/tHReJPn2q5">Discord</a>
+</p>
+
+<p align="center">
+  <a href="https://discord.gg/tHReJPn2q5">
+    <img alt="Discord online" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=discord&label=Discord&color=5865F2&query=$.approximate_presence_count&suffix=%20online&url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FtHReJPn2q5%3Fwith_counts%3Dtrue">
+  </a>
+  <a href="https://discord.gg/tHReJPn2q5">
+    <img alt="Discord members" src="https://img.shields.io/badge/dynamic/json?style=for-the-badge&logo=discord&label=Members&color=2f3136&query=$.approximate_member_count&suffix=%20total&url=https%3A%2F%2Fdiscord.com%2Fapi%2Fv10%2Finvites%2FtHReJPn2q5%3Fwith_counts%3Dtrue">
+  </a>
 </p>
 
 Release builds stay minified. This repo keeps the readable source, manifests, and assets.
