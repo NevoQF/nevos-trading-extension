@@ -18,7 +18,7 @@ git clone https://github.com/NevoQF/nevos-trading-extension.git
 cd nevos-trading-extension
 ```
 
-## Features
+## Features ✨
 
 ### Values
 
@@ -62,7 +62,7 @@ cd nevos-trading-extension
 - Direct manual install builds for supported browsers.
 - Settings stored locally through browser storage.
 
-## Demos
+## Demos 🎥
 
 <table>
   <tr>
@@ -96,7 +96,7 @@ GitHub README pages do not play YouTube embeds inline. Use the thumbnail link.
 
 [![YouTube demo](https://img.youtube.com/vi/_KB9yUQk95I/hqdefault.jpg)](https://www.youtube.com/watch?v=_KB9yUQk95I)
 
-## Source
+## Source 🔎
 
 The readable extension source is in `extension/`. Internal release packaging tools are intentionally excluded from this public source repo.
 
@@ -111,6 +111,6 @@ docs/media/           demo previews and videos
 
 Source is shared for review and verification only. Official builds are free for personal use. Reuploading, rebranding, reselling, or claiming authorship is not allowed. See `LICENSE`.
 
-## Star
+## Star ⭐
 
 If this source helps you verify the extension or you like the project, a star on the repo helps.
