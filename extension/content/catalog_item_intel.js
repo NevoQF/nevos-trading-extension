@@ -227,7 +227,69 @@
     );
   }
 
-  function render_history_entry(entry) {
+  function is_focus_trade_item(item, asset_id) {
+    return !!(asset_id && item?.assetId && String(item.assetId) === String(asset_id));
+  }
+
+  function render_history_trade_item(item, asset_id) {
+    let thumb_html = item?.thumb
+      ? `<img class="nte-history-trade-thumb" src="${attr_esc(item.thumb)}" alt="">`
+      : '<div class="nte-history-trade-thumb nte-history-trade-thumb--empty">?</div>';
+    let stat_text =
+      Number(item?.value || 0) > 0
+        ? `Value ${format_number(item.value)}`
+        : Number(item?.rap || 0) > 0
+          ? `RAP ${format_number(item.rap)}`
+          : `Asset ${esc(item?.assetId || "")}`;
+    return `
+      <div class="nte-history-trade-item${is_focus_trade_item(item, asset_id) ? " is-focus" : ""}">
+        ${thumb_html}
+        <div class="nte-history-trade-copy">
+          <div class="nte-history-trade-name">${esc(item?.name || `Asset ${item?.assetId || ""}`)}</div>
+          <div class="nte-history-trade-meta">${stat_text}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function render_history_trade_side(title, user_id, user_name, items, total, asset_id) {
+    let list = Array.isArray(items) ? items : [];
+    let visible = list.slice(0, 4);
+    let items_html = visible.map((item) => render_history_trade_item(item, asset_id)).join("");
+    let more_html =
+      list.length > 4
+        ? `<div class="nte-history-trade-more">+${list.length - 4} more item${list.length - 4 === 1 ? "" : "s"}</div>`
+        : "";
+    return `
+      <div class="nte-history-trade-side">
+        <div class="nte-history-trade-side-head">
+          <div>
+            <div class="nte-history-trade-side-title">${esc(title)}</div>
+            <div class="nte-history-trade-side-user">${profile_html(user_id, user_name)} gave</div>
+          </div>
+          <div class="nte-history-trade-side-total">${format_number(total)}</div>
+        </div>
+        <div class="nte-history-trade-items">${items_html || '<div class="nte-history-trade-empty">No items recorded.</div>'}</div>
+        ${more_html}
+      </div>
+    `;
+  }
+
+  function render_history_trade(entry, asset_id) {
+    let trade = entry?.trade || null;
+    let offer = Array.isArray(trade?.offer) ? trade.offer : [];
+    let request = Array.isArray(trade?.request) ? trade.request : [];
+    if (!offer.length && !request.length) return '<div class="nte-history-trade-empty-card">Trade details are not recorded for this row.</div>';
+    return `
+      <div class="nte-history-trade-card">
+        ${render_history_trade_side("Offer", entry?.offererId, entry?.offererName, offer, Number(trade?.offerTotal || 0), asset_id)}
+        <div class="nte-history-trade-sep"><span class="nte-history-trade-sep-label">for</span></div>
+        ${render_history_trade_side("Request", entry?.requesterId, entry?.requesterName, request, Number(trade?.requestTotal || 0), asset_id)}
+      </div>
+    `;
+  }
+
+  function render_history_entry(entry, index, context) {
     let trade = entry?.trade || null;
     let side = String(entry?.side || "");
     let focus_total = side === "offer" ? Number(trade?.offerTotal || 0) : Number(trade?.requestTotal || 0);
@@ -243,14 +305,24 @@
     if (copy_count > 1) pills.push(`<span class="nte-history-pill is-note">${copy_count} copies</span>`);
     let meta_bits = [`Trade #${esc(entry?.tradeId || "")}`];
     if (trade) meta_bits.push(`${format_number(focus_total)} -> ${format_number(other_total)}`);
+    let has_trade = !!(entry?.tradeId || (trade && ((Array.isArray(trade.offer) && trade.offer.length) || (Array.isArray(trade.request) && trade.request.length))));
+    let asset_id = String(context?.asset_id || "").trim();
     return `
-      <article class="nte-history-entry">
-        <div class="nte-history-entry-main">
-          <div class="nte-history-entry-flow">${profile_html(entry?.ownerBeforeId, entry?.ownerBeforeName)}<span class="nte-history-arrow">&rarr;</span>${profile_html(entry?.ownerAfterId, entry?.ownerAfterName)}</div>
-          <div class="nte-history-entry-meta">${meta_bits.join(" • ")}</div>
-          ${pills.length ? `<div class="nte-history-entry-pills">${pills.join("")}</div>` : ""}
+      <article class="nte-history-entry" data-history-index="${index}">
+        <div class="nte-history-entry-top">
+          <div class="nte-history-entry-main">
+            <div class="nte-history-entry-flow">${profile_html(entry?.ownerBeforeId, entry?.ownerBeforeName)}<span class="nte-history-arrow">&rarr;</span>${profile_html(entry?.ownerAfterId, entry?.ownerAfterName)}</div>
+            <div class="nte-history-entry-meta">${meta_bits.join(" • ")}</div>
+            ${pills.length ? `<div class="nte-history-entry-pills">${pills.join("")}</div>` : ""}
+            ${
+              has_trade
+                ? `<div class="nte-history-proof-actions"><button type="button" class="nte-history-proof-images-btn nte-history-trade-btn" aria-expanded="false"><span class="nte-history-trade-btn-label">Show trade</span></button></div>`
+                : ""
+            }
+          </div>
+          <div class="nte-history-entry-time">${esc(format_date(entry?.timestamp))}<br>${esc(format_age(entry?.timestamp))}</div>
         </div>
-        <div class="nte-history-entry-time">${esc(format_date(entry?.timestamp))}<br>${esc(format_age(entry?.timestamp))}</div>
+        ${has_trade ? `<div class="nte-history-trade-shell" hidden>${render_history_trade(entry, asset_id)}</div>` : ""}
       </article>
     `;
   }
@@ -279,7 +351,7 @@
               <div class="nte-history-card-link"><a href="https://www.rolimons.com/item/${attr_esc(item.assetId || context.asset_id)}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>
             </div>
           </div>
-          ${trade_count ? `<div class="nte-history-list">${item.history.map((entry) => render_history_entry(entry)).join("")}</div>` : '<div class="nte-history-empty">No recorded trade history for this item across all copies yet.</div>'}
+          ${trade_count ? `<div class="nte-history-list">${item.history.map((entry, index) => render_history_entry(entry, index, context)).join("")}</div>` : '<div class="nte-history-empty">No recorded trade history for this item across all copies yet.</div>'}
         </section>
       `,
     );
@@ -407,6 +479,29 @@
     }
   }
 
+  function set_history_trade_button_state(button, is_open) {
+    if (!button) return;
+    let label = button.querySelector(".nte-history-trade-btn-label");
+    button.classList.toggle("is-open", is_open);
+    button.setAttribute("aria-expanded", is_open ? "true" : "false");
+    if (label) label.textContent = is_open ? "Hide trade" : "Show trade";
+  }
+
+  function attach_history_trade_buttons(root) {
+    for (let button of root.querySelectorAll(".nte-history-trade-btn")) {
+      set_history_trade_button_state(button, false);
+      button.onclick = () => {
+        let entry = button.closest(".nte-history-entry");
+        let shell = entry?.querySelector(".nte-history-trade-shell");
+        if (!entry || !shell) return;
+        let is_open = shell.hidden;
+        entry.classList.toggle("is-open", is_open);
+        shell.hidden = !is_open;
+        set_history_trade_button_state(button, is_open);
+      };
+    }
+  }
+
   function render_root(context) {
     let root = get_root(context);
     if (!root) return;
@@ -431,6 +526,7 @@
         render_root(context);
       };
     }
+    if (state.active_view === "history") attach_history_trade_buttons(root);
     if (state.active_view === "proofs") attach_proof_buttons(root);
     root.dataset.nteRendered = "1";
   }
@@ -562,14 +658,39 @@
       .nte-history-empty{padding:12px;border-radius:10px;background:rgba(15,23,42,.28);border:1px dashed rgba(148,163,184,.18);font-size:12px;line-height:1.5;opacity:.82}
       .light-theme .nte-history-empty{background:rgba(255,255,255,.8)}
       .nte-history-list{margin-top:12px;display:flex;flex-direction:column;gap:8px}
-      .nte-history-entry{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 11px;border-radius:10px;background:rgba(2,6,23,.24);border:1px solid rgba(148,163,184,.12)}
+      .nte-history-entry{display:flex;flex-direction:column;gap:10px;padding:10px 11px;border-radius:10px;background:rgba(2,6,23,.24);border:1px solid rgba(148,163,184,.12)}
       .light-theme .nte-history-entry{background:rgba(255,255,255,.82);border-color:rgba(148,163,184,.16)}
+      .nte-history-entry-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
       .nte-history-entry-main{min-width:0;flex:1}
       .nte-history-entry-flow{font-size:12px;font-weight:700;line-height:1.4;min-width:0;word-break:break-word}
       .nte-history-arrow{opacity:.54;padding:0 4px}
       .nte-history-entry-meta{margin-top:6px;font-size:11px;line-height:1.45;opacity:.76}
       .nte-history-entry-pills{margin-top:7px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
       .nte-history-entry-time{text-align:right;font-size:11px;line-height:1.35;opacity:.74;flex:0 0 auto}
+      .nte-history-trade-shell{padding-top:10px;border-top:1px solid rgba(148,163,184,.12)}
+      .nte-history-trade-shell[hidden]{display:none!important}
+      .nte-history-trade-card{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:stretch}
+      .nte-history-trade-sep{display:flex;align-items:center;justify-content:center;padding:0 1px}
+      .nte-history-trade-sep-label{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;opacity:.55}
+      .nte-history-trade-side{min-width:0;padding:9px;border-radius:10px;background:rgba(15,23,42,.24);border:1px solid rgba(148,163,184,.12)}
+      .light-theme .nte-history-trade-side{background:rgba(241,245,249,.88);border-color:rgba(148,163,184,.16)}
+      .nte-history-trade-side-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+      .nte-history-trade-side-title{font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;opacity:.62}
+      .nte-history-trade-side-user{margin-top:2px;font-size:11px;font-weight:800;line-height:1.35;word-break:break-word}
+      .nte-history-trade-side-total{font-size:11px;font-weight:900;line-height:1.35;white-space:nowrap}
+      .nte-history-trade-items{display:grid;gap:7px}
+      .nte-history-trade-item{display:flex;align-items:flex-start;gap:8px;min-width:0;padding:7px;border-radius:9px;background:rgba(255,255,255,.04);border:1px solid rgba(148,163,184,.12)}
+      .light-theme .nte-history-trade-item{background:rgba(255,255,255,.76)}
+      .nte-history-trade-item.is-focus{border-color:rgba(96,165,250,.44);box-shadow:0 0 0 1px rgba(96,165,250,.18) inset;background:linear-gradient(135deg,rgba(96,165,250,.13),rgba(255,255,255,.04))}
+      .light-theme .nte-history-trade-item.is-focus{background:linear-gradient(135deg,rgba(96,165,250,.13),rgba(255,255,255,.92))}
+      .nte-history-trade-thumb{width:32px;height:32px;border-radius:8px;object-fit:cover;flex:0 0 auto;background:rgba(15,23,42,.5)}
+      .light-theme .nte-history-trade-thumb{background:rgba(226,232,240,.9)}
+      .nte-history-trade-thumb--empty{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:rgba(148,163,184,.8)}
+      .nte-history-trade-copy{min-width:0;flex:1}
+      .nte-history-trade-name{font-size:10px;font-weight:800;line-height:1.35;word-break:break-word}
+      .nte-history-trade-meta,.nte-history-trade-more,.nte-history-trade-empty{margin-top:3px;font-size:10px;line-height:1.35;opacity:.72}
+      .nte-history-trade-empty-card{padding:10px;border-radius:10px;background:rgba(15,23,42,.24);border:1px dashed rgba(148,163,184,.16);font-size:11px;font-weight:700;line-height:1.4;opacity:.76}
+      .light-theme .nte-history-trade-empty-card{background:rgba(241,245,249,.88)}
       .nte-history-proofs-grid{display:grid;gap:8px}
       .nte-history-proof-card{padding:10px;border-radius:10px;background:rgba(255,255,255,.04);border:1px solid rgba(148,163,184,.12)}
       .light-theme .nte-history-proof-card{background:rgba(241,245,249,.88)}
@@ -595,8 +716,10 @@
       @media (max-width:700px){
         .nte-item-intel-controls{width:100%}
         .nte-item-intel-btn{flex:1}
-        .nte-history-entry{flex-direction:column;align-items:stretch}
+        .nte-history-entry-top{flex-direction:column;align-items:stretch}
         .nte-history-entry-time{text-align:left}
+        .nte-history-trade-card{grid-template-columns:minmax(0,1fr)}
+        .nte-history-trade-sep{display:none}
       }
     `;
     document.head.appendChild(style);
