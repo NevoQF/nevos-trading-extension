@@ -5215,12 +5215,13 @@
       await c.waitForElm(".trade-row");
       let saved_trades = quick_decline_tab ? (await new Promise((resolve) => nte_send_message("getTradeListData", resolve))) || {} : null;
       let pl = await c.getOption("Add User Profile Links");
+      let rows = get_trade_rows_for_processing();
       if (pl) {
-        for (let row of document.querySelectorAll(".trade-row-list .trade-row")) ensure_trade_row_rolimons_link(row);
+        for (let row of rows) ensure_trade_row_rolimons_link(row);
         c.initTooltips();
       } else remove_trade_row_rolimons_links();
       if (quick_decline_tab) {
-        await Promise.all([...document.querySelectorAll(".trade-row-list .trade-row")].map((row) => sync_trade_row_decline_button(row, saved_trades)));
+        await Promise.all(rows.map((row) => sync_trade_row_decline_button(row, saved_trades)));
       } else remove_trade_row_decline_buttons();
       return apply_trade_list_filter();
     }
@@ -5228,9 +5229,7 @@
       nte_send_message("getTradeListData", async function (r) {
         let show_profile_links = await c.getOption("Add User Profile Links");
         if (!show_profile_links) remove_trade_row_rolimons_links();
-        if (quick_decline_tab) {
-          await Promise.all([...document.querySelectorAll(".trade-row-list .trade-row")].map((row) => sync_trade_row_decline_button(row, r)));
-        } else remove_trade_row_decline_buttons();
+        if (!quick_decline_tab) remove_trade_row_decline_buttons();
         async function t(t, n) {
           if (!t?.isConnected) return;
           show_profile_links && ensure_trade_row_rolimons_link(t);
@@ -5352,6 +5351,8 @@
     bg_fetch_abort = false,
     bg_fetch_token = 0,
     auto_scroll_running = false;
+  const bg_fetch_max = 2000,
+    bg_fetch_pages = 20;
 
   function get_current_trade_tab() {
     let tab = new URLSearchParams(window.location.search).get("tab") || "inbound";
@@ -5361,14 +5362,17 @@
   async function fetch_all_trade_ids(type) {
     let all = [];
     let cursor = "";
-    for (let page = 0; page < 20; page++) {
+    for (let page = 0; page < bg_fetch_pages && all.length < bg_fetch_max; page++) {
       if (get_current_trade_tab() !== type) break;
       let url = `https://trades.roblox.com/v1/trades/${type}?limit=100&sortOrder=Desc`;
       if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
       let resp = await fetch_trade_api(url, { credentials: "include" });
       if (!resp.ok) break;
       let data = await resp.json();
-      for (let t of data.data || []) all.push({ id: String(t.id), status: t.status });
+      for (let t of data.data || []) {
+        all.push({ id: String(t.id), status: t.status });
+        if (all.length >= bg_fetch_max) break;
+      }
       cursor = data.nextPageCursor || "";
       if (!cursor) break;
       await new Promise((r) => setTimeout(r, 200));
@@ -5401,6 +5405,8 @@
 
   function start_background_trade_fetch(trades, type) {
     if (bg_fetch_running) return;
+    trades = (Array.isArray(trades) ? trades : []).slice(0, bg_fetch_max);
+    if (!trades.length) return;
     bg_fetch_running = true;
     bg_fetch_abort = false;
     let fetch_token = ++bg_fetch_token;
@@ -7440,9 +7446,6 @@
     });
     schedule_trade_ui_refresh(0, !0);
     let _last_observed_tab = get_current_trade_tab();
-    if (_last_observed_tab === "inbound" || _last_observed_tab === "outbound") {
-      setTimeout(() => auto_scroll_trade_list(), 800);
-    }
     function check_tab_switch() {
       let current = get_current_trade_tab();
       if (current !== _last_observed_tab) {
@@ -7469,7 +7472,6 @@
         }
         if (current === "inbound" || current === "outbound") {
           trade_row_decline_enabled && prime_trade_row_decline();
-          setTimeout(() => auto_scroll_trade_list(), 800);
         }
       }
     }
