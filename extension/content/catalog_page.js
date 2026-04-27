@@ -45,6 +45,7 @@
   let rolimons_data_time = 0;
   let rolimons_name_cache = null;
   let rolimons_name_cache_source = null;
+  let bundle_detail_cache = {};
 
   function send_message(message, callback) {
     try {
@@ -84,6 +85,30 @@
     return normalized === "signature kicks" || normalized === "the jade catseye";
   }
 
+  async function get_bundle_detail(bundle_id) {
+    let id = String(bundle_id || "").trim();
+    if (!id) return null;
+    if (id in bundle_detail_cache) return bundle_detail_cache[id];
+    try {
+      let resp = await fetch(`https://catalog.roblox.com/v1/bundles/${encodeURIComponent(id)}/details`, {
+        credentials: "include",
+      });
+      bundle_detail_cache[id] = resp.ok ? await resp.json() : null;
+    } catch {
+      bundle_detail_cache[id] = null;
+    }
+    return bundle_detail_cache[id];
+  }
+
+  function is_roblox_bundle(detail) {
+    let creator = detail?.creator;
+    if (creator) {
+      return String(creator.id || "") === "1" && normalize_name(creator.name) === "roblox" && String(creator.type || "").toLowerCase() === "user";
+    }
+    let link = document.querySelector(".text-label a.text-name");
+    return normalize_name(link?.textContent) === "roblox" && /\/users\/1(?:\/|$)/i.test(String(link?.getAttribute("href") || ""));
+  }
+
   function ensure_rolimons_name_cache(data) {
     if (rolimons_name_cache_source === data && rolimons_name_cache) return rolimons_name_cache;
     let cache = {};
@@ -115,7 +140,8 @@
     return Number.isFinite(value) ? value : 0;
   }
 
-  function get_bundle_value_entry(data, bundle_id, bundle_name) {
+  function get_bundle_value_entry(data, bundle_id, bundle_name, detail) {
+    if (!is_roblox_bundle(detail)) return null;
     if (bundle_id && data?.items?.[bundle_id]) return { id: String(bundle_id), item: data.items[bundle_id] };
     let normalized = normalize_name(bundle_name);
     if (!normalized) return null;
@@ -200,9 +226,11 @@
     }
 
     let bundle_name = get_bundle_name();
+    let detail = await get_bundle_detail(match[1]);
     let data = await load_rolimons_data();
-    let entry = get_bundle_value_entry(data, match[1], bundle_name);
-    let fallback_value = is_unsupported_bundle(bundle_name) ? get_bundle_price_fallback() : 0;
+    let official_bundle = is_roblox_bundle(detail);
+    let entry = get_bundle_value_entry(data, match[1], bundle_name, detail);
+    let fallback_value = official_bundle && is_unsupported_bundle(bundle_name) ? get_bundle_price_fallback() : 0;
     let value = entry?.item?.[4];
     value = Number.isFinite(Number(value)) ? Number(value) : fallback_value;
 

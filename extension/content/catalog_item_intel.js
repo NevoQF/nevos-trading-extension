@@ -82,9 +82,24 @@
     return `<a class="nte-history-link" href="https://www.rolimons.com/player/${id}" target="_blank" rel="noopener noreferrer">${label}</a>`;
   }
 
+  function clean_name(name) {
+    return String(name || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function is_roblox_bundle_page() {
+    if (!/\/bundles\/\d+(?:\/|$)/i.test(location.pathname)) return true;
+    let link = document.querySelector(".text-label a.text-name");
+    if (!link) return false;
+    return clean_name(link.textContent) === "roblox" && /\/users\/1(?:\/|$)/i.test(String(link.getAttribute("href") || ""));
+  }
+
   function get_context() {
     let match = location.pathname.match(/\/(?:catalog|bundles)\/(\d+)(?:\/|$)/i);
     if (!match) return null;
+    if (!is_roblox_bundle_page()) return null;
     let price_row =
       document.querySelector(".item-details-section .price-row-container") ||
       document.querySelector(".price-row-container") ||
