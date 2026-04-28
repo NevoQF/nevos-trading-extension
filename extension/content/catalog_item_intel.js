@@ -490,16 +490,22 @@
   function attach_history_trade_buttons(root) {
     for (let button of root.querySelectorAll(".nte-history-trade-btn")) {
       set_history_trade_button_state(button, false);
-      button.onclick = () => {
-        let entry = button.closest(".nte-history-entry");
-        let shell = entry?.querySelector(".nte-history-trade-shell");
-        if (!entry || !shell) return;
-        let is_open = shell.hidden;
-        entry.classList.toggle("is-open", is_open);
-        shell.hidden = !is_open;
-        set_history_trade_button_state(button, is_open);
-      };
     }
+    if (root.dataset.nteHistoryTradeBound === "1") return;
+    root.dataset.nteHistoryTradeBound = "1";
+    root.addEventListener("click", (event) => {
+      let button = event.target?.closest?.(".nte-history-trade-btn");
+      if (!button || !root.contains(button)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      let entry = button.closest(".nte-history-entry");
+      let shell = entry?.querySelector(".nte-history-trade-shell");
+      if (!entry || !shell) return;
+      let is_open = shell.hidden;
+      entry.classList.toggle("is-open", is_open);
+      shell.hidden = !is_open;
+      set_history_trade_button_state(button, is_open);
+    });
   }
 
   function render_root(context) {

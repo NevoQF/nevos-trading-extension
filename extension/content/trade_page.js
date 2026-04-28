@@ -313,6 +313,17 @@
           (document.head || document.documentElement).appendChild(e);
       }
     }
+    function destroy_tooltips(root) {
+      if (!(root instanceof Element)) return;
+      let token = `nte${Date.now()}${Math.random().toString(36).slice(2)}`;
+      root.setAttribute("data-nte-tooltip-cleanup", token);
+      document.dispatchEvent(
+        new CustomEvent("nru_destroy_tooltips", {
+          detail: `[data-nte-tooltip-cleanup="${token}"],[data-nte-tooltip-cleanup="${token}"] [data-toggle="tooltip"]`,
+        }),
+      );
+      root.removeAttribute("data-nte-tooltip-cleanup");
+    }
     function w(e) {
       return (
         -1 !==
@@ -549,6 +560,7 @@
       r(e.exports, "addTooltip", () => v),
       r(e.exports, "removeTooltipsFromClass", () => x),
       r(e.exports, "initTooltips", () => b),
+      r(e.exports, "destroyTooltips", () => destroy_tooltips),
       r(e.exports, "checkIfAssetTypeIsOnRolimons", () => w),
       r(e.exports, "removeTwoLetterPath", () => E),
       r(e.exports, "getItemIdFromElement", () => I),
@@ -565,7 +577,7 @@
   }),
     d("8kQ1K", function (e, t) {
       e.exports = JSON.parse(
-        '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Value Difference After Robux Tax","enabledByDefault":false,"path":"value-difference-after-robux-tax"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Value","enabledByDefault":true,"path":"post-tax-trade-value"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]',
+        '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]',
       );
     }),
     d("92Pqq", function (e, t) {
@@ -954,7 +966,8 @@
           let f = r.querySelector(".item-card-link"),
             u = m(r);
           if (u) {
-            f?.querySelector(".flagBox[data-nte-side]")?.remove();
+            let old_box = f?.querySelector(".flagBox[data-nte-side]");
+            old_box && (n.destroyTooltips(old_box), old_box.remove());
             f && s(f, u);
             return;
           }
@@ -963,6 +976,7 @@
             (e.style.position = "relative"), i(e);
           }
           let c = r.getElementsByClassName("flagBox")[0];
+          n.destroyTooltips(c);
           c.replaceChildren();
           f = c.parentElement;
           let g = null != l ? n.getRolimonsData().items[l] : null;
@@ -1436,6 +1450,7 @@
     clear_trade_win_loss_retry();
     u_amt = usd_ready ? Math.round(u_amt) : 0;
     let r = ensure_trade_win_loss_container(mount, show_usd);
+    c.destroyTooltips(r);
     r.replaceChildren();
     function l(e, t, r, l, prefix) {
       prefix = prefix || "";
@@ -1508,6 +1523,8 @@
   }
   const colorblind_mode_option_name = "Colorblind Mode";
   const legacy_colorblind_mode_option_name = "Colorblind Profit Mode";
+  const post_tax_trade_values_option_name = "Post-Tax Trade Values";
+  const legacy_post_tax_trade_value_option_name = "Post-Tax Trade Value";
   const colorblind_mode_profile_key = "colorblind_mode_profile";
   const colorblind_mode_profile_default = "deuteranopia";
   const colorblind_mode_profiles = ["deuteranopia", "protanopia", "tritanopia", "achromatopsia"];
@@ -1521,8 +1538,8 @@
     "Values on Trading Window",
     "Values on Trade Lists",
     "Trade Win/Loss Stats",
-    "Value Difference After Robux Tax",
-    "Post-Tax Trade Value",
+    post_tax_trade_values_option_name,
+    legacy_post_tax_trade_value_option_name,
     "Disable Win/Loss Stats RAP",
     "Show Routility USD Values",
   ];
@@ -1789,8 +1806,14 @@
       robux_total,
     };
   }
+  async function get_post_tax_trade_values_enabled() {
+    let value = await c.getOption(post_tax_trade_values_option_name);
+    if (value !== undefined) return !!value;
+    let legacy_value = await c.getOption(legacy_post_tax_trade_value_option_name);
+    return legacy_value !== undefined ? !!legacy_value : true;
+  }
   async function g() {
-    let use_post_tax = !!(await c.getOption("Value Difference After Robux Tax"));
+    let use_post_tax = await get_post_tax_trade_values_enabled();
     if ("sendOrCounter" === c.getPageType()) {
       let offers = document.querySelectorAll(".trade-request-window-offer");
       if (offers[0] && offers[1]) {
@@ -1933,7 +1956,8 @@
   function h() {
     clear_trade_win_loss_detail_mount();
     clear_trade_win_loss_send_mount();
-    document.getElementById("winLossStatsContainer")?.remove();
+    let row = document.getElementById("winLossStatsContainer");
+    row && (c.destroyTooltips(row), row.remove());
   }
   async function get_trade_offer_value_totals(e) {
     if (!(e instanceof Element)) return null;
@@ -3812,7 +3836,7 @@
       (e.getElementsByClassName("valueSpan")[0].innerText = c.commafy(t));
   }
     async function C() {
-      if (!(await c.getOption("Post-Tax Trade Value"))) return I();
+      if (!(await get_post_tax_trade_values_enabled())) return I();
       let e = document.querySelector(".trades-container");
       if (!e) return I();
     function build_info_svg() {
@@ -3872,7 +3896,7 @@
     document.getElementById("valueWarning") &&
       (c.addTooltip(
         document.getElementById("valueWarning").querySelector("svg"),
-        "Reminder: you will not receive the full amount of Robux present on the trade because Roblox takes a 30% Robux fee. To disable this reminder, turn off Post-Tax Trade Value in the extension options.",
+        "Reminder: you will not receive the full amount of Robux present on the trade because Roblox takes a 30% Robux fee. To disable this reminder, turn off Post-Tax Trade Values in the extension options.",
       ),
       c.initTooltips());
   }
@@ -5746,10 +5770,28 @@
   var nte_trade_sales_hover_hide_timer = 0;
   var nte_trade_sales_hover_active_el = null;
   var nte_trade_sales_hover_request_token = 0;
-  var nte_trade_sales_hover_data_cache = {};
-  var nte_trade_economy_v2_detail_cache = {};
-  var nte_trade_economy_v1_resale_cache = {};
-  var nte_trade_bundle_detail_cache = {};
+  function nte_make_lru(max, ttl_ms) {
+    let m = new Map();
+    return {
+      get(k) {
+        let e = m.get(k);
+        if (!e) return undefined;
+        if (Date.now() - e.t > ttl_ms) { m.delete(k); return undefined; }
+        m.delete(k); m.set(k, e);
+        return e.v;
+      },
+      set(k, v) {
+        if (m.has(k)) m.delete(k);
+        m.set(k, { v, t: Date.now() });
+        while (m.size > max) m.delete(m.keys().next().value);
+      },
+      clear() { m.clear(); },
+    };
+  }
+  var nte_trade_sales_hover_data_cache = nte_make_lru(300, 3e5);
+  var nte_trade_economy_v2_detail_cache = nte_make_lru(500, 18e5);
+  var nte_trade_economy_v1_resale_cache = nte_make_lru(500, 18e5);
+  var nte_trade_bundle_detail_cache = nte_make_lru(500, 18e5);
   function inject_trade_sales_hover_styles() {
     if (nte_trade_sales_hover_style_injected) return;
     ensure_demand_styles();
@@ -6339,7 +6381,8 @@
   }
   async function fetch_trade_economy_v1_asset_resale(asset_id) {
     let key = `econ1:${asset_id}`;
-    if (nte_trade_economy_v1_resale_cache[key]) return nte_trade_economy_v1_resale_cache[key];
+    let cached = nte_trade_economy_v1_resale_cache.get(key);
+    if (cached) return cached;
     let out = null;
     try {
       let resp = await fetch(`https://economy.roblox.com/v1/assets/${encodeURIComponent(String(asset_id))}/resale-data`, {
@@ -6347,13 +6390,14 @@
       });
       if (resp.ok) out = await resp.json().catch(() => null);
     } catch {}
-    nte_trade_economy_v1_resale_cache[key] = out;
+    nte_trade_economy_v1_resale_cache.set(key, out);
     return out;
   }
   async function fetch_trade_economy_v2_asset_details(asset_id) {
     if (!asset_id) return null;
     let key = `econ2:${asset_id}`;
-    if (nte_trade_economy_v2_detail_cache[key]) return nte_trade_economy_v2_detail_cache[key];
+    let cached = nte_trade_economy_v2_detail_cache.get(key);
+    if (cached) return cached;
     let out = null;
     try {
       let resp = await fetch(`https://economy.roblox.com/v2/assets/${encodeURIComponent(String(asset_id))}/details`, {
@@ -6361,13 +6405,14 @@
       });
       if (resp.ok) out = await resp.json().catch(() => null);
     } catch {}
-    nte_trade_economy_v2_detail_cache[key] = out;
+    nte_trade_economy_v2_detail_cache.set(key, out);
     return out;
   }
   async function fetch_trade_bundle_details(bundle_id) {
     if (!bundle_id) return null;
     let key = `bundle:${bundle_id}`;
-    if (nte_trade_bundle_detail_cache[key]) return nte_trade_bundle_detail_cache[key];
+    let cached = nte_trade_bundle_detail_cache.get(key);
+    if (cached) return cached;
     let out = null;
     try {
       let resp = await fetch(`https://catalog.roblox.com/v1/bundles/${encodeURIComponent(String(bundle_id))}/details`, {
@@ -6375,7 +6420,7 @@
       });
       if (resp.ok) out = await resp.json().catch(() => null);
     } catch {}
-    nte_trade_bundle_detail_cache[key] = out;
+    nte_trade_bundle_detail_cache.set(key, out);
     return out;
   }
   function parse_lowest_resale_price_from_economy_v2(detail) {
@@ -6660,8 +6705,8 @@
   }
   async function fetch_trade_sales_hover_data(ctx) {
     let cache_key = `${ctx.collectible_item_id || ""}:${ctx.item_type}:${ctx.target_id}:${ctx.rap}:${ctx.value}`;
-    let cache_entry = nte_trade_sales_hover_data_cache[cache_key];
-    if (cache_entry && cache_entry.expires_at > Date.now()) return cache_entry.data;
+    let cache_entry = nte_trade_sales_hover_data_cache.get(cache_key);
+    if (cache_entry) return cache_entry;
     let bundle_detail = "Bundle" === ctx.item_type && ctx.target_id ? await fetch_trade_bundle_details(ctx.target_id) : null;
     let econ_v2 = !bundle_detail && ctx.target_id ? await fetch_trade_economy_v2_asset_details(ctx.target_id) : null;
     let collectible_item_id =
@@ -6715,7 +6760,7 @@
       is_off_sale,
       routility_usd,
     };
-    nte_trade_sales_hover_data_cache[cache_key] = { data, expires_at: Date.now() + 3e5 };
+    nte_trade_sales_hover_data_cache.set(cache_key, data);
     return data;
   }
   function render_trade_sales_hover_loading(ctx) {
@@ -6918,7 +6963,7 @@
   }
   function trade_sales_hover_event_on_rolimons_link(ev) {
     try {
-      return !!(ev.target && ev.target.closest && ev.target.closest("a.nte-rolimons-thumb-link"));
+      return !!(ev.target && ev.target.closest && ev.target.closest("a.nte-rolimons-thumb-link,.flagBox,.projected-flag,.rare-flag"));
     } catch {
       return !1;
     }
@@ -6929,7 +6974,7 @@
         y = el?.__nte_sales_hover_last_y;
       if (!Number.isFinite(x) || !Number.isFinite(y) || typeof document.elementFromPoint !== "function") return !1;
       let n = document.elementFromPoint(x, y);
-      return !!(n && n.closest && n.closest("a.nte-rolimons-thumb-link"));
+      return !!(n && n.closest && n.closest("a.nte-rolimons-thumb-link,.flagBox,.projected-flag,.rare-flag"));
     } catch {
       return !1;
     }
@@ -8811,18 +8856,27 @@
 
   function attach_trade_history_entry_toggles(panel) {
     for (let btn of panel.querySelectorAll(".nte-history-entry-toggle")) {
-      btn.onclick = () => {
-        let entry = btn.closest(".nte-history-entry");
-        let expand = entry?.querySelector(".nte-history-entry-expand");
-        if (!entry || !expand) return;
-        let should_open = !entry.classList.contains("is-open");
-        entry.classList.toggle("is-open", should_open);
-        expand.hidden = !should_open;
-        btn.setAttribute("aria-expanded", should_open ? "true" : "false");
-        let label = btn.querySelector(".nte-history-entry-toggle-label");
-        if (label) label.textContent = should_open ? "Hide trade" : "Show trade";
-      };
+      btn.setAttribute("aria-expanded", "false");
+      let label = btn.querySelector(".nte-history-entry-toggle-label");
+      if (label) label.textContent = "Show trade";
     }
+    if (panel.dataset.nteHistoryTradeBound === "1") return;
+    panel.dataset.nteHistoryTradeBound = "1";
+    panel.addEventListener("click", (event) => {
+      let btn = event.target?.closest?.(".nte-history-entry-toggle");
+      if (!btn || !panel.contains(btn)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      let entry = btn.closest(".nte-history-entry");
+      let expand = entry?.querySelector(".nte-history-entry-expand");
+      if (!entry || !expand) return;
+      let should_open = !entry.classList.contains("is-open");
+      entry.classList.toggle("is-open", should_open);
+      expand.hidden = !should_open;
+      btn.setAttribute("aria-expanded", should_open ? "true" : "false");
+      let label = btn.querySelector(".nte-history-entry-toggle-label");
+      if (label) label.textContent = should_open ? "Hide trade" : "Show trade";
+    });
   }
 
   function nte_history_format_date(timestamp) {
@@ -10016,5 +10070,127 @@
     container.querySelectorAll(".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn").forEach((btn) => sync_trade_button_position(btn));
     assert_trade_page_dominance();
   }
+
+  // === Counter / Send prompt ===
+  (function init_counter_prompt() {
+    let style_injected = false;
+    let modal_el = null;
+    let escape_handler = null;
+
+    function inject_styles() {
+      if (style_injected) return;
+      style_injected = true;
+      let style = document.createElement("style");
+      style.id = "nte-counter-prompt-style";
+      style.textContent = `
+        html.nte-counter-prompt-open{overflow:hidden!important}
+        .nte-counter-prompt-modal{position:fixed!important;inset:0!important;z-index:2147483640!important;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(8,10,14,.7);backdrop-filter:blur(14px) saturate(120%);-webkit-backdrop-filter:blur(14px) saturate(120%);animation:ntePromptIn .15s ease}
+        .nte-counter-prompt-card{position:relative;width:min(360px,calc(100vw - 36px));border-radius:16px;background:#181b24;border:1px solid rgba(255,255,255,.08);box-shadow:0 24px 70px rgba(0,0,0,.55);color:#e8eaed;font-family:'Inter','Segoe UI',Roboto,system-ui,sans-serif;overflow:hidden;animation:ntePromptCardIn .2s cubic-bezier(.2,.8,.2,1)}
+        .nte-counter-prompt-head{display:flex;align-items:center;gap:11px;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06)}
+        .nte-counter-prompt-mark{flex:0 0 auto;width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(16,185,129,.12));overflow:hidden;box-shadow:0 0 0 1px rgba(255,255,255,.05) inset}
+        .nte-counter-prompt-mark img{width:24px;height:24px;object-fit:contain}
+        .nte-counter-prompt-mark span{font-size:13px;font-weight:800;color:#9ca3af}
+        .nte-counter-prompt-titles{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}
+        .nte-counter-prompt-title{font-size:13px;font-weight:700;color:#f3f4f6;line-height:1;letter-spacing:-.005em}
+        .nte-counter-prompt-sub{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.12em;color:#6b7280;line-height:1}
+        .nte-counter-prompt-close{flex:0 0 auto;width:28px;height:28px;border-radius:7px;border:0;background:transparent;color:#9ca3af;cursor:pointer;font:inherit;font-size:18px;line-height:1;transition:background-color .15s,color .15s}
+        .nte-counter-prompt-close:hover{background:rgba(255,255,255,.06);color:#f3f4f6}
+        .nte-counter-prompt-body{padding:16px 18px 18px}
+        .nte-counter-prompt-question{font-size:13.5px;font-weight:500;line-height:1.5;color:#cbd5e1;margin-bottom:14px}
+        .nte-counter-prompt-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+        .nte-counter-prompt-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:11px 12px;border-radius:9px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.04);color:#e8eaed;font:inherit;font-size:13px;font-weight:600;letter-spacing:-.005em;line-height:1;cursor:pointer;transition:transform .15s ease,background .15s ease,border-color .15s ease,box-shadow .15s ease}
+        .nte-counter-prompt-btn:hover{transform:translateY(-1px);background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14)}
+        .nte-counter-prompt-btn.is-primary{background:linear-gradient(180deg,#8576f9,#6c5ce7);border-color:transparent;color:#fff;box-shadow:0 6px 18px rgba(108,92,231,.22)}
+        .nte-counter-prompt-btn.is-primary:hover{box-shadow:0 10px 26px rgba(108,92,231,.32)}
+        @keyframes ntePromptIn{from{opacity:0}to{opacity:1}}
+        @keyframes ntePromptCardIn{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+      `;
+      document.head.appendChild(style);
+    }
+
+    function get_logo_url() {
+      try { return chrome.runtime.getURL("assets/icons/logo.png"); } catch { return ""; }
+    }
+
+    function close_modal() {
+      if (modal_el) { modal_el.remove(); modal_el = null; }
+      document.documentElement.classList.remove("nte-counter-prompt-open");
+      if (escape_handler) {
+        document.removeEventListener("keydown", escape_handler, true);
+        escape_handler = null;
+      }
+    }
+
+    function show_prompt(counter_btn) {
+      inject_styles();
+      close_modal();
+      let logo = get_logo_url();
+      let modal = document.createElement("div");
+      modal.className = "nte-counter-prompt-modal";
+      modal.innerHTML = `
+        <div class="nte-counter-prompt-card" role="dialog" aria-modal="true" aria-label="Counter or send trade">
+          <div class="nte-counter-prompt-head">
+            <div class="nte-counter-prompt-mark">
+              ${logo ? `<img src="${nte_history_attr_esc(logo)}" alt="">` : "<span>N</span>"}
+            </div>
+            <div class="nte-counter-prompt-titles">
+              <div class="nte-counter-prompt-title">Nevos Trading Extension</div>
+              <div class="nte-counter-prompt-sub">Trade action</div>
+            </div>
+            <button type="button" class="nte-counter-prompt-close" aria-label="Cancel">&times;</button>
+          </div>
+          <div class="nte-counter-prompt-body">
+            <div class="nte-counter-prompt-question">Counter this trade or send a new one to this user?</div>
+            <div class="nte-counter-prompt-actions">
+              <button type="button" class="nte-counter-prompt-btn" data-action="send">Send trade</button>
+              <button type="button" class="nte-counter-prompt-btn is-primary" data-action="counter">Counter</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      modal_el = modal;
+      document.documentElement.classList.add("nte-counter-prompt-open");
+
+      modal.querySelector(".nte-counter-prompt-close").onclick = close_modal;
+      modal.addEventListener("mousedown", (event) => { if (event.target === modal) close_modal(); });
+
+      modal.querySelector('[data-action="counter"]').onclick = () => {
+        close_modal();
+        counter_btn.__nte_counter_bypass = true;
+        try { counter_btn.click(); } catch {}
+      };
+      modal.querySelector('[data-action="send"]').onclick = () => {
+        close_modal();
+        let row = document.querySelector(".trade-row.selected");
+        let partner_id = get_selected_trade_partner_id(row);
+        if (partner_id) location.href = `/users/${partner_id}/trade`;
+      };
+
+      escape_handler = (event) => { if (event.key === "Escape") close_modal(); };
+      document.addEventListener("keydown", escape_handler, true);
+    }
+
+    async function on_doc_click(event) {
+      let btn = event.target?.closest?.('button[ng-click*="counterTrade"]');
+      if (!btn) return;
+      if (btn.__nte_counter_bypass) {
+        btn.__nte_counter_bypass = false;
+        return;
+      }
+      if (btn.classList.contains("ng-hide") || btn.disabled) return;
+      event.stopImmediatePropagation();
+      event.preventDefault();
+      let enabled = false !== (await c.getOption("Counter Trade Prompt"));
+      if (!enabled) {
+        btn.__nte_counter_bypass = true;
+        try { btn.click(); } catch {}
+        return;
+      }
+      show_prompt(btn);
+    }
+
+    document.addEventListener("click", on_doc_click, true);
+  })();
 
 })();

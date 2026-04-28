@@ -3,12 +3,14 @@ if ("undefined" === typeof globalThis.chrome && "undefined" !== typeof globalThi
 }
 
 const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Value Difference After Robux Tax","enabledByDefault":false,"path":"value-difference-after-robux-tax"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Value","enabledByDefault":true,"path":"post-tax-trade-value"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]'
+  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]'
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
 const show_routility_usd_values_option_name = "Show Routility USD Values";
 const colorblind_mode_option_name = "Colorblind Mode";
 const legacy_colorblind_mode_option_name = "Colorblind Profit Mode";
+const post_tax_trade_values_option_name = "Post-Tax Trade Values";
+const legacy_post_tax_trade_value_option_name = "Post-Tax Trade Value";
 const colorblind_mode_profile_key = "colorblind_mode_profile";
 const colorblind_mode_profile_default = "deuteranopia";
 const colorblind_mode_profiles = ["deuteranopia", "protanopia", "tritanopia", "achromatopsia"];
@@ -735,11 +737,18 @@ function get_trade_notification_offer_pair(trade_detail, my_user_id = 0) {
   };
 }
 
+async function get_post_tax_trade_values_enabled() {
+  let saved = await get_local_values([post_tax_trade_values_option_name, legacy_post_tax_trade_value_option_name]);
+  if (saved[post_tax_trade_values_option_name] !== undefined) return !!saved[post_tax_trade_values_option_name];
+  if (saved[legacy_post_tax_trade_value_option_name] !== undefined) return !!saved[legacy_post_tax_trade_value_option_name];
+  return true;
+}
+
 async function get_trade_notification_value_stats(trade_detail, my_user_id = 0) {
   let offer_pair = get_trade_notification_offer_pair(trade_detail, my_user_id);
   if (!offer_pair) return null;
   let item_data = await get_cached_item_data(600000);
-  let use_post_tax_robux = !!(await get_local_value("Value Difference After Robux Tax"));
+  let use_post_tax_robux = await get_post_tax_trade_values_enabled();
   let your_value = compute_offer_value(offer_pair.your_offer, item_data, use_post_tax_robux);
   let their_value = compute_offer_value(offer_pair.their_offer, item_data, use_post_tax_robux);
   let diff = their_value - your_value;
@@ -1195,6 +1204,7 @@ function ensure_default_options() {
     .map((entry) => entry.name);
   option_names.push(legacy_show_usd_values_option_name);
   option_names.push(legacy_colorblind_mode_option_name);
+  option_names.push(legacy_post_tax_trade_value_option_name);
   option_names.push(colorblind_mode_profile_key);
   option_names.push(inbound_trade_notification_min_gain_key);
   option_names.push(duplicate_trade_warning_hours_key);
@@ -1217,6 +1227,13 @@ function ensure_default_options() {
       }
       if (entry.name === colorblind_mode_option_name && saved_values[legacy_colorblind_mode_option_name] !== undefined) {
         chrome.storage.local.set({ [entry.name]: colorblind_enabled });
+        return;
+      }
+      if (
+        entry.name === post_tax_trade_values_option_name &&
+        saved_values[legacy_post_tax_trade_value_option_name] !== undefined
+      ) {
+        chrome.storage.local.set({ [entry.name]: saved_values[legacy_post_tax_trade_value_option_name] });
         return;
       }
       chrome.storage.local.set({ [entry.name]: entry.enabledByDefault });

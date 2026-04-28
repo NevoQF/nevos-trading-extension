@@ -8,8 +8,31 @@
   if (!window.__nru_trade_detail_cache_bridge_loaded) {
     window.__nru_trade_detail_cache_bridge_loaded = true;
 
+    let TRADE_DETAIL_CACHE_MAX = 500;
+    let TRADE_DETAIL_CACHE_TTL = 30 * 60 * 1000;
     let trade_detail_cache = new Map(),
       trade_detail_pending = new Map();
+
+    function trade_detail_cache_get(key) {
+      let entry = trade_detail_cache.get(key);
+      if (!entry) return undefined;
+      if (Date.now() - entry.t > TRADE_DETAIL_CACHE_TTL) {
+        trade_detail_cache.delete(key);
+        return undefined;
+      }
+      trade_detail_cache.delete(key);
+      trade_detail_cache.set(key, entry);
+      return entry.v;
+    }
+
+    function trade_detail_cache_set(key, value) {
+      if (trade_detail_cache.has(key)) trade_detail_cache.delete(key);
+      trade_detail_cache.set(key, { v: value, t: Date.now() });
+      while (trade_detail_cache.size > TRADE_DETAIL_CACHE_MAX) {
+        let first = trade_detail_cache.keys().next().value;
+        trade_detail_cache.delete(first);
+      }
+    }
 
     function parse_bridge_detail(raw_detail) {
       if ("string" != typeof raw_detail) return raw_detail && "object" == typeof raw_detail ? raw_detail : null;
@@ -100,7 +123,7 @@
       if (!trade || "object" != typeof trade) return null;
       if (!trade.participantAOffer && !trade.participantBOffer && !Array.isArray(trade.offers)) return null;
       let normalized_trade = null == trade.tradeId ? { ...trade, tradeId: parseInt(key, 10) || key } : trade;
-      trade_detail_cache.set(key, normalized_trade);
+      trade_detail_cache_set(key, normalized_trade);
       return normalized_trade;
     }
 
@@ -154,7 +177,8 @@
     function get_cached_trade_detail(trade_id) {
       let key = String(trade_id || "").trim();
       if (!key) return Promise.resolve(null);
-      if (trade_detail_cache.has(key)) return Promise.resolve(trade_detail_cache.get(key));
+      let cached = trade_detail_cache_get(key);
+      if (cached !== undefined) return Promise.resolve(cached);
       let live_trade = get_live_trade_detail(key);
       if (live_trade) return Promise.resolve(live_trade);
       if (trade_detail_pending.has(key)) return trade_detail_pending.get(key);
@@ -164,7 +188,7 @@
           if (!trade || "object" != typeof trade) return null;
           if (!trade.participantAOffer && !trade.participantBOffer && !Array.isArray(trade.offers)) return null;
           let normalized_trade = null == trade.tradeId ? { ...trade, tradeId: parseInt(key, 10) || key } : trade;
-          trade_detail_cache.set(key, normalized_trade);
+          trade_detail_cache_set(key, normalized_trade);
           return normalized_trade;
         })
         .catch(() => null)
