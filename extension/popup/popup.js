@@ -88,6 +88,10 @@ const chrome_web_store_item_url = "https://chromewebstore.google.com/detail/dmgm
 const firefox_addons_item_url = "https://addons.mozilla.org/firefox/addon/nevos-trading-extension/";
 const popup_theme_storage_key = "popup_theme";
 const popup_theme_default = "modern";
+const trade_page_theme_enabled_key = "trade_page_theme_enabled";
+const trade_page_theme_key = "trade_page_theme";
+const trade_page_custom_themes_key = "trade_page_custom_themes";
+const trade_page_theme_default_image_overlay = 72;
 const inbound_trade_notification_min_gain_key = "inbound_trade_notification_min_gain_percent";
 const inbound_trade_notification_min_gain_default = 0;
 const duplicate_trade_warning_hours_key = "duplicate_trade_warning_hours";
@@ -124,6 +128,210 @@ const colorblind_mode_profiles = [
     swatches: ["#ffffff", "#111827", "#6b7280"],
   },
 ];
+
+const trade_page_theme_presets = {
+  obsidian: {
+    name: "Obsidian",
+    background: "#0f1117",
+    accent: "#6ea8fe",
+    accent2: "#a78bfa",
+    effect: "nebula",
+  },
+  aurora: {
+    name: "Aurora",
+    background: "#071a18",
+    accent: "#2dd4bf",
+    accent2: "#a78bfa",
+    effect: "aurora",
+  },
+  emberstorm: {
+    name: "Emberstorm",
+    background: "#1f1011",
+    accent: "#f97362",
+    accent2: "#fbbf24",
+    effect: "ember",
+  },
+  frostbyte: {
+    name: "Frostbyte",
+    background: "#071827",
+    accent: "#67e8f9",
+    accent2: "#e0f2fe",
+    effect: "frost",
+  },
+  sakura: {
+    name: "Sakura",
+    background: "#211019",
+    accent: "#fb7185",
+    accent2: "#f9a8d4",
+    effect: "petals",
+  },
+  circuit: {
+    name: "Circuit",
+    background: "#07130f",
+    accent: "#22c55e",
+    accent2: "#38bdf8",
+    effect: "circuit",
+  },
+  royalty: {
+    name: "Royalty",
+    background: "#160f2e",
+    accent: "#c084fc",
+    accent2: "#facc15",
+    effect: "royal",
+  },
+  graphite: {
+    name: "Graphite",
+    background: "#171717",
+    accent: "#d4d4d4",
+    accent2: "#8b949e",
+    effect: "sheen",
+  },
+};
+const trade_page_theme_default = trade_page_theme_presets.obsidian;
+const trade_page_theme_effects = new Set(["nebula", "lightning", "aurora", "ember", "frost", "petals", "circuit", "royal", "sheen", "image"]);
+
+function normalize_hex_color(value, fallback) {
+  let color = String(value || "").trim();
+  if (/^[0-9a-f]{3}$|^[0-9a-f]{6}$/i.test(color)) color = `#${color}`;
+  if (/^#[0-9a-f]{3}$/i.test(color)) {
+    color = `#${color[1]}${color[1]}${color[2]}${color[2]}${color[3]}${color[3]}`;
+  }
+  return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : fallback;
+}
+
+function is_complete_hex_color(value) {
+  return /^#?[0-9a-f]{3}$|^#?[0-9a-f]{6}$/i.test(String(value || "").trim());
+}
+
+function normalize_trade_page_effect(value) {
+  let effect = String(value || "").trim().toLowerCase();
+  return trade_page_theme_effects.has(effect) ? effect : trade_page_theme_default.effect;
+}
+
+function normalize_theme_image(value) {
+  let image = String(value || "").trim();
+  return /^data:image\/(?:png|jpe?g|webp);base64,/i.test(image) ? image : "";
+}
+
+function normalize_image_overlay(value) {
+  let amount = Number(value);
+  return Number.isFinite(amount) ? Math.max(0, Math.min(90, Math.round(amount))) : trade_page_theme_default_image_overlay;
+}
+
+function hex_to_rgba(hex, alpha) {
+  let color = normalize_hex_color(hex, "#000000").slice(1);
+  let r = parseInt(color.slice(0, 2), 16);
+  let g = parseInt(color.slice(2, 4), 16);
+  let b = parseInt(color.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+function hex_to_rgb_tuple(hex) {
+  let color = normalize_hex_color(hex, "#000000").slice(1);
+  return [parseInt(color.slice(0, 2), 16), parseInt(color.slice(2, 4), 16), parseInt(color.slice(4, 6), 16)];
+}
+
+function rgb_tuple_to_hex(parts) {
+  return `#${parts.map((part) => Math.max(0, Math.min(255, Math.round(part))).toString(16).padStart(2, "0")).join("")}`;
+}
+
+function mix_hex_color(from, to, weight) {
+  let a = hex_to_rgb_tuple(from);
+  let b = hex_to_rgb_tuple(to);
+  return rgb_tuple_to_hex(a.map((part, index) => part + (b[index] - part) * weight));
+}
+
+function get_color_luma(hex) {
+  let [r, g, b] = hex_to_rgb_tuple(hex).map((part) => {
+    let channel = part / 255;
+    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function hex_to_hsl(hex) {
+  let [r, g, b] = hex_to_rgb_tuple(hex).map((part) => part / 255);
+  let max = Math.max(r, g, b);
+  let min = Math.min(r, g, b);
+  let lightness = (max + min) / 2;
+  if (max === min) return { h: 0, s: 0, l: Math.round(lightness * 100) };
+  let delta = max - min;
+  let saturation = delta / (1 - Math.abs(2 * lightness - 1));
+  let hue = 0;
+  if (max === r) hue = ((g - b) / delta) % 6;
+  else if (max === g) hue = (b - r) / delta + 2;
+  else hue = (r - g) / delta + 4;
+  hue = Math.round(hue * 60);
+  if (hue < 0) hue += 360;
+  return { h: hue, s: Math.round(saturation * 100), l: Math.round(lightness * 100) };
+}
+
+function hsl_to_hex(hue, saturation, lightness) {
+  let h = (((Number(hue) || 0) % 360) + 360) % 360;
+  let s = Math.max(0, Math.min(100, Number(saturation) || 0)) / 100;
+  let l = Math.max(0, Math.min(100, Number(lightness) || 0)) / 100;
+  let c = (1 - Math.abs(2 * l - 1)) * s;
+  let x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  let m = l - c / 2;
+  let rgb = [0, 0, 0];
+  if (h < 60) rgb = [c, x, 0];
+  else if (h < 120) rgb = [x, c, 0];
+  else if (h < 180) rgb = [0, c, x];
+  else if (h < 240) rgb = [0, x, c];
+  else if (h < 300) rgb = [x, 0, c];
+  else rgb = [c, 0, x];
+  return rgb_tuple_to_hex(rgb.map((part) => (part + m) * 255));
+}
+
+function build_trade_page_theme(source) {
+  let background = normalize_hex_color(source.background, trade_page_theme_default.background);
+  let accent = normalize_hex_color(source.accent, trade_page_theme_default.accent);
+  let accent2 = normalize_hex_color(source.accent2, mix_hex_color(accent, background, 0.35));
+  let image = normalize_theme_image(source.image);
+  let effect = image ? "image" : normalize_trade_page_effect(source.effect);
+  let is_dark = get_color_luma(background) < 0.45;
+  let shade = is_dark ? "#ffffff" : "#000000";
+  let text = is_dark ? "#f8fafc" : "#111827";
+  return {
+    name: String(source.name || trade_page_theme_default.name).trim().slice(0, 32) || trade_page_theme_default.name,
+    background,
+    surface: mix_hex_color(background, shade, is_dark ? 0.08 : 0.035),
+    surface2: mix_hex_color(background, shade, is_dark ? 0.14 : 0.07),
+    text,
+    muted: mix_hex_color(text, background, is_dark ? 0.42 : 0.48),
+    accent,
+    accent2,
+    border: mix_hex_color(background, shade, is_dark ? 0.22 : 0.14),
+    effect,
+    image,
+    image_overlay: image ? normalize_image_overlay(source.image_overlay) : trade_page_theme_default_image_overlay,
+  };
+}
+
+function normalize_trade_page_theme(value) {
+  let source = value && typeof value === "object" ? value : {};
+  return build_trade_page_theme(source);
+}
+
+function pack_trade_page_theme(value) {
+  let theme = normalize_trade_page_theme(value);
+  return {
+    name: theme.name,
+    background: theme.background,
+    accent: theme.accent,
+    accent2: theme.accent2,
+    effect: theme.effect,
+    ...(theme.image ? { image: theme.image } : {}),
+    ...(theme.image ? { image_overlay: theme.image_overlay } : {}),
+  };
+}
+
+function normalize_custom_trade_page_themes(value) {
+  return (Array.isArray(value) ? value : [])
+    .map((theme) => pack_trade_page_theme(theme))
+    .filter((theme) => theme.name && (theme.effect !== "image" || theme.image))
+    .slice(0, 16);
+}
 
 function normalize_colorblind_mode_profile(value) {
   let normalized = String(value || "").trim().toLowerCase();
@@ -440,6 +648,81 @@ function bind_popup_external_links() {
       }
     });
   }
+}
+
+function open_extension_tab(path = "popup/popup.html") {
+  let url = chrome.runtime.getURL(path);
+  if (globalThis.browser?.tabs?.create) {
+    globalThis.browser.tabs.create({ url });
+  } else if (chrome.tabs?.create) {
+    chrome.tabs.create({ url });
+  } else {
+    globalThis.open(url, "_blank", "noopener,noreferrer");
+  }
+}
+
+function open_extension_popup(path = "popup/popup.html") {
+  let url = chrome.runtime.getURL(path);
+  let options = { url, type: "popup", width: 430, height: 720 };
+  try {
+    if (globalThis.browser?.windows?.create) {
+      globalThis.browser.windows.create(options).catch(() => open_extension_tab(path));
+    } else if (chrome.windows?.create) {
+      chrome.windows.create(options, () => {
+        if (chrome.runtime.lastError) open_extension_tab(path);
+      });
+    } else {
+      open_extension_tab(path);
+    }
+  } catch {
+    open_extension_tab(path);
+  }
+}
+
+function get_current_extension_tab() {
+  return new Promise((resolve) => {
+    try {
+      if (!chrome.tabs?.getCurrent) {
+        resolve(null);
+        return;
+      }
+      chrome.tabs.getCurrent((tab) => resolve(tab || null));
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+function get_theme_upload_target_tab_id() {
+  return new Promise((resolve) => {
+    try {
+      if (!chrome.tabs?.query) {
+        resolve("");
+        return;
+      }
+      chrome.tabs.query({ currentWindow: true }, (tabs) => {
+        let trade_tab = (tabs || []).find((tab) => tab.active && /^https:\/\/(?:www\.)?roblox\.com\/(?:[a-z]{2}\/)?trades/i.test(tab.url || ""));
+        if (!trade_tab) trade_tab = (tabs || []).find((tab) => /^https:\/\/(?:www\.)?roblox\.com\/(?:[a-z]{2}\/)?trades/i.test(tab.url || ""));
+        resolve(trade_tab?.id ? String(trade_tab.id) : "");
+      });
+    } catch {
+      resolve("");
+    }
+  });
+}
+
+async function send_theme_upload_to_active_page(payload) {
+  let tab_id = await get_theme_upload_target_tab_id();
+  if (!tab_id) return false;
+  return new Promise((resolve) => {
+    try {
+      chrome.tabs.sendMessage(Number(tab_id), { type: "nte_open_trade_theme_upload", ...payload }, (response) => {
+        resolve(!chrome.runtime.lastError && response?.ok === true);
+      });
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
 function clear_extension_update_state_popup() {
@@ -912,6 +1195,9 @@ async function render_options() {
     colorblind_mode_profile_key,
     inbound_trade_notification_min_gain_key,
     duplicate_trade_warning_hours_key,
+    trade_page_theme_enabled_key,
+    trade_page_theme_key,
+    trade_page_custom_themes_key,
   ]);
   saved = await ensure_colorblind_mode_settings(saved);
   const totp_snapshot = await new Promise((resolve) => {
@@ -990,6 +1276,11 @@ async function render_options() {
   }
 
   append_roblox_totp_card(container, totp_snapshot);
+  append_trade_page_theme_card(container, {
+    enabled: saved[trade_page_theme_enabled_key],
+    theme: saved[trade_page_theme_key],
+    custom_themes: saved[trade_page_custom_themes_key],
+  });
 }
 
 function append_roblox_totp_card(container, totp_snapshot = {}) {
@@ -1387,6 +1678,463 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   });
 }
 
+function append_trade_page_theme_card(container, snapshot = {}) {
+  const card = document.createElement("div");
+  card.className = "nte-theme-card";
+
+  let theme = normalize_trade_page_theme(snapshot.theme);
+  let enabled = snapshot.enabled === true;
+  let custom_themes = normalize_custom_trade_page_themes(snapshot.custom_themes);
+  let force_theme_upload_page = location.hash === "#theme-upload";
+  let color_fields = [
+    ["background", "Base"],
+    ["accent", "Accent"],
+  ];
+
+  card.innerHTML = `
+    <div class="nte-theme-head">
+      <div>
+        <span class="nte-theme-title">Trade page theme</span>
+        <span class="nte-theme-sub">Recolor the trades page.</span>
+      </div>
+      <label class="nte-theme-toggle" title="Enable trade page theme">
+        <input type="checkbox" id="nte-theme-enabled" />
+        <span></span>
+      </label>
+    </div>
+    <div class="nte-theme-expanded" id="nte-theme-expanded" hidden>
+      <div class="nte-theme-preview" id="nte-theme-preview">
+        <div class="nte-theme-preview-top">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="nte-theme-preview-row">
+          <i></i>
+          <div><b></b><em></em></div>
+        </div>
+      </div>
+      <div class="nte-theme-presets" id="nte-theme-presets"></div>
+      <div class="nte-theme-color-grid">
+        ${color_fields
+          .map(
+            ([key, label]) => `
+              <label class="nte-theme-color">
+                <span>${escape_html(label)}</span>
+                <div class="nte-theme-color-controls">
+                  <button type="button" class="nte-theme-swatch" data-theme-picker="${escape_html(key)}" aria-label="Pick ${escape_html(label)} color"><i></i></button>
+                  <input type="text" class="nte-theme-hex" data-theme-hex="${escape_html(key)}" maxlength="7" spellcheck="false" />
+                </div>
+              </label>
+            `,
+          )
+          .join("")}
+      </div>
+      <div class="nte-theme-color-picker" id="nte-theme-color-picker" hidden>
+        <div class="nte-theme-color-picker-head">
+          <span id="nte-theme-color-picker-title">Base color</span>
+          <button type="button" id="nte-theme-color-picker-close" aria-label="Close color picker">x</button>
+        </div>
+        <div class="nte-theme-color-sample" id="nte-theme-color-sample"></div>
+        <label class="nte-theme-picker-slider is-hue">
+          <span>Hue <b data-picker-value="h">0</b></span>
+          <input type="range" min="0" max="360" step="1" data-picker-slider="h" />
+        </label>
+        <label class="nte-theme-picker-slider">
+          <span>Saturation <b data-picker-value="s">0%</b></span>
+          <input type="range" min="0" max="100" step="1" data-picker-slider="s" />
+        </label>
+        <label class="nte-theme-picker-slider">
+          <span>Lightness <b data-picker-value="l">0%</b></span>
+          <input type="range" min="0" max="100" step="1" data-picker-slider="l" />
+        </label>
+      </div>
+      <label class="nte-theme-slider" id="nte-theme-image-overlay-wrap" hidden>
+        <span>Image shade <b id="nte-theme-image-overlay-value">72%</b></span>
+        <input type="range" id="nte-theme-image-overlay" min="0" max="90" step="1" />
+      </label>
+      <div class="nte-theme-actions">
+        <button type="button" class="nte-theme-upload-btn" id="nte-theme-upload-btn">Upload theme</button>
+        <input type="file" id="nte-theme-upload" accept=".json,application/json,image/png,image/jpeg,image/webp" hidden />
+      </div>
+      <div class="nte-theme-name-panel" id="nte-theme-name-panel" hidden>
+        <span>Name this theme</span>
+        <input type="text" id="nte-theme-name-input" maxlength="32" spellcheck="false" />
+        <div>
+          <button type="button" class="nte-totp-btn" id="nte-theme-name-save">Save upload</button>
+          <button type="button" class="nte-totp-btn nte-totp-btn-ghost" id="nte-theme-name-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+    <p class="nte-totp-status" id="nte-theme-status" aria-live="polite" hidden></p>
+  `;
+
+  container.append(card);
+
+  const enabled_el = card.querySelector("#nte-theme-enabled");
+  const expanded_el = card.querySelector("#nte-theme-expanded");
+  const preview_el = card.querySelector("#nte-theme-preview");
+  const presets_el = card.querySelector("#nte-theme-presets");
+  const status_el = card.querySelector("#nte-theme-status");
+  const upload_btn = card.querySelector("#nte-theme-upload-btn");
+  const upload_el = card.querySelector("#nte-theme-upload");
+  const name_panel = card.querySelector("#nte-theme-name-panel");
+  const name_input = card.querySelector("#nte-theme-name-input");
+  const name_save_btn = card.querySelector("#nte-theme-name-save");
+  const name_cancel_btn = card.querySelector("#nte-theme-name-cancel");
+  const image_overlay_wrap = card.querySelector("#nte-theme-image-overlay-wrap");
+  const image_overlay_input = card.querySelector("#nte-theme-image-overlay");
+  const image_overlay_value = card.querySelector("#nte-theme-image-overlay-value");
+  const swatch_buttons = [...card.querySelectorAll("[data-theme-picker]")];
+  const color_picker = card.querySelector("#nte-theme-color-picker");
+  const color_picker_title = card.querySelector("#nte-theme-color-picker-title");
+  const color_picker_close = card.querySelector("#nte-theme-color-picker-close");
+  const color_sample = card.querySelector("#nte-theme-color-sample");
+  const picker_sliders = [...card.querySelectorAll("[data-picker-slider]")];
+  const picker_values = [...card.querySelectorAll("[data-picker-value]")];
+  const hex_inputs = [...card.querySelectorAll("[data-theme-hex]")];
+  let save_timer = null;
+  let pending_upload = null;
+  let active_color_key = "";
+
+  function set_status(message) {
+    status_el.textContent = message || "";
+    status_el.hidden = !message;
+  }
+
+  function get_preset_button_html(key, preset, custom_index = null) {
+    let theme = normalize_trade_page_theme(preset);
+    let image_style = theme.image ? `background-image:url(&quot;${escape_html(theme.image)}&quot;);background-size:cover;background-position:center;` : "";
+    if (custom_index === null) {
+      return `<button type="button" class="nte-theme-preset" data-theme-preset="${escape_html(key)}"><span class="nte-theme-preset-swatch" style="--swatch:${escape_html(theme.accent)};--swatch-bg:${escape_html(theme.background)};${image_style}"></span><span class="nte-theme-preset-name">${escape_html(theme.name)}</span></button>`;
+    }
+    return `<button type="button" class="nte-theme-preset is-custom" data-custom-theme="${custom_index}"><span class="nte-theme-preset-swatch" style="--swatch:${escape_html(theme.accent)};--swatch-bg:${escape_html(theme.background)};${image_style}"></span><span class="nte-theme-preset-name">${escape_html(theme.name)}</span><span class="nte-theme-preset-delete" data-delete-custom-theme="${custom_index}" title="Delete theme" aria-label="Delete ${escape_html(theme.name)} theme">x</span></button>`;
+  }
+
+  function is_same_theme(left, right) {
+    let a = pack_trade_page_theme(left);
+    let b = pack_trade_page_theme(right);
+    return ["background", "accent", "accent2", "effect", "image", "image_overlay"].every((key) => (a[key] || "") === (b[key] || ""));
+  }
+
+  function render_presets() {
+    presets_el.innerHTML = [
+      ...Object.entries(trade_page_theme_presets).map(([key, preset]) => get_preset_button_html(key, preset)),
+      ...custom_themes.map((preset, index) => get_preset_button_html("", preset, index)),
+    ].join("");
+  }
+
+  function read_theme_from_inputs() {
+    let next = { ...theme };
+    for (let input of hex_inputs) {
+      let key = input.getAttribute("data-theme-hex");
+      if (!is_complete_hex_color(input.value)) continue;
+      next[key] = normalize_hex_color(input.value, next[key]);
+    }
+    if (next.image) next.image_overlay = normalize_image_overlay(image_overlay_input.value);
+    return normalize_trade_page_theme(next);
+  }
+
+  function update_theme_color(key, value) {
+    theme = normalize_trade_page_theme({
+      ...theme,
+      [key]: normalize_hex_color(value, theme[key]),
+    });
+    paint_inputs(theme);
+  }
+
+  function update_image_overlay(value) {
+    theme = normalize_trade_page_theme({
+      ...theme,
+      image_overlay: normalize_image_overlay(value),
+    });
+    paint_inputs(theme);
+  }
+
+  function get_color_label(key) {
+    let field = color_fields.find(([field_key]) => field_key === key);
+    return field ? field[1] : "Color";
+  }
+
+  function get_picker_hsl() {
+    let parts = {};
+    for (let input of picker_sliders) parts[input.getAttribute("data-picker-slider")] = Number(input.value) || 0;
+    return parts;
+  }
+
+  function sync_color_picker() {
+    if (!active_color_key) return;
+    let color = theme[active_color_key] || theme.background;
+    let hsl = hex_to_hsl(color);
+    color_picker_title.textContent = `${get_color_label(active_color_key)} color`;
+    color_sample.style.background = color;
+    color_picker.style.setProperty("--picker-color", color);
+    for (let input of picker_sliders) {
+      let key = input.getAttribute("data-picker-slider");
+      input.value = String(hsl[key]);
+    }
+    for (let value of picker_values) {
+      let key = value.getAttribute("data-picker-value");
+      value.textContent = key === "h" ? String(hsl[key]) : `${hsl[key]}%`;
+    }
+  }
+
+  function open_color_picker(key) {
+    active_color_key = key;
+    color_picker.hidden = false;
+    paint_inputs(theme);
+  }
+
+  function close_color_picker() {
+    active_color_key = "";
+    color_picker.hidden = true;
+    paint_inputs(theme);
+  }
+
+  function commit_picker_color(instant = false) {
+    if (!active_color_key) return;
+    let hsl = get_picker_hsl();
+    update_theme_color(active_color_key, hsl_to_hex(hsl.h, hsl.s, hsl.l));
+    if (instant) {
+      clearTimeout(save_timer);
+      save_theme(theme, enabled_el.checked, "");
+      return;
+    }
+    queue_theme_save();
+  }
+
+  function paint_inputs(next_theme = theme) {
+    theme = normalize_trade_page_theme(next_theme);
+    enabled_el.checked = enabled;
+    expanded_el.hidden = !enabled && !force_theme_upload_page;
+    card.classList.toggle("is-enabled", enabled || force_theme_upload_page);
+    for (let button of swatch_buttons) {
+      let key = button.getAttribute("data-theme-picker");
+      button.style.setProperty("--picked", theme[key]);
+      button.classList.toggle("is-active", key === active_color_key && !color_picker.hidden);
+    }
+    for (let input of hex_inputs) {
+      let key = input.getAttribute("data-theme-hex");
+      input.value = theme[key];
+    }
+    preview_el.style.setProperty("--theme-bg", theme.background);
+    preview_el.style.setProperty("--theme-surface", theme.surface);
+    preview_el.style.setProperty("--theme-surface2", theme.surface2);
+    preview_el.style.setProperty("--theme-text", theme.text);
+    preview_el.style.setProperty("--theme-muted", theme.muted);
+    preview_el.style.setProperty("--theme-accent", theme.accent);
+    preview_el.style.setProperty("--theme-accent2", theme.accent2);
+    preview_el.style.setProperty("--theme-image", theme.image ? `url("${theme.image}")` : "none");
+    preview_el.style.setProperty("--theme-image-tint", hex_to_rgba(theme.background, theme.image_overlay / 100));
+    preview_el.style.setProperty("--theme-image-tint-strong", hex_to_rgba(theme.background, Math.min(0.96, (theme.image_overlay / 100) * 1.22)));
+    preview_el.style.setProperty("--theme-image-accent-soft", hex_to_rgba(theme.accent, Math.min(0.24, (theme.image_overlay / 100) * 0.2)));
+    preview_el.style.setProperty("--theme-border", theme.border);
+    preview_el.dataset.themeEffect = theme.effect;
+    image_overlay_wrap.hidden = theme.effect !== "image" || !theme.image;
+    image_overlay_input.value = String(theme.image_overlay);
+    image_overlay_value.textContent = `${theme.image_overlay}%`;
+    sync_color_picker();
+    for (let button of card.querySelectorAll(".nte-theme-preset")) {
+      let preset =
+        button.hasAttribute("data-theme-preset")
+          ? trade_page_theme_presets[button.getAttribute("data-theme-preset")]
+          : custom_themes[Number(button.getAttribute("data-custom-theme"))];
+      button.classList.toggle("is-active", !!preset && is_same_theme(preset, theme));
+    }
+  }
+
+  function save_theme(next_theme = read_theme_from_inputs(), next_enabled = enabled_el.checked, message = "Theme saved.") {
+    theme = normalize_trade_page_theme(next_theme);
+    enabled = !!next_enabled;
+    paint_inputs(theme);
+    set_storage({
+      [trade_page_theme_enabled_key]: enabled,
+      [trade_page_theme_key]: pack_trade_page_theme(theme),
+    }).then(() => set_status(message));
+  }
+
+  function queue_theme_save() {
+    clearTimeout(save_timer);
+    save_timer = setTimeout(() => save_theme(read_theme_from_inputs(), enabled_el.checked, ""), 120);
+  }
+
+  enabled_el.addEventListener("change", () => {
+    save_theme(read_theme_from_inputs(), enabled_el.checked, "");
+  });
+
+  image_overlay_input.addEventListener("input", () => {
+    update_image_overlay(image_overlay_input.value);
+    queue_theme_save();
+  });
+
+  image_overlay_input.addEventListener("change", () => {
+    clearTimeout(save_timer);
+    update_image_overlay(image_overlay_input.value);
+    save_theme(theme, enabled_el.checked, "");
+  });
+
+  for (let button of swatch_buttons) {
+    button.addEventListener("click", () => open_color_picker(button.getAttribute("data-theme-picker")));
+  }
+
+  color_picker_close.addEventListener("click", close_color_picker);
+
+  for (let input of picker_sliders) {
+    input.addEventListener("input", () => commit_picker_color());
+    input.addEventListener("change", () => commit_picker_color(true));
+  }
+
+  for (let input of hex_inputs) {
+    input.addEventListener("input", () => {
+      if (!is_complete_hex_color(input.value)) return;
+      update_theme_color(input.getAttribute("data-theme-hex"), input.value);
+      queue_theme_save();
+    });
+    input.addEventListener("change", () => {
+      clearTimeout(save_timer);
+      if (is_complete_hex_color(input.value)) update_theme_color(input.getAttribute("data-theme-hex"), input.value);
+      else paint_inputs(theme);
+      save_theme(theme, enabled_el.checked, "");
+    });
+  }
+
+  presets_el.addEventListener("click", (event) => {
+    let delete_btn = event.target.closest("[data-delete-custom-theme]");
+    if (delete_btn) {
+      let index = Number(delete_btn.getAttribute("data-delete-custom-theme"));
+      let removed = custom_themes[index];
+      if (!removed) return;
+      custom_themes = custom_themes.filter((_, theme_index) => theme_index !== index);
+      let deleted_active = is_same_theme(removed, theme);
+      if (deleted_active) theme = normalize_trade_page_theme(trade_page_theme_default);
+      set_storage({
+        [trade_page_custom_themes_key]: custom_themes,
+        ...(deleted_active ? { [trade_page_theme_key]: pack_trade_page_theme(theme) } : {}),
+      }).then(() => {
+        render_presets();
+        paint_inputs(theme);
+        set_status(`${removed.name} deleted.`);
+      });
+      return;
+    }
+    let button = event.target.closest(".nte-theme-preset");
+    if (!button) return;
+    let preset =
+      button.hasAttribute("data-theme-preset")
+        ? trade_page_theme_presets[button.getAttribute("data-theme-preset")]
+        : custom_themes[Number(button.getAttribute("data-custom-theme"))];
+    if (!preset) return;
+    save_theme(preset, true, "");
+  });
+
+  function open_theme_upload() {
+    if (force_theme_upload_page) {
+      upload_el.click();
+      return;
+    }
+    send_theme_upload_to_active_page({ open_picker: false }).then((opened) => {
+      if (opened) {
+        set_status("Choose a file on the trades page.");
+        return;
+      }
+      open_extension_popup("popup/popup.html#theme-upload");
+      set_status("Open the trades page, then try again.");
+    });
+  }
+
+  upload_btn.addEventListener("click", open_theme_upload);
+
+  function clear_pending_upload() {
+    pending_upload = null;
+    name_input.value = "";
+    name_panel.hidden = true;
+    upload_el.value = "";
+  }
+
+  function show_name_panel(uploaded, file) {
+    let fallback_name = String(uploaded.name || file.name.replace(/\.[^.]+$/, "") || "Custom theme").trim().slice(0, 32);
+    pending_upload = uploaded;
+    name_input.value = fallback_name;
+    name_panel.hidden = false;
+    set_status("");
+    name_input.focus();
+    name_input.select();
+  }
+
+  function save_pending_upload() {
+    if (!pending_upload) return;
+    let name = name_input.value.trim();
+    if (!name) {
+      set_status("Name the theme first.");
+      name_input.focus();
+      return;
+    }
+    let packed = pack_trade_page_theme({ ...pending_upload, name });
+    custom_themes = [packed, ...custom_themes.filter((item) => item.name.toLowerCase() !== packed.name.toLowerCase())].slice(0, 16);
+    set_storage({ [trade_page_custom_themes_key]: custom_themes }).then(() => {
+      render_presets();
+      save_theme(packed, true, `${packed.name} saved.`);
+      clear_pending_upload();
+    });
+  }
+
+  name_save_btn.addEventListener("click", save_pending_upload);
+  name_cancel_btn.addEventListener("click", clear_pending_upload);
+  name_input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") save_pending_upload();
+    if (event.key === "Escape") clear_pending_upload();
+  });
+
+  upload_el.addEventListener("change", () => {
+    let file = upload_el.files?.[0];
+    if (!file) return;
+    let is_image = file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(file.name);
+    if (is_image && file.size > 3 * 1024 * 1024) {
+      set_status("Theme image must be under 3 MB.");
+      upload_el.value = "";
+      return;
+    }
+    let reader = new FileReader();
+    reader.onload = () => {
+      try {
+        let uploaded =
+          is_image
+            ? {
+                name: "",
+                background: theme.background,
+                accent: theme.accent,
+                accent2: theme.accent2,
+                effect: "image",
+                image: String(reader.result || ""),
+                image_overlay: trade_page_theme_default_image_overlay,
+              }
+            : JSON.parse(String(reader.result || "{}"));
+        if (is_image && !normalize_theme_image(uploaded.image)) {
+          set_status("Theme image must be PNG, JPG, or WebP.");
+          upload_el.value = "";
+          return;
+        }
+        show_name_panel(uploaded, file);
+      } catch {
+        set_status("Theme file must be valid JSON.");
+        upload_el.value = "";
+      }
+    };
+    reader.onerror = () => {
+      set_status("Could not read theme file.");
+      upload_el.value = "";
+    };
+    if (is_image) reader.readAsDataURL(file);
+    else reader.readAsText(file);
+  });
+
+  render_presets();
+  paint_inputs(theme);
+  set_status("");
+  if (force_theme_upload_page) {
+    set_status("Click Upload theme to choose a file.");
+    setTimeout(() => card.scrollIntoView({ block: "center" }), 0);
+  }
+}
+
 function restore_defaults() {
   return new Promise((resolve) => {
     const updates = {};
@@ -1401,6 +2149,9 @@ function restore_defaults() {
     updates[ROBLOX_TOTP_ENABLED_KEY] = false;
     updates[ROBLOX_TOTP_SECRET_KEY] = "";
     updates[popup_theme_storage_key] = popup_theme_default;
+    updates[trade_page_theme_enabled_key] = false;
+    updates[trade_page_theme_key] = { ...trade_page_theme_default };
+    updates[trade_page_custom_themes_key] = [];
     chrome.storage.local.remove([ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY], () => {
       chrome.storage.local.set(updates, () => {
         if (chrome.runtime.lastError) console.info(chrome.runtime.lastError);

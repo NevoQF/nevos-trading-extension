@@ -4,6 +4,8 @@
   let last_url = location.href;
   let styles_injected = false;
   let item_check_cache = {};
+  let bundle_detail_cache = {};
+  let rolimons_item_data_promise = null;
   let state = {
     asset_id: "",
     active_view: "",
@@ -90,13 +92,6 @@
       .trim();
   }
 
-  function is_roblox_bundle_page() {
-    if (!/\/bundles\/\d+(?:\/|$)/i.test(location.pathname)) return true;
-    let link = document.querySelector(".text-label a.text-name");
-    if (!link) return false;
-    return clean_name(link.textContent) === "roblox" && /\/users\/1(?:\/|$)/i.test(String(link.getAttribute("href") || ""));
-  }
-
   async function is_roblox_limited(asset_id) {
     let id = String(asset_id || "").trim();
     if (!/^\d+$/.test(id)) return false;
@@ -114,10 +109,58 @@
     return item_check_cache[id];
   }
 
-  function get_context() {
-    let match = location.pathname.match(/\/(?:catalog|bundles)\/(\d+)(?:\/|$)/i);
+  async function get_bundle_detail(bundle_id) {
+    let id = String(bundle_id || "").trim();
+    if (!/^\d+$/.test(id)) return null;
+    if (id in bundle_detail_cache) return bundle_detail_cache[id];
+    bundle_detail_cache[id] = null;
+    try {
+      let response = await fetch(`https://catalog.roblox.com/v1/bundles/${id}/details`, { credentials: "include" });
+      if (response.ok) bundle_detail_cache[id] = await response.json();
+    } catch {
+      bundle_detail_cache[id] = null;
+    }
+    return bundle_detail_cache[id];
+  }
+
+  function is_roblox_limited_bundle(detail) {
+    let creator_id = Number(detail?.creator?.id || detail?.Creator?.Id || 0);
+    let creator_name = clean_name(detail?.creator?.name || detail?.Creator?.Name || "");
+    let restrictions = Array.isArray(detail?.itemRestrictions) ? detail.itemRestrictions.map((x) => String(x || "").toLowerCase()) : [];
+    let collectible_type = String(detail?.collectibleItemDetail?.collectibleItemType || "").toLowerCase();
+    let is_limited =
+      restrictions.includes("limited") ||
+      restrictions.includes("limitedunique") ||
+      collectible_type === "limited" ||
+      collectible_type === "limitedunique";
+    return is_limited && (creator_id === 1 || creator_name === "roblox");
+  }
+
+  function get_bundle_asset_id(detail) {
+    let assets = (Array.isArray(detail?.items) ? detail.items : [])
+      .filter((item) => String(item?.type || "").toLowerCase() === "asset" && /^\d+$/.test(String(item?.id || "")));
+    return String((assets.find((item) => Number(item?.assetType) === 78) || assets[0] || {})?.id || "");
+  }
+
+  function get_rolimons_item_data() {
+    if (!rolimons_item_data_promise) {
+      rolimons_item_data_promise = new Promise((resolve) => send_message("getDataPeriodic", (data) => resolve(data || null)));
+    }
+    return rolimons_item_data_promise;
+  }
+
+  function find_rolimons_asset_id(item_data, item_name) {
+    let name = clean_name(item_name);
+    if (!name || !item_data?.items) return "";
+    for (let [asset_id, row] of Object.entries(item_data.items)) {
+      if (clean_name(row?.[0]) === name && /^\d+$/.test(asset_id)) return asset_id;
+    }
+    return "";
+  }
+
+  function get_dom_context() {
+    let match = location.pathname.match(/\/(catalog|bundles)\/(\d+)(?:\/|$)/i);
     if (!match) return null;
-    if (!is_roblox_bundle_page()) return null;
     let price_row =
       document.querySelector(".item-details-section .price-row-container") ||
       document.querySelector(".price-row-container") ||
@@ -136,13 +179,29 @@
     let thumb =
       String(document.querySelector('meta[property="og:image"]')?.getAttribute("content") || "").trim() ||
       String(document.querySelector(".item-thumbnail-container img, .thumbnail-span img")?.src || "").trim();
+    let kind = String(match[1] || "").toLowerCase();
     return {
-      asset_id: match[1],
+      kind,
+      page_id: match[2],
+      page_key: `${kind}:${match[2]}`,
+      asset_id: match[2],
       item_name,
       thumb,
       section,
       price_row,
     };
+  }
+
+  async function get_context() {
+    let context = get_dom_context();
+    if (!context) return null;
+    if (context.kind !== "bundles") return (await is_roblox_limited(context.asset_id)) ? context : null;
+    let detail = await get_bundle_detail(context.page_id);
+    if (!is_roblox_limited_bundle(detail)) return null;
+    let item_data = await get_rolimons_item_data().catch(() => null);
+    let asset_id = find_rolimons_asset_id(item_data, context.item_name) || get_bundle_asset_id(detail);
+    if (!asset_id) return null;
+    return { ...context, asset_id };
   }
 
   function reset_state(context) {
@@ -620,7 +679,7 @@
 
   async function toggle_view(view) {
     if (view !== "history" && view !== "proofs") return;
-    let context = get_context();
+    let context = await get_context();
     if (!context) return;
     reset_state(context);
     if (state.active_view === view && !state[`${view}_loading`]) {
@@ -750,12 +809,12 @@
   }
 
   async function sync(force = false) {
-    let context = get_context();
+    let context = await get_context();
     if (!context) {
       document.getElementById(root_id)?.remove();
       return;
     }
-    if (!(await is_roblox_limited(context.asset_id)) || context.asset_id !== get_context()?.asset_id) {
+    if (context.page_key !== get_dom_context()?.page_key) {
       document.getElementById(root_id)?.remove();
       return;
     }
