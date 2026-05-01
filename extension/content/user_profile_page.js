@@ -568,11 +568,15 @@
       await utils.waitForElm(".trades-header-nowrap");
       let paired = [...document.getElementsByClassName("trades-header-nowrap")].at(-1)?.querySelector(".paired-name");
       if (!paired) return;
-      let user_id = parseInt((window.location.pathname.match(/\/users\/(\d+)\/trade/) || [])[1], 10) || null;
-      let existing = paired.querySelector(".user-profile-link")?.parentElement;
+      let container = paired.parentElement || paired;
+      let user_id =
+        parseInt((window.location.pathname.match(/\/users\/(\d+)\/trade/) || [])[1], 10) ||
+        parseInt((String(paired.getAttribute("href") || paired.href || "").match(/\/users\/(\d+)\//) || [])[1], 10) ||
+        null;
+      let existing = container.querySelector(".user-profile-link")?.parentElement;
       let name = "";
       if (!user_id) {
-        name = paired.children?.[2]?.innerText?.trim() || "";
+        name = paired.querySelector(".connector + .element")?.textContent?.trim() || paired.children?.[2]?.innerText?.trim() || "";
         if (!name) return;
         if (existing?.getAttribute("data-nte-profile-name") === name) return;
         user_id = await utils.fetchIDFromName(name);
@@ -580,7 +584,7 @@
       if (!user_id) return;
       let href = `https://www.rolimons.com/player/${user_id}`;
       if (existing?.href === href || existing?.getAttribute("href") === href) return;
-      paired.style.position = "relative";
+      container.style.position = "relative";
 
       let link = document.createElement("a");
       link.href = href;
@@ -620,7 +624,7 @@
 
       link.appendChild(icon);
       remove_existing_link();
-      paired.appendChild(link);
+      paired.insertAdjacentElement("afterend", link);
       utils.initTooltips();
     }
 

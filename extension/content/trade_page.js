@@ -873,11 +873,19 @@
         await n.waitForElm(".trades-header-nowrap");
         let t = [...document.getElementsByClassName("trades-header-nowrap")].at(-1)?.querySelector(".paired-name");
         if (!t) return;
-        let e = parseInt((window.location.pathname.match(/\/users\/(\d+)\/trade/) || [])[1], 10) || null,
-          existing = t.querySelector(".user-profile-link")?.parentElement,
+        let container = t.parentElement || t;
+        let e =
+            parseInt((window.location.pathname.match(/\/users\/(\d+)\/trade/) || [])[1], 10) ||
+            parseInt((String(t.getAttribute("href") || t.href || "").match(/\/users\/(\d+)\//) || [])[1], 10) ||
+            null,
+          existing = container.querySelector(".user-profile-link")?.parentElement,
           username = "";
         if (!e) {
-          username = t.querySelector(".paired-name")?.children?.[2]?.innerText?.trim() || t.children?.[2]?.innerText?.trim() || "";
+          username =
+            t.querySelector(".connector + .element")?.textContent?.trim() ||
+            t.querySelector(".paired-name")?.children?.[2]?.innerText?.trim() ||
+            t.children?.[2]?.innerText?.trim() ||
+            "";
           if (!username) return;
           if (existing?.getAttribute("data-nte-profile-name") === username) return;
           e = await n.fetchIDFromName(username);
@@ -886,9 +894,10 @@
         let href = `https://www.rolimons.com/player/${e}`;
         if (existing?.href === href || existing?.getAttribute("href") === href) return;
         let r = t.innerText.length;
-        t.style.position = "relative";
+        container.style.position = "relative";
         let a = document.createElement("a");
         username && a.setAttribute("data-nte-profile-name", username),
+          (a.className = "nte-profile-rolimons-link"),
           (a.href = href),
           (a.target = "_blank"),
           (a.style.display = "inline-block"),
@@ -918,7 +927,7 @@
           }),
           a.appendChild(o),
           i(),
-          t.appendChild(a);
+          t.insertAdjacentElement("afterend", a);
       }
       function i() {
         document.querySelector(".user-profile-link")?.parentElement.remove();
@@ -982,7 +991,8 @@
           let g = null != l ? n.getRolimonsData().items[l] : null;
           if (g)
             for (let hlist of (e && 1 === g[9] && d(c, "rare"), t && 1 === g[7] && d(c, "projected"), document.getElementsByClassName("hlist")))
-              hlist.style.cssText += ";overflow:visible !important;";
+              (hlist.style.getPropertyValue("overflow") === "visible" && hlist.style.getPropertyPriority("overflow") === "important") ||
+                hlist.style.setProperty("overflow", "visible", "important");
           s(f, c);
         }
         if ("details" === n.getPageType()) {
@@ -1175,7 +1185,7 @@
     if (!(await c.getOption("Add Item Ownership History (UAID) Links")))
       return (function () {
         clear_uaid_link_targets();
-        for (let item_card of document.querySelectorAll(".item-cards")) item_card.style.overflow = "hidden";
+        for (let item_card of document.querySelectorAll(".item-cards")) item_card.style.setProperty("overflow", "hidden");
       })();
     let e = new Set(),
       t = !1;
@@ -1197,7 +1207,9 @@
       (uaid_tooltip_init_timer = setTimeout(() => {
         (uaid_tooltip_init_timer = 0), c.initTooltips();
       }, 0)));
-    for (let item_card of document.querySelectorAll(".item-cards")) item_card.style.overflow = "visible";
+    for (let item_card of document.querySelectorAll(".item-cards"))
+      (item_card.style.getPropertyValue("overflow") === "visible" && item_card.style.getPropertyPriority("overflow") === "important") ||
+        item_card.style.setProperty("overflow", "visible", "important");
   }
   let trade_win_loss_retry_timer = null,
     trade_win_loss_retry_count = 0;
@@ -7277,7 +7289,7 @@
       .nte-history-fallback-row .nte-analyze-trade-btn,
       .nte-poison-fallback-row .nte-analyze-trade-btn,
       .nte-poison-fallback-row .nte-poison-btn{position:relative!important;pointer-events:auto!important;isolation:isolate!important}
-      .nte-history-fallback-row,.nte-poison-fallback-row,.nte-ownership-banner{position:relative!important;isolation:isolate!important}
+      .nte-history-fallback-row,.nte-poison-fallback-row{position:relative!important;isolation:isolate!important}
       .nte-history-panel,.nte-sales-hover-panel,.nte-sales-chart-point-tooltip{pointer-events:auto!important;isolation:isolate!important}
       .nte-history-panel{position:relative!important}
       .item-card-container,.item-card-link,.item-card-thumb-container,.trade-request-item{overflow:visible!important}
@@ -7292,7 +7304,7 @@
       html.nte-trade-ui-fight .nte-history-fallback-row .nte-analyze-trade-btn,
       html.nte-trade-ui-fight .nte-poison-fallback-row .nte-analyze-trade-btn,
       html.nte-trade-ui-fight .nte-poison-fallback-row .nte-poison-btn{z-index:2147483588!important}
-      html.nte-trade-ui-fight .nte-history-fallback-row,html.nte-trade-ui-fight .nte-poison-fallback-row,html.nte-trade-ui-fight .nte-ownership-banner{z-index:2147483586!important}
+      html.nte-trade-ui-fight .nte-history-fallback-row,html.nte-trade-ui-fight .nte-poison-fallback-row{z-index:2147483586!important}
       html.nte-trade-ui-fight .nte-history-panel{z-index:2147483610!important}
       html.nte-trade-ui-fight .nte-sales-hover-panel{z-index:2147483612!important}
       html.nte-trade-ui-fight .nte-sales-chart-point-tooltip{z-index:2147483613!important}
@@ -7308,17 +7320,25 @@
     `;
     document.head.appendChild(style);
   }
+  function set_trade_style(el, property, value, priority = "") {
+    if (!el?.style) return;
+    if (el.style.getPropertyValue(property) === value && el.style.getPropertyPriority(property) === priority) return;
+    el.style.setProperty(property, value, priority);
+  }
+  function remove_trade_style(el, property) {
+    if (!el?.style || !el.style.getPropertyValue(property)) return;
+    el.style.removeProperty(property);
+  }
   function mark_trade_dominant(el, z_index) {
     if (!el?.style) return;
     let position = getComputedStyle(el).position;
-    if (!position || "static" === position) el.style.setProperty("position", "relative", "important");
-    el.style.setProperty("z-index", String(z_index), "important");
-    el.style.setProperty("pointer-events", "auto", "important");
-    el.style.setProperty("isolation", "isolate", "important");
+    if (!position || "static" === position) set_trade_style(el, "position", "relative", "important");
+    set_trade_style(el, "z-index", String(z_index), "important");
+    set_trade_style(el, "pointer-events", "auto", "important");
+    set_trade_style(el, "isolation", "isolate", "important");
   }
   function clear_trade_dominant(el) {
-    if (!el?.style) return;
-    el.style.removeProperty("z-index");
+    remove_trade_style(el, "z-index");
   }
   function is_trade_action_button(el) {
     return !!(el?.matches?.('button[ng-click*="acceptTrade"],button[ng-click*="counterTrade"],button[ng-click*="declineTrade"]') && !el.classList.contains("ng-hide"));
@@ -7360,11 +7380,11 @@
         nte_trade_sales_hover_active_el = null;
         schedule_trade_sales_hover_hide(0);
       }
-      for (let el of document.querySelectorAll(".trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row")) el.style.setProperty("overflow", "visible", "important");
+      for (let el of document.querySelectorAll(".trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row")) set_trade_style(el, "overflow", "visible", "important");
       for (let el of document.querySelectorAll(".item-card-container,.item-card-link,.item-card-thumb-container,.trade-request-item")) {
-        el.style.setProperty("overflow", "visible", "important");
+        set_trade_style(el, "overflow", "visible", "important");
         let position = getComputedStyle(el).position;
-        if (!position || "static" === position) el.style.setProperty("position", "relative", "important");
+        if (!position || "static" === position) set_trade_style(el, "position", "relative", "important");
       }
       for (let el of document.querySelectorAll(".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn")) {
         fight_mode ? mark_trade_dominant(el, 2147483588) : clear_trade_dominant(el);
@@ -7379,7 +7399,7 @@
         let host = el.__nte_sales_source || el.closest(".item-card-link,.item-card-thumb-container,.item-card-container,.trade-request-item");
         host && el.parentElement !== host && host.appendChild(el);
       }
-      for (let el of document.querySelectorAll(".nte-history-fallback-row,.nte-poison-fallback-row,.nte-ownership-banner")) fight_mode ? mark_trade_dominant(el, 2147483586) : clear_trade_dominant(el);
+      for (let el of document.querySelectorAll(".nte-history-fallback-row,.nte-poison-fallback-row")) fight_mode ? mark_trade_dominant(el, 2147483586) : clear_trade_dominant(el);
       for (let el of document.querySelectorAll(".nte-history-panel")) fight_mode ? mark_trade_dominant(el, 2147483610) : clear_trade_dominant(el);
       if (!back_off_thumb_ui && fight_mode) {
         for (let el of document.querySelectorAll(".nte-sales-hover-panel")) mark_trade_dominant(el, 2147483612);
@@ -7424,6 +7444,7 @@
     get_trade_list_filter_anchor() || clear_trade_list_filter_ui();
     (0, u.default)();
     bind_trade_detail_uaid_refresh();
+    if (typeof schedule_ownership_check === "function") schedule_ownership_check();
     await Promise.allSettled([Promise.resolve(m()), S(), p(), C()]);
     w();
     (0, B.default)();
@@ -7460,17 +7481,24 @@
         if ("attributes" === t.type) {
           let node = t.target;
           if (node?.classList?.contains("trade-row") && node.classList.contains("selected")) {
+            reset_ownership_check_state_for_row(node);
+            if (typeof prewarm_ownership_for_row === "function") prewarm_ownership_for_row(node);
+            if (typeof schedule_ownership_check === "function") schedule_ownership_check(0);
             schedule_trade_ui_refresh(0, !0);
             continue;
           }
         }
         if ("childList" !== t.type || !t.addedNodes) continue;
         for (let node of t.addedNodes) {
-          if (node.classList?.contains("trade-item-card")) return schedule_trade_ui_refresh(0, !0);
+          if (node.classList?.contains("trade-item-card")) {
+            if (typeof schedule_ownership_check === "function") schedule_ownership_check(0);
+            return schedule_trade_ui_refresh(0, !0);
+          }
           if (
             node.matches?.(".item-card-container[data-collectibleiteminstanceid], .trade-item-card[data-collectibleiteminstanceid]") ||
             node.querySelector?.(".item-card-container[data-collectibleiteminstanceid], .trade-item-card[data-collectibleiteminstanceid]")
           ) {
+            if (typeof schedule_ownership_check === "function") schedule_ownership_check(0);
             return schedule_trade_ui_refresh(0, !0);
           }
           if (node.classList?.contains("trade-row") || node.querySelector?.(".trade-row")) {
@@ -7489,6 +7517,28 @@
       childList: !0,
       subtree: !0,
     });
+    e.addEventListener(
+      "pointerdown",
+      (event) => {
+        let row = event.target?.closest?.(".trade-row");
+        if (!row || !e.contains(row)) return;
+        reset_ownership_check_state_for_row(row);
+        prewarm_ownership_for_row(row);
+        schedule_ownership_check(0);
+      },
+      true,
+    );
+    e.addEventListener(
+      "click",
+      (event) => {
+        let row = event.target?.closest?.(".trade-row");
+        if (!row || !e.contains(row)) return;
+        reset_ownership_check_state_for_row(row);
+        prewarm_ownership_for_row(row);
+        schedule_ownership_check(0);
+      },
+      true,
+    );
     schedule_trade_ui_refresh(0, !0);
     let _last_observed_tab = get_current_trade_tab();
     function check_tab_switch() {
@@ -7510,7 +7560,7 @@
         } catch {}
         row_fetch_q = [];
         row_active_requests = 0;
-        ownership_last_trade_id = null;
+        reset_ownership_check_state();
         if (current !== "inbound" && current !== "outbound") {
           remove_trade_row_decline_buttons();
           trade_row_decline_prime_started = false;
@@ -7817,7 +7867,7 @@
     nte_ownership_style_injected = true;
     let style = document.createElement("style");
     style.textContent = `
-      .nte-ownership-banner{display:flex;align-items:center;gap:9px;margin:8px 0 10px;padding:9px 12px;border-radius:8px;background:linear-gradient(135deg,rgba(220,38,38,.16),rgba(220,38,38,.06));border:1px solid rgba(248,113,113,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);color:#fca5a5;font-size:12px;font-weight:700;line-height:1.35}
+      .nte-ownership-banner{display:flex;position:relative;z-index:1;isolation:isolate;visibility:visible;opacity:1;align-items:center;gap:9px;margin:8px 0 10px;padding:9px 12px;border-radius:8px;background:linear-gradient(135deg,rgba(220,38,38,.16),rgba(220,38,38,.06));border:1px solid rgba(248,113,113,.35);box-shadow:inset 0 1px 0 rgba(255,255,255,.08);color:#fca5a5;font-size:12px;font-weight:700;line-height:1.35}
       .nte-ownership-banner:before{content:"";width:9px;height:9px;border-radius:99px;background:#ef4444;box-shadow:0 0 0 4px rgba(239,68,68,.18),0 0 12px rgba(239,68,68,.55);flex:0 0 auto}
       .nte-ownership-banner.nte-ownership-unknown{background:linear-gradient(135deg,rgba(245,158,11,.14),rgba(245,158,11,.05));border-color:rgba(245,158,11,.32);color:#fbbf24}
       .nte-ownership-banner.nte-ownership-unknown:before{background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.16),0 0 12px rgba(245,158,11,.42)}
@@ -7828,11 +7878,30 @@
   }
 
   var ownership_cache = {};
+  var ownership_pending = {};
   var ownership_check_timer = 0;
+  var ownership_check_due = 0;
   var ownership_last_trade_id = null;
+  var ownership_run_token = 0;
+  var ownership_selected_row_key = "";
+
+  function reset_ownership_check_state() {
+    ownership_selected_row_key = "";
+    ownership_last_trade_id = null;
+    ownership_run_token += 1;
+  }
+
+  function reset_ownership_check_state_for_row(row) {
+    let row_key = get_ownership_row_key(row);
+    if (row_key && row_key === ownership_selected_row_key) return false;
+    ownership_selected_row_key = row_key;
+    ownership_last_trade_id = null;
+    ownership_run_token += 1;
+    return true;
+  }
 
   function create_owned_item_state() {
-    return { instance_ids: new Set(), target_counts: new Map(), name_counts: new Map() };
+    return { instance_ids: new Set(), target_counts: new Map(), name_counts: new Map(), is_complete: false };
   }
 
   function normalize_ownership_name(name) {
@@ -7865,7 +7934,7 @@
     return !!(state && (state.instance_ids.size || state.target_counts.size || state.name_counts.size));
   }
 
-  async function fetch_inventory_owned_items(user_id) {
+  async function fetch_inventory_owned_items(user_id, wanted_offers = null) {
     let owned = create_owned_item_state();
     let cursor = "";
     for (let page = 0; page < 40; page++) {
@@ -7883,13 +7952,15 @@
       if (json.data) for (let item of json.data) {
         add_owned_item_state(owned, item);
       }
+      if (wanted_ownership_met(owned, wanted_offers)) return owned;
       cursor = json.nextPageCursor;
       if (!cursor) break;
     }
+    owned.is_complete = true;
     return owned;
   }
 
-  async function fetch_tradable_owned_items(user_id) {
+  async function fetch_tradable_owned_items(user_id, wanted_offers = null) {
     let owned = create_owned_item_state();
     let cursor = "";
     for (let page = 0; page < 40; page++) {
@@ -7910,20 +7981,73 @@
           add_owned_item_state(owned, item, inst);
         }
       }
+      if (wanted_ownership_met(owned, wanted_offers)) return owned;
       cursor = json.nextPageCursor || "";
       if (!cursor) break;
     }
+    owned.is_complete = true;
     return owned;
   }
 
-  async function fetch_user_collectible_ids(user_id) {
-    if (ownership_cache[user_id] && ownership_cache[user_id].ts > Date.now() - 120000) {
-      return ownership_cache[user_id].ids;
+  function ownership_wanted_key(wanted_offers) {
+    if (!Array.isArray(wanted_offers) || !wanted_offers.length) return "all";
+    return wanted_offers
+      .map((offer) => `${offer.instance_id || ""}:${offer.target_id || ""}:${offer.name || ""}`)
+      .join("|");
+  }
+
+  async function prewarm_user_ownership(user_id) {
+    let id = String(user_id || "").trim();
+    if (!/^\d+$/.test(id)) return null;
+    let cache = ownership_cache[id];
+    if (cache && cache.ts > Date.now() - 600000 && cache.complete) return cache.ids;
+    let pending_key = `${id}:prewarm`;
+    if (ownership_pending[pending_key]) return ownership_pending[pending_key];
+    ownership_pending[pending_key] = (async () => {
+      let owned = create_owned_item_state();
+      let params = new URLSearchParams({ sortBy: "CreationTime", cursor: "", limit: "100", sortOrder: "Desc" });
+      let resp = await fetch(`https://trades.roblox.com/v2/users/${id}/tradableitems?${params.toString()}`, { credentials: "include" }).catch(() => null);
+      if (!resp?.ok) return null;
+      let json = await resp.json().catch(() => null);
+      if (!json) return null;
+      let page_items = Array.isArray(json?.items) ? json.items : Array.isArray(json?.data) ? json.data : [];
+      for (let item of page_items) {
+        let instances = Array.isArray(item.instances) && item.instances.length ? item.instances : [item];
+        for (let inst of instances) add_owned_item_state(owned, item, inst);
+      }
+      owned.is_complete = !json?.nextPageCursor;
+      if (!has_owned_item_state(owned)) return owned;
+      let merged = cache?.ids || create_owned_item_state();
+      for (let value of owned.instance_ids) merged.instance_ids.add(value);
+      for (let [key, value] of owned.target_counts) merged.target_counts.set(key, Math.max(merged.target_counts.get(key) || 0, value));
+      for (let [key, value] of owned.name_counts) merged.name_counts.set(key, Math.max(merged.name_counts.get(key) || 0, value));
+      merged.is_complete = !!owned.is_complete || !!cache?.complete;
+      ownership_cache[id] = { ids: merged, ts: Date.now(), complete: merged.is_complete };
+      return merged;
+    })().finally(() => {
+      delete ownership_pending[pending_key];
+    });
+    return ownership_pending[pending_key];
+  }
+
+  async function fetch_user_collectible_ids(user_id, wanted_offers = null) {
+    let prewarm_key = `${user_id}:prewarm`;
+    if (ownership_pending[prewarm_key]) await ownership_pending[prewarm_key].catch(() => null);
+    let cache = ownership_cache[user_id];
+    if (cache && cache.ts > Date.now() - 600000) {
+      if (cache.complete || wanted_ownership_met(cache.ids, wanted_offers)) return cache.ids;
     }
-    let owned = await fetch_tradable_owned_items(user_id);
-    if (!has_owned_item_state(owned)) owned = await fetch_inventory_owned_items(user_id);
-    if (owned) ownership_cache[user_id] = { ids: owned, ts: Date.now() };
-    return owned;
+    let pending_key = `${user_id}:${ownership_wanted_key(wanted_offers)}`;
+    if (ownership_pending[pending_key]) return ownership_pending[pending_key];
+    ownership_pending[pending_key] = (async () => {
+      let owned = await fetch_tradable_owned_items(user_id, wanted_offers);
+      if (!has_owned_item_state(owned)) owned = await fetch_inventory_owned_items(user_id, wanted_offers);
+      if (owned) ownership_cache[user_id] = { ids: owned, ts: Date.now(), complete: !!owned.is_complete };
+      return owned;
+    })().finally(() => {
+      delete ownership_pending[pending_key];
+    });
+    return ownership_pending[pending_key];
   }
 
   function get_selected_trade_id_sync(row) {
@@ -7931,9 +8055,26 @@
   }
 
   function get_selected_trade_partner_id(row) {
-    let href = row?.querySelector('a[href*="/users/"]')?.getAttribute("href") || "";
+    let href =
+      row?.querySelector('a[href*="/users/"]')?.getAttribute("href") ||
+      [...document.getElementsByClassName("trades-header-nowrap")].at(-1)?.querySelector(".paired-name")?.getAttribute("href") ||
+      "";
     let match = href.match(/\/users\/(\d+)\//);
     return match ? match[1] : "";
+  }
+
+  function get_ownership_row_key(row) {
+    let trade_id = get_selected_trade_id_sync(row);
+    if (trade_id) return `trade:${trade_id}`;
+    let partner_id = get_selected_trade_partner_id(row);
+    let text = row?.textContent?.replace(/\s+/g, " ").trim().slice(0, 160) || "";
+    return partner_id || text ? `row:${partner_id}:${text}` : "";
+  }
+
+  function prewarm_ownership_for_row(row) {
+    let partner_id = get_selected_trade_partner_id(row);
+    if (!partner_id) return;
+    prewarm_user_ownership(partner_id).catch(() => {});
   }
 
   function get_selected_trade_partner_name(row) {
@@ -8014,29 +8155,39 @@
     return consume_ownership_count(owned.name_counts, offer.name);
   }
 
+  function wanted_ownership_met(owned, wanted_offers) {
+    if (!Array.isArray(wanted_offers) || !wanted_offers.length || !has_owned_item_state(owned)) return false;
+    let remaining_owned = {
+      instance_ids: new Set(owned.instance_ids),
+      target_counts: new Map(owned.target_counts),
+      name_counts: new Map(owned.name_counts),
+    };
+    return wanted_offers.every((offer) => consume_owned_item(remaining_owned, offer));
+  }
+
   function clear_ownership_ui() {
     document.querySelectorAll(".nte-unowned-badge, .nte-ownership-banner").forEach((el) => el.remove());
     document.querySelectorAll(".nte-unowned-card").forEach((el) => el.classList.remove("nte-unowned-card"));
   }
 
   function show_ownership_banner(offer_el, unowned_names) {
+    offer_el.querySelectorAll(".nte-ownership-banner").forEach((el) => el.remove());
     let banner = document.createElement("div");
     banner.className = "nte-ownership-banner";
     banner.textContent = `They no longer own: ${unowned_names.join(", ")}`;
     let header = offer_el.querySelector(".trade-list-detail-offer-header");
     if (header) header.insertAdjacentElement("afterend", banner);
     else offer_el.insertAdjacentElement("afterbegin", banner);
-    assert_trade_page_dominance();
   }
 
   function show_ownership_unknown_banner(offer_el) {
+    offer_el.querySelectorAll(".nte-ownership-banner").forEach((el) => el.remove());
     let banner = document.createElement("div");
     banner.className = "nte-ownership-banner nte-ownership-unknown";
     banner.textContent = "Could not verify current ownership for this user";
     let header = offer_el.querySelector(".trade-list-detail-offer-header");
     if (header) header.insertAdjacentElement("afterend", banner);
     else offer_el.insertAdjacentElement("afterbegin", banner);
-    assert_trade_page_dominance();
   }
 
   async function run_ownership_check() {
@@ -8048,24 +8199,24 @@
     let row = document.querySelector(".trade-row.selected");
     let partner_id = get_selected_trade_partner_id(row);
     let trade_id = get_selected_trade_id_sync(row);
-    if (!trade_id && row) trade_id = await J(row, 30);
     let offer_el = get_partner_offer_element();
     let cards = get_offer_collectible_cards(offer_el);
-    if (!trade_id || !partner_id || !offer_el || !cards.length) return;
+    if (!partner_id || !offer_el || !cards.length) return;
 
     let card_signature = cards.map((card) => card.getAttribute("data-collectibleiteminstanceid") || "").join("|");
-    let check_key = `${trade_id}:${partner_id}:${card_signature}`;
+    let check_key = `${trade_id || "detail"}:${partner_id}:${card_signature}`;
     if (check_key === ownership_last_trade_id) return;
     ownership_last_trade_id = check_key;
+    let run_token = ++ownership_run_token;
 
-    clear_ownership_ui();
-
-    let owned = await fetch_user_collectible_ids(partner_id);
+    let wanted_offers = cards.map((card) => get_offer_card_ownership_data(card));
+    let owned = await fetch_user_collectible_ids(partner_id, wanted_offers);
+    if (run_token !== ownership_run_token || ownership_last_trade_id !== check_key) return;
     if (!has_owned_item_state(owned)) {
+      clear_ownership_ui();
       show_ownership_unknown_banner(offer_el);
       return;
     }
-    if (ownership_last_trade_id !== check_key) return;
 
     let unowned_names = [];
     let remaining_owned = {
@@ -8073,21 +8224,26 @@
       target_counts: new Map(owned.target_counts),
       name_counts: new Map(owned.name_counts),
     };
-    for (let card of cards) {
-      let offer_data = get_offer_card_ownership_data(card);
+    for (let offer_data of wanted_offers) {
       if (!consume_owned_item(remaining_owned, offer_data)) {
         unowned_names.push(offer_data.display_name);
       }
     }
 
+    clear_ownership_ui();
     if (unowned_names.length > 0) show_ownership_banner(offer_el, unowned_names);
   }
 
-  function schedule_ownership_check() {
+  function schedule_ownership_check(delay = 120) {
+    let due = Date.now() + Math.max(0, Number(delay) || 0);
+    if (ownership_check_timer && due >= ownership_check_due) return;
     clearTimeout(ownership_check_timer);
+    ownership_check_due = due;
     ownership_check_timer = setTimeout(() => {
+      ownership_check_timer = 0;
+      ownership_check_due = 0;
       run_ownership_check().catch(() => {});
-    }, 500);
+    }, Math.max(0, due - Date.now()));
   }
 
 
