@@ -31,6 +31,11 @@
       "run_at": "document_start"
     },
     {
+      "js": ["shared/browser_compat.js", "content/trade_page_themes.js"],
+      "matches": ["https://*.roblox.com/trades*", "https://*.roblox.com/*/trades*"],
+      "run_at": "document_start"
+    },
+    {
       "js": ["scripts/trade_list_request_patch.js"],
       "matches": ["https://*.roblox.com/trades*", "https://*.roblox.com/*/trades*"],
       "run_at": "document_start",
@@ -105,7 +110,7 @@
   },
   "permissions": ["storage", "alarms", "notifications"],
   "short_name": "Nevos Trade",
-  "version": "3.10.31",
+  "version": "3.10.32",
   "web_accessible_resources": [
     {
       "matches": ["https://*.roblox.com/*"],
