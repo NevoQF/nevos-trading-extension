@@ -6,7 +6,6 @@
   const cache_key_prefix = "nte_username_lookup:";
   const hit_ttl_ms = 6 * 60 * 60 * 1000;
   const miss_ttl_ms = 5 * 60 * 1000;
-  const pending_ttl_ms = 60 * 1000;
   const memory_cache = new Map();
   const pending_fetches = new Map();
 
@@ -62,7 +61,6 @@
   }
 
   async function guarded_lookup(input, init, key) {
-    write_cache(key, { data: [] }, pending_ttl_ms);
     try {
       let response = await native_fetch(input, init);
       if (!response.ok) return write_cache(key, { data: [] }, miss_ttl_ms);

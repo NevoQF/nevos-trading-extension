@@ -3,6 +3,7 @@
   let sync_timer = 0;
   let last_url = location.href;
   let styles_injected = false;
+  let item_check_cache = {};
   let state = {
     asset_id: "",
     active_view: "",
@@ -94,6 +95,23 @@
     let link = document.querySelector(".text-label a.text-name");
     if (!link) return false;
     return clean_name(link.textContent) === "roblox" && /\/users\/1(?:\/|$)/i.test(String(link.getAttribute("href") || ""));
+  }
+
+  async function is_roblox_limited(asset_id) {
+    let id = String(asset_id || "").trim();
+    if (!/^\d+$/.test(id)) return false;
+    if (id in item_check_cache) return item_check_cache[id];
+    item_check_cache[id] = false;
+    try {
+      let response = await fetch(`https://economy.roblox.com/v2/assets/${id}/details`, { credentials: "include" });
+      if (!response.ok) return false;
+      let item = await response.json();
+      let creator_id = Number(item?.Creator?.Id || item?.creator?.id || 0);
+      item_check_cache[id] = creator_id === 1 && !!(item?.IsLimited || item?.IsLimitedUnique);
+    } catch {
+      item_check_cache[id] = false;
+    }
+    return item_check_cache[id];
   }
 
   function get_context() {
@@ -731,9 +749,13 @@
     document.head.appendChild(style);
   }
 
-  function sync(force = false) {
+  async function sync(force = false) {
     let context = get_context();
     if (!context) {
+      document.getElementById(root_id)?.remove();
+      return;
+    }
+    if (!(await is_roblox_limited(context.asset_id)) || context.asset_id !== get_context()?.asset_id) {
       document.getElementById(root_id)?.remove();
       return;
     }
