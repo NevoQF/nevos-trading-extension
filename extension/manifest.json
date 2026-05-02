@@ -67,6 +67,11 @@
       "js": ["shared/browser_compat.js", "content/roblox_totp_autofill.js"],
       "matches": ["https://*.roblox.com/*", "https://roblox.com/*"],
       "run_at": "document_idle"
+    },
+    {
+      "js": ["shared/browser_compat.js", "content/navbar_quick_search.js"],
+      "matches": ["https://*.roblox.com/*", "https://roblox.com/*"],
+      "run_at": "document_idle"
     }
   ],
   "description": "Free trading extension for Roblox traders.",
@@ -97,7 +102,7 @@
   },
   "permissions": ["storage", "alarms", "notifications"],
   "short_name": "Nevos Trade",
-  "version": "3.10.32",
+  "version": "3.10.33",
   "web_accessible_resources": [
     {
       "matches": ["https://*.roblox.com/*"],
