@@ -1313,7 +1313,8 @@
       .nte-thumb-tag{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:4px 8px;border-radius:999px;background:rgba(16,18,22,.82);color:#f5f6f8;border:1px solid rgba(255,255,255,.12);box-shadow:0 4px 16px rgba(0,0,0,.35)}
       .nte-thumb-tag svg{width:11px;height:11px;display:block;flex:0 0 auto}
       .nte-thumb-tag.proj{top:7px;left:7px;background:linear-gradient(180deg,rgba(89,63,30,.96),rgba(45,31,16,.92));color:#ffe3ad;border-color:rgba(255,203,124,.25);box-shadow:0 6px 18px rgba(83,52,16,.28)}
-      .nte-thumb-tag.rare{bottom:7px;left:7px;width:24px;height:24px;padding:0;border-radius:999px;background:linear-gradient(180deg,rgba(255,255,255,.97),rgba(206,211,218,.93));color:#16181b;border-color:rgba(255,255,255,.45);box-shadow:0 8px 18px rgba(0,0,0,.2)}
+      .nte-thumb-tag.rare{top:7px;left:7px;width:24px;height:24px;padding:0;border:0;background:transparent;color:inherit;box-shadow:none;font-size:19px;text-shadow:0 2px 8px rgba(0,0,0,.65)}
+      .nte-thumb-tag.rare+.nte-thumb-tag.proj{left:34px}
       .nte-thumb-tag.serial{right:7px;bottom:7px;padding:4px 8px;font-variant-numeric:tabular-nums;font-size:9.5px;letter-spacing:0;text-transform:none;color:#eceef2;background:rgba(16,18,22,.88);border-color:rgba(255,255,255,.1)}
       .nte-thumb-tag.serial .nte-inv-serial{color:inherit!important}
       .nte-item-card.is-rare{border-color:rgba(255,255,255,.16);box-shadow:0 0 0 1px rgba(255,255,255,.05),inset 0 1px 0 rgba(255,255,255,.03),0 10px 22px rgba(0,0,0,.24)}
@@ -1381,7 +1382,7 @@
       .light-theme .nte-item-val .r{color:#4b5563}
       .light-theme .nte-thumb-tag{background:rgba(255,255,255,.92);color:#171a1f;border-color:rgba(17,24,39,.1);box-shadow:0 4px 14px rgba(34,55,99,.08)}
       .light-theme .nte-thumb-tag.proj{background:linear-gradient(180deg,rgba(255,245,223,.98),rgba(255,236,193,.95));color:#7d5417;border-color:rgba(220,173,92,.22)}
-      .light-theme .nte-thumb-tag.rare{background:linear-gradient(180deg,#ffffff,#e7eaee);color:#16181c;border-color:rgba(17,24,39,.12)}
+      .light-theme .nte-thumb-tag.rare{background:transparent;color:inherit;border-color:transparent;box-shadow:none;text-shadow:0 2px 7px rgba(34,55,99,.18)}
       .light-theme .nte-thumb-tag.serial{background:rgba(255,255,255,.95);color:#171a1f;border-color:rgba(17,24,39,.1)}
       .light-theme .nte-item-footer{color:#171a1f}
       .light-theme .nte-item-demand{background:rgba(255,255,255,.96);border-color:rgba(17,24,39,.08);box-shadow:0 1px 2px rgba(15,23,42,.04);color:#171a1f}
@@ -1758,7 +1759,7 @@
               : "";
             var proj_tag = item.proj ? '<div class="nte-thumb-tag proj">Projected</div>' : "";
             var rare_tag = item.rare
-              ? '<div class="nte-thumb-tag rare" aria-label="Rare"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 14 8 8 14 2 8 8 2Z" fill="currentColor"></path></svg></div>'
+              ? '<div class="nte-thumb-tag rare" aria-label="Rare"><span aria-hidden="true">&#128142;</span></div>'
               : "";
             var card_class =
               "nte-item-card" + (item.rare ? " is-rare" : "") + (item.proj ? " is-proj" : "");
@@ -1780,8 +1781,8 @@
               '<div class="nte-item-thumb">' +
               (thumb ? '<img src="' + thumb + '" loading="lazy" alt="' + safe_name + '">' : "") +
               count_badge +
-              proj_tag +
               rare_tag +
+              proj_tag +
               serial_tag +
               "</div>" +
               '<div class="nte-item-name">' +

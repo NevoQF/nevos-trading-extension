@@ -1024,6 +1024,7 @@
           (t.style.alignItems = "center"),
           (t.style.gap = "2px"),
           (t.style.position = "absolute"),
+          (t.style.pointerEvents = "none"),
           (t.style.top = "2px"),
           ("left" === r ? (t.style.left = "2px") : (t.style.right = "2px")),
           (t.style.zIndex = "8"),
@@ -1031,13 +1032,9 @@
           (t.className = "flagBox"),
           e.appendChild(t);
       }
-      let l = {
-        rare: "This item is rare.",
-        projected: "This item is projected.",
-      };
       function d(e, t) {
         let r = document.createElement("div");
-        (r.style.display = "inline-flex"), (r.style.alignItems = "center"), (r.style.cursor = "help"), (r.className = `${t}-flag`);
+        (r.style.display = "inline-flex"), (r.style.alignItems = "center"), (r.className = `${t}-flag`);
         let a = document.createElement("img");
         (a.src = o[t]),
           (a.style.height = "27px"),
@@ -1045,8 +1042,7 @@
           (a.style.display = "block"),
           (a.style.padding = "0px"),
           r.appendChild(a),
-          e.appendChild(r),
-          n.addTooltip(e.querySelector(`.${t}-flag`), l[t]);
+          e.appendChild(r);
       }
       var c = a;
     });
