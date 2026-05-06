@@ -3316,6 +3316,28 @@ body.is-tradeads-tab .popup {
   border-color: var(--accent);
 }
 
+.nte-theme-rgb-toggle {
+  appearance: none;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: border-color var(--transition), color var(--transition), background var(--transition);
+}
+
+.nte-theme-rgb-toggle:hover,
+.nte-theme-rgb-toggle.is-active {
+  border-color: var(--accent);
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
 .nte-theme-color-picker {
   display: grid;
   gap: 9px;
@@ -3392,7 +3414,7 @@ body.is-tradeads-tab .popup {
   cursor: pointer;
 }
 
-.nte-theme-picker-slider.is-hue input[type="range"] {
+.nte-theme-picker-slider.is-red input[type="range"] {
   accent-color: var(--accent);
 }
 

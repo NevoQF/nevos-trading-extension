@@ -34,7 +34,7 @@ const chevron_svg =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 
 const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]'
+  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]'
 );
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -247,40 +247,6 @@ function get_color_luma(hex) {
     return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function hex_to_hsl(hex) {
-  let [r, g, b] = hex_to_rgb_tuple(hex).map((part) => part / 255);
-  let max = Math.max(r, g, b);
-  let min = Math.min(r, g, b);
-  let lightness = (max + min) / 2;
-  if (max === min) return { h: 0, s: 0, l: Math.round(lightness * 100) };
-  let delta = max - min;
-  let saturation = delta / (1 - Math.abs(2 * lightness - 1));
-  let hue = 0;
-  if (max === r) hue = ((g - b) / delta) % 6;
-  else if (max === g) hue = (b - r) / delta + 2;
-  else hue = (r - g) / delta + 4;
-  hue = Math.round(hue * 60);
-  if (hue < 0) hue += 360;
-  return { h: hue, s: Math.round(saturation * 100), l: Math.round(lightness * 100) };
-}
-
-function hsl_to_hex(hue, saturation, lightness) {
-  let h = (((Number(hue) || 0) % 360) + 360) % 360;
-  let s = Math.max(0, Math.min(100, Number(saturation) || 0)) / 100;
-  let l = Math.max(0, Math.min(100, Number(lightness) || 0)) / 100;
-  let c = (1 - Math.abs(2 * l - 1)) * s;
-  let x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  let m = l - c / 2;
-  let rgb = [0, 0, 0];
-  if (h < 60) rgb = [c, x, 0];
-  else if (h < 120) rgb = [x, c, 0];
-  else if (h < 180) rgb = [0, c, x];
-  else if (h < 240) rgb = [0, x, c];
-  else if (h < 300) rgb = [x, 0, c];
-  else rgb = [c, 0, x];
-  return rgb_tuple_to_hex(rgb.map((part) => (part + m) * 255));
 }
 
 function build_trade_page_theme(source) {
@@ -679,20 +645,6 @@ function open_extension_popup(path = "popup/popup.html") {
   }
 }
 
-function get_current_extension_tab() {
-  return new Promise((resolve) => {
-    try {
-      if (!chrome.tabs?.getCurrent) {
-        resolve(null);
-        return;
-      }
-      chrome.tabs.getCurrent((tab) => resolve(tab || null));
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
 function get_theme_upload_target_tab_id() {
   return new Promise((resolve) => {
     try {
@@ -882,30 +834,6 @@ function sync_mobile_popup_class() {
   const mobile = is_mobile_browser();
   document.documentElement.classList.toggle("is-mobile-browser", mobile);
   document.body.classList.toggle("is-mobile-browser", mobile);
-}
-
-function format_number(value) {
-  return Number(value || 0).toLocaleString();
-}
-
-function format_relative_time(timestamp_ms) {
-  if (!timestamp_ms) return "Never";
-
-  let diff = Date.now() - Number(timestamp_ms);
-  if (diff < 0) diff = 0;
-
-  let seconds = Math.floor(diff / 1000);
-  if (seconds < 10) return "Just now";
-  if (seconds < 60) return `${seconds}s ago`;
-
-  let minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-
-  let hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-
-  let days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }
 
 async function maybe_request_notifications() {
@@ -1722,6 +1650,7 @@ function append_trade_page_theme_card(container, snapshot = {}) {
                 <div class="nte-theme-color-controls">
                   <button type="button" class="nte-theme-swatch" data-theme-picker="${escape_html(key)}" aria-label="Pick ${escape_html(label)} color"><i></i></button>
                   <input type="text" class="nte-theme-hex" data-theme-hex="${escape_html(key)}" maxlength="7" spellcheck="false" />
+                  <button type="button" class="nte-theme-rgb-toggle" data-theme-picker="${escape_html(key)}" aria-label="Show ${escape_html(label)} RGB sliders">RGB</button>
                 </div>
               </label>
             `,
@@ -1734,17 +1663,17 @@ function append_trade_page_theme_card(container, snapshot = {}) {
           <button type="button" id="nte-theme-color-picker-close" aria-label="Close color picker">x</button>
         </div>
         <div class="nte-theme-color-sample" id="nte-theme-color-sample"></div>
-        <label class="nte-theme-picker-slider is-hue">
-          <span>Hue <b data-picker-value="h">0</b></span>
-          <input type="range" min="0" max="360" step="1" data-picker-slider="h" />
+        <label class="nte-theme-picker-slider is-red">
+          <span>Red <b data-picker-value="r">0</b></span>
+          <input type="range" min="0" max="255" step="1" data-picker-slider="r" />
         </label>
         <label class="nte-theme-picker-slider">
-          <span>Saturation <b data-picker-value="s">0%</b></span>
-          <input type="range" min="0" max="100" step="1" data-picker-slider="s" />
+          <span>Green <b data-picker-value="g">0</b></span>
+          <input type="range" min="0" max="255" step="1" data-picker-slider="g" />
         </label>
         <label class="nte-theme-picker-slider">
-          <span>Lightness <b data-picker-value="l">0%</b></span>
-          <input type="range" min="0" max="100" step="1" data-picker-slider="l" />
+          <span>Blue <b data-picker-value="b">0</b></span>
+          <input type="range" min="0" max="255" step="1" data-picker-slider="b" />
         </label>
       </div>
       <label class="nte-theme-slider" id="nte-theme-image-overlay-wrap" hidden>
@@ -1783,7 +1712,7 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   const image_overlay_wrap = card.querySelector("#nte-theme-image-overlay-wrap");
   const image_overlay_input = card.querySelector("#nte-theme-image-overlay");
   const image_overlay_value = card.querySelector("#nte-theme-image-overlay-value");
-  const swatch_buttons = [...card.querySelectorAll("[data-theme-picker]")];
+  const picker_buttons = [...card.querySelectorAll("[data-theme-picker]")];
   const color_picker = card.querySelector("#nte-theme-color-picker");
   const color_picker_title = card.querySelector("#nte-theme-color-picker-title");
   const color_picker_close = card.querySelector("#nte-theme-color-picker-close");
@@ -1854,26 +1783,26 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     return field ? field[1] : "Color";
   }
 
-  function get_picker_hsl() {
+  function get_picker_rgb() {
     let parts = {};
     for (let input of picker_sliders) parts[input.getAttribute("data-picker-slider")] = Number(input.value) || 0;
-    return parts;
+    return [parts.r || 0, parts.g || 0, parts.b || 0];
   }
 
   function sync_color_picker() {
     if (!active_color_key) return;
     let color = theme[active_color_key] || theme.background;
-    let hsl = hex_to_hsl(color);
+    let rgb = hex_to_rgb_tuple(color);
     color_picker_title.textContent = `${get_color_label(active_color_key)} color`;
     color_sample.style.background = color;
     color_picker.style.setProperty("--picker-color", color);
     for (let input of picker_sliders) {
       let key = input.getAttribute("data-picker-slider");
-      input.value = String(hsl[key]);
+      input.value = String(rgb[{ r: 0, g: 1, b: 2 }[key]]);
     }
     for (let value of picker_values) {
       let key = value.getAttribute("data-picker-value");
-      value.textContent = key === "h" ? String(hsl[key]) : `${hsl[key]}%`;
+      value.textContent = String(rgb[{ r: 0, g: 1, b: 2 }[key]]);
     }
   }
 
@@ -1891,8 +1820,7 @@ function append_trade_page_theme_card(container, snapshot = {}) {
 
   function commit_picker_color(instant = false) {
     if (!active_color_key) return;
-    let hsl = get_picker_hsl();
-    update_theme_color(active_color_key, hsl_to_hex(hsl.h, hsl.s, hsl.l));
+    update_theme_color(active_color_key, rgb_tuple_to_hex(get_picker_rgb()));
     if (instant) {
       clearTimeout(save_timer);
       save_theme(theme, enabled_el.checked, "");
@@ -1906,7 +1834,7 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     enabled_el.checked = enabled;
     expanded_el.hidden = !enabled && !force_theme_upload_page;
     card.classList.toggle("is-enabled", enabled || force_theme_upload_page);
-    for (let button of swatch_buttons) {
+    for (let button of picker_buttons) {
       let key = button.getAttribute("data-theme-picker");
       button.style.setProperty("--picked", theme[key]);
       button.classList.toggle("is-active", key === active_color_key && !color_picker.hidden);
@@ -1971,7 +1899,7 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     save_theme(theme, enabled_el.checked, "");
   });
 
-  for (let button of swatch_buttons) {
+  for (let button of picker_buttons) {
     button.addEventListener("click", () => open_color_picker(button.getAttribute("data-theme-picker")));
   }
 

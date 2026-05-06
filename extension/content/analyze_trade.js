@@ -58,14 +58,6 @@
         .nte-analyze-trade-verdict-text{flex:1;min-width:0;font-size:18px;font-weight:700;letter-spacing:-.015em;line-height:1.42;color:#f3f4f6}
         .light-theme .nte-analyze-trade-verdict-text{color:#0f172a}
         .nte-analyze-trade-verdict-text strong{font-weight:800;color:inherit}
-        .nte-analyze-trade-verdict-edge{flex:0 0 auto;font-size:30px;font-weight:800;letter-spacing:-.05em;line-height:1;color:#e5e7eb;font-variant-numeric:tabular-nums;padding-left:20px;border-left:1px solid rgba(255,255,255,.08)}
-        .light-theme .nte-analyze-trade-verdict-edge{color:#0f172a;border-left-color:rgba(15,23,42,.08)}
-        .nte-analyze-trade-verdict.is-good .nte-analyze-trade-verdict-edge{color:#34d399}
-        .nte-analyze-trade-verdict.is-bad .nte-analyze-trade-verdict-edge{color:#f87171}
-        .nte-analyze-trade-verdict.is-warn .nte-analyze-trade-verdict-edge{color:#fbbf24}
-        .light-theme .nte-analyze-trade-verdict.is-good .nte-analyze-trade-verdict-edge{color:#059669}
-        .light-theme .nte-analyze-trade-verdict.is-bad .nte-analyze-trade-verdict-edge{color:#dc2626}
-        .light-theme .nte-analyze-trade-verdict.is-warn .nte-analyze-trade-verdict-edge{color:#d97706}
         .nte-analyze-trade-reasons{padding:20px 22px;border-radius:15px;background:#222632;border:1px solid rgba(255,255,255,.06)}
         .light-theme .nte-analyze-trade-reasons{background:#f8fafc;border-color:rgba(15,23,42,.07)}
         .nte-analyze-trade-reasons-title{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.12em;color:#6b7280;margin-bottom:14px}
@@ -140,8 +132,6 @@
           .nte-analyze-trade-verdict-icon{width:34px;height:34px}
           .nte-analyze-trade-verdict-icon svg{width:18px;height:18px}
           .nte-analyze-trade-verdict-text{font-size:15px;line-height:1.38}
-          .nte-analyze-trade-verdict-edge{grid-column:2;font-size:22px;padding:8px 0 0;border-left:0;border-top:1px solid rgba(255,255,255,.08)}
-          .light-theme .nte-analyze-trade-verdict-edge{border-top-color:rgba(15,23,42,.08)}
           .nte-analyze-trade-reasons{padding:14px;border-radius:14px}
           .nte-analyze-trade-reasons-title{margin-bottom:10px;font-size:10px;letter-spacing:.08em}
           .nte-analyze-trade-reason-list{gap:9px}
@@ -216,13 +206,6 @@
       let number = Number(value);
       if (!Number.isFinite(number)) return "N/A";
       return Math.round(number).toLocaleString();
-    }
-
-    function format_signed(value) {
-      let number = Number(value);
-      if (!Number.isFinite(number)) return "N/A";
-      let rounded = Math.round(number);
-      return `${rounded > 0 ? "+" : ""}${rounded.toLocaleString()}`;
     }
 
     function format_value(value) {
@@ -325,15 +308,50 @@
       }
     }
 
-    function get_tone(verdict, label) {
-      let label_text = String(label || "").toLowerCase();
-      if (verdict?.ok === false || /not|bad|loss|lose|decline|reject|down|red/.test(label_text)) return "is-bad";
-      if (verdict?.ok === true || /worth|good|win|take|accept|up|green/.test(label_text)) return "is-good";
+    function text_value(value) {
+      return String(value ?? "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+    }
+
+    function verdict_texts(result, verdict) {
+      return [
+        verdict?.tone,
+        verdict?.status,
+        verdict?.label,
+        verdict?.action,
+        verdict?.decision,
+        verdict?.recommendation,
+        verdict?.message,
+        verdict?.summary,
+        verdict?.advice,
+        result?.tone,
+        result?.status,
+        result?.label,
+        result?.action,
+        result?.decision,
+        result?.recommendation,
+        result?.message,
+        result?.summary,
+        result?.advice,
+      ]
+        .map(text_value)
+        .filter(Boolean);
+    }
+
+    function get_tone(result, verdict) {
+      let texts = verdict_texts(result, verdict);
+      let combined = texts.join(" ").toLowerCase();
+      if (/\b(equal|even|neutral|fair|balanced|break ?even|roughly even)\b/.test(combined)) return "is-warn";
+      if (verdict?.ok === true || verdict?.take === true || verdict?.accept === true) return "is-good";
+      if (verdict?.ok === false || verdict?.take === false || verdict?.accept === false) return "is-bad";
+      if (/\b(do not take|don't take|avoid|decline|reject|bad|loss|lose|losing|negative|underpay|lowball|not worth)\b/.test(combined)) return "is-bad";
+      if (/\b(take|accept|good|profit|win|winning|positive|worth|favorable|recommended|green)\b/.test(combined)) return "is-good";
       return "is-warn";
     }
 
-    function get_verdict_message(tone) {
+    function get_verdict_message(result, verdict, tone) {
       if (tone === "is-bad") return "It is advised you do not take this trade.";
+      let message = verdict_texts(result, verdict).find((text) => /\s/.test(text) && !/^(good|bad|warn|warning|neutral|equal|even|take|accept|decline|reject)$/i.test(text));
+      if (message) return message;
       if (tone === "is-good") return "This trade looks like a good deal for you.";
       return "This trade is roughly even — your call.";
     }
@@ -504,10 +522,8 @@
       let result = response?.result || response?.data || {};
       let verdict = result?.verdict || {};
       let trade = result?.trade || {};
-      let label = verdict?.label || "";
-      let tone = get_tone(verdict, label);
-      let effective_edge = verdict?.effective_edge ?? result?.effective_edge ?? trade?.effective_edge;
-      let message = get_verdict_message(tone);
+      let tone = get_tone(result, verdict);
+      let message = get_verdict_message(result, verdict, tone);
       let icon = get_verdict_icon(tone);
       let reasons = get_reasons(result, verdict);
       panel.className = "nte-analyze-trade-window nte-analyze-trade-panel";
@@ -517,7 +533,6 @@
           <div class="nte-analyze-trade-verdict ${tone}">
             <div class="nte-analyze-trade-verdict-icon">${icon}</div>
             <div class="nte-analyze-trade-verdict-text">${render_verdict_message(message, tone)}</div>
-            ${effective_edge !== null && effective_edge !== undefined ? `<div class="nte-analyze-trade-verdict-edge">${esc(format_signed(effective_edge))}</div>` : ""}
           </div>
           ${render_reasons(reasons, tone)}
           <div class="nte-analyze-trade-sides">

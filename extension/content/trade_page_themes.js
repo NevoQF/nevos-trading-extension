@@ -821,6 +821,13 @@
         box-shadow: none !important;
       }
 
+      html.nte-trade-page-theme .item-card-thumb-container,
+      html.nte-trade-page-theme .thumbnail-2d-container,
+      html.nte-trade-page-theme thumbnail-2d {
+        background-color: rgba(0, 0, 0, 0.10) !important;
+        border-radius: 4px !important;
+      }
+
       html.nte-trade-page-theme .trade-item-card:hover,
       html.nte-trade-page-theme .item-cards .list-item:hover,
       html.nte-trade-page-theme .item-card-container:hover,
@@ -829,6 +836,12 @@
         background: transparent !important;
         background-color: transparent !important;
         background-image: none !important;
+      }
+
+      html.nte-trade-page-theme .item-card-thumb-container:hover,
+      html.nte-trade-page-theme .thumbnail-2d-container:hover,
+      html.nte-trade-page-theme thumbnail-2d:hover {
+        background-color: rgba(0, 0, 0, 0.10) !important;
       }
 
       html.nte-trade-page-theme .text-label,
@@ -865,7 +878,6 @@
         box-shadow: 0 0 0 2px var(--nte-trade-accent-soft) !important;
       }
 
-      html.nte-trade-page-theme .trades-container .btn-cta-md,
       html.nte-trade-page-theme .trades-container .btn-primary-md,
       html.nte-trade-page-theme .trades-container .btn-primary-sm,
       html.nte-trade-page-theme .trades-container .nte-analyze-trade-btn {

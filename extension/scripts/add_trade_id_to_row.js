@@ -11,6 +11,52 @@ function resolve_trade_from_row(row) {
   return scope?.trade || scope?.$parent?.trade || scope?.$parent?.$parent?.trade || null;
 }
 
+function parse_trade_time_value(value) {
+  if (null == value || "" === value) return 0;
+  let numeric = "number" == typeof value || ("string" == typeof value && /^\d+(\.\d+)?$/.test(value.trim()));
+  let time = numeric ? Number(value) : new Date(value).getTime();
+  if (numeric && time > 0 && time < 10000000000) time *= 1000;
+  return Number.isFinite(time) && time > 0 ? time : 0;
+}
+
+function get_trade_time_from_object(trade) {
+  if (!trade || "object" != typeof trade) return 0;
+  let keys = [
+    "completed",
+    "completedAt",
+    "completedTime",
+    "completedUtc",
+    "completedDate",
+    "completedOn",
+    "updated",
+    "updatedAt",
+    "updatedTime",
+    "updatedUtc",
+    "modified",
+    "modifiedAt",
+    "created",
+    "createdAt",
+    "createdTime",
+    "createdUtc",
+    "createdDate",
+    "createdOn",
+    "date",
+    "dateCreated",
+    "timestamp",
+    "tradeStatusDate",
+  ];
+  for (let key of keys) {
+    let time = parse_trade_time_value(trade[key]);
+    if (time > 0) return time;
+  }
+  return 0;
+}
+
+function assign_trade_row_meta(row, trade) {
+  let time = get_trade_time_from_object(trade);
+  if (time > 0) row.setAttribute("data-nte-trade-time", String(time));
+}
+
 document.addEventListener("nru_add_trade_id_to_row", (event) => {
   let raw = event.detail;
   let detail = raw;
@@ -40,6 +86,7 @@ document.addEventListener("nru_add_trade_id_to_row", (event) => {
 
     if (trade?.id) {
       row.setAttribute("nruTradeId", String(trade.id));
+      assign_trade_row_meta(row, trade);
       row.removeAttribute("data-nru-row-token");
       return;
     }

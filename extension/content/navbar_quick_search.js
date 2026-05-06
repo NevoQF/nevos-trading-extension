@@ -159,7 +159,7 @@
     const icon = document.createElement("span");
     icon.className = `navbar-list-option-icon ${item_class}-icon`;
     icon.style.cssText =
-      "display:inline-block;width:48px;height:48px;margin-right:10px;background-size:contain;background-position:center;background-repeat:no-repeat;background-color:transparent;vertical-align:middle;flex:0 0 auto;opacity:1!important;filter:none!important;";
+      "display:inline-block;width:48px;height:48px;margin-right:10px;background-size:contain;background-position:center;background-repeat:no-repeat;background-color:rgba(0,0,0,0.12);border-radius:4px;vertical-align:middle;flex:0 0 auto;opacity:1!important;filter:none!important;";
     const thumb = thumb_cache[entry.id];
     if (thumb && thumb !== "in-review" && thumb !== "blocked") {
       icon.style.setProperty("background-image", `url("${thumb}")`, "important");

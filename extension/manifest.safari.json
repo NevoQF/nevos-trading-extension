@@ -23,7 +23,7 @@
       "run_at": "document_start"
     },
     {
-      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_icons.js", "content/analyze_trade.js", "content/trade_page.js"],
+      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_history_proof_styles.js", "shared/nte_icons.js", "content/analyze_trade.js", "content/trade_page.js"],
       "matches": [
         "https://*.roblox.com/trades*",
         "https://*.roblox.com/*/trades*",
@@ -33,7 +33,7 @@
       "run_at": "document_idle"
     },
     {
-      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_icons.js", "content/catalog_page.js", "content/catalog_item_intel.js"],
+      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_history_proof_styles.js", "shared/nte_icons.js", "content/catalog_page.js", "content/catalog_item_intel.js"],
       "matches": [
         "https://*.roblox.com/catalog/*",
         "https://*.roblox.com/*/catalog/*",
@@ -94,9 +94,9 @@
     "open_in_tab": true,
     "page": "popup/popup.html"
   },
-  "permissions": ["storage", "alarms", "notifications"],
+  "permissions": ["storage", "alarms", "notifications", "activeTab"],
   "short_name": "Nevos Trade",
-  "version": "3.10.33",
+  "version": "3.10.34",
   "web_accessible_resources": [
     {
       "matches": ["https://*.roblox.com/*"],

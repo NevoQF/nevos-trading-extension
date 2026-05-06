@@ -17,11 +17,6 @@
     }
   }
 
-
-  function es_default(mod) {
-    return mod && mod.__esModule ? mod.default : mod;
-  }
-
   function define_export(obj, key, getter, setter) {
     Object.defineProperty(obj, key, {
       get: getter,
@@ -1555,12 +1550,8 @@
         let val = 0;
         let rap = 0;
 
-        try {
-          val = utils.getValueOrRAP(item.assetId, item.name, item.recentAveragePrice);
-        } catch (e) {}
-        try {
-          rap = item.recentAveragePrice || utils.getRAP(item.assetId, item.name, item.recentAveragePrice);
-        } catch (e) {}
+        val = utils.getValueOrRAP(item.assetId, item.name, item.recentAveragePrice);
+        rap = item.recentAveragePrice || utils.getRAP(item.assetId, item.name, item.recentAveragePrice);
 
         if (seen[item.assetId]) {
           seen[item.assetId].count++;

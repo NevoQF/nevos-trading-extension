@@ -3,7 +3,7 @@ if ("undefined" === typeof globalThis.chrome && "undefined" !== typeof globalThi
 }
 
 const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]'
+  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]'
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
 const show_routility_usd_values_option_name = "Show Routility USD Values";
@@ -205,9 +205,10 @@ function set_local_values(values) {
 }
 
 function parse_trade_cache_time(value) {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (!value) return 0;
-  let time = new Date(value).getTime();
+  if (value === undefined || value === null || value === "") return 0;
+  let numeric = typeof value === "number" || (typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim()));
+  let time = numeric ? Number(value) : new Date(value).getTime();
+  if (numeric && time > 0 && time < 10000000000) time *= 1000;
   return Number.isFinite(time) ? time : 0;
 }
 
@@ -295,10 +296,12 @@ function cache_trade_detail(cached_trades, trade_id, trade, now = Date.now()) {
     return false;
   }
 
+  let previous_trade = cached_trades[normalized_trade_id];
+  let merged_trade = previous_trade && typeof previous_trade === "object" ? { ...previous_trade, ...trade } : trade;
   cached_trades[normalized_trade_id] = normalize_cached_trade_value(
-    trade,
+    merged_trade,
     now,
-    cached_trades[normalized_trade_id]
+    previous_trade
   );
   return true;
 }
@@ -1254,214 +1257,6 @@ function ensure_default_options() {
   });
 }
 
-function decode_html_entities(value) {
-  return String(value || "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x2F;/gi, "/");
-}
-
-function escape_regexp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function parse_embedded_json_var(html, var_name) {
-  let pattern = new RegExp(`var\\s+${escape_regexp(var_name)}\\s*=\\s*(\\{[\\s\\S]*?\\});`);
-  let match = String(html || "").match(pattern);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[1]);
-  } catch {
-    return null;
-  }
-}
-
-function parse_trade_tab(value) {
-  switch (String(value || "").toLowerCase()) {
-    case "outbound":
-      return "outbound";
-    case "completed":
-      return "completed";
-    case "inactive":
-      return "inactive";
-    default:
-      return "inbound";
-  }
-}
-
-function compare_owner_identity(owner, expected_owner) {
-  if (!owner || !expected_owner) return false;
-  if (owner.hidden) return false;
-  if (Number(owner.id) > 0 && Number(expected_owner.id) > 0) {
-    return Number(owner.id) === Number(expected_owner.id);
-  }
-  let owner_name = String(owner.name || "").trim().toLowerCase();
-  let expected_name = String(expected_owner.name || "").trim().toLowerCase();
-  return !!owner_name && !!expected_name && owner_name === expected_name;
-}
-
-function format_percent_number(value) {
-  return `${Math.round(Number(value || 0) * 100)}%`;
-}
-
-function parse_rolimons_owner_history(html) {
-  let raw_html = String(html || "");
-  let start = raw_html.indexOf("Recorded Owners");
-  let end = raw_html.indexOf("Ownership scanning speed", start >= 0 ? start : 0);
-  let section = raw_html.slice(start >= 0 ? start : 0, end >= 0 ? end : undefined);
-  let cards = section.split('<div class="card rounded-0 my-2 shadow border-0">').slice(1);
-  let owners = [];
-
-  for (let card of cards) {
-    if (owners.length >= 3) break;
-    if (/Hidden or Deleted/i.test(card)) {
-      owners.push({ id: 0, name: "Hidden or Deleted", hidden: true });
-      continue;
-    }
-
-    let match = card.match(/href="\/player\/(\d+)"[^>]*title="([^"]+)"/i);
-    if (!match) continue;
-
-    owners.push({
-      id: Number(match[1]) || 0,
-      name: decode_html_entities(match[2]),
-      hidden: false,
-    });
-  }
-
-  return owners;
-}
-
-function analyze_rolimons_chart(chart_data) {
-  let values = Array.isArray(chart_data?.value)
-    ? chart_data.value.map((value) => Number(value)).filter((value) => Number.isFinite(value) && value >= 0)
-    : [];
-
-  if (!values.length) {
-    return {
-      recent_value: 0,
-      previous_high: 0,
-      previous_low: 0,
-      biggest_drop_pct: 0,
-      biggest_rise_pct: 0,
-      biggest_drop_from: 0,
-      biggest_drop_to: 0,
-      biggest_rise_from: 0,
-      biggest_rise_to: 0,
-      big_dump: false,
-      big_spike: false,
-    };
-  }
-
-  let recent_slice = values.slice(-60);
-  let recent_value = recent_slice[recent_slice.length - 1] || 0;
-  let earlier_values = recent_slice.slice(0, -1).filter((value) => value > 0);
-  let previous_high = earlier_values.length ? Math.max(...earlier_values) : 0;
-  let previous_low = earlier_values.length ? Math.min(...earlier_values) : 0;
-
-  let biggest_drop_pct = 0;
-  let biggest_rise_pct = 0;
-  let biggest_drop_from = 0;
-  let biggest_drop_to = 0;
-  let biggest_rise_from = 0;
-  let biggest_rise_to = 0;
-
-  for (let i = 1; i < recent_slice.length; i++) {
-    let prev = recent_slice[i - 1];
-    let next = recent_slice[i];
-    if (!(prev > 0)) continue;
-
-    let drop_pct = (prev - next) / prev;
-    let rise_pct = (next - prev) / prev;
-
-    if (drop_pct > biggest_drop_pct) {
-      biggest_drop_pct = drop_pct;
-      biggest_drop_from = prev;
-      biggest_drop_to = next;
-    }
-
-    if (rise_pct > biggest_rise_pct) {
-      biggest_rise_pct = rise_pct;
-      biggest_rise_from = prev;
-      biggest_rise_to = next;
-    }
-  }
-
-  let drop_from_previous_high = previous_high > 0 ? (previous_high - recent_value) / previous_high : 0;
-  let rise_from_previous_low = previous_low > 0 ? (recent_value - previous_low) / previous_low : 0;
-
-  let big_dump =
-    (previous_high >= 50000 && drop_from_previous_high >= 0.6) ||
-    (biggest_drop_from >= 50000 && biggest_drop_pct >= 0.6);
-  let big_spike =
-    (recent_value >= 50000 && previous_low >= 5000 && rise_from_previous_low >= 1.5) ||
-    (biggest_rise_from >= 5000 && biggest_rise_to >= 50000 && biggest_rise_pct >= 1.5);
-
-  return {
-    recent_value,
-    previous_high,
-    previous_low,
-    biggest_drop_pct,
-    biggest_rise_pct,
-    biggest_drop_from,
-    biggest_drop_to,
-    biggest_rise_from,
-    biggest_rise_to,
-    big_dump,
-    big_spike,
-  };
-}
-
-function score_owner_poison_risk(owner_data) {
-  let reasons = [];
-  let score = 0;
-
-  if (owner_data.terminated) {
-    reasons.push("account terminated");
-    return { score: 100, reasons, severity: "danger" };
-  }
-
-  if (owner_data.private) {
-    reasons.push("inventory private");
-    score += 12;
-  }
-
-  if (owner_data.big_dump) {
-    let from_value = owner_data.previous_high || owner_data.biggest_drop_from;
-    let to_value = owner_data.recent_value || owner_data.biggest_drop_to;
-    reasons.push(`value dumped ${format_percent_number(Math.max(owner_data.biggest_drop_pct, from_value > 0 ? (from_value - to_value) / from_value : 0))} (${format_number(from_value)} -> ${format_number(to_value)})`);
-    score += owner_data.private ? 73 : 70;
-  }
-
-  if (owner_data.big_spike) {
-    let from_value = owner_data.previous_low || owner_data.biggest_rise_from;
-    let to_value = owner_data.recent_value || owner_data.biggest_rise_to;
-    reasons.push(`value spiked ${format_percent_number(Math.max(owner_data.biggest_rise_pct, from_value > 0 ? (to_value - from_value) / from_value : 0))} (${format_number(from_value)} -> ${format_number(to_value)})`);
-    score += owner_data.private ? 28 : 50;
-  }
-
-  if (owner_data.biggest_drop_pct >= 0.8) score += 10;
-  if (owner_data.biggest_rise_pct >= 3) score += 10;
-
-  score = Math.min(100, score);
-
-  return {
-    score,
-    reasons,
-    severity: score >= 80 ? "danger" : score >= 35 ? "warn" : "clean",
-  };
-}
-
-async function fetch_rolimons_player_assets(player_id) {
-  let response = await fetch(`https://api.rolimons.com/players/v1/playerassets/${player_id}`, {
-    headers: { "From-Extension": "true" },
-  });
-  return response.status === 200 ? parse_json_response_safe(response, "Rolimons player assets") : null;
-}
-
 const ROLIMONS_HTML_FETCH_INIT = {
   credentials: "omit",
   cache: "no-store",
@@ -1476,51 +1271,6 @@ async function fetch_rolimons_html(url) {
   return fetch(url, ROLIMONS_HTML_FETCH_INIT);
 }
 
-function normalize_uaid_api_owner_list(data) {
-  if (!data || typeof data !== "object") return null;
-  if (Array.isArray(data) && data.length && typeof data[0] === "object") {
-    data = { owners: data };
-  }
-  let raw =
-    data.owners ||
-    data.owner_history ||
-    data.ownerHistory ||
-    data.history ||
-    data.recorded_owners ||
-    data.recordedOwners;
-  if (!Array.isArray(raw) || !raw.length) return null;
-  let out = [];
-  for (let row of raw) {
-    if (out.length >= 3) break;
-    if (!row || typeof row !== "object") continue;
-    if (row.hidden || row.deleted || row.isHidden) {
-      out.push({ id: 0, name: "Hidden or Deleted", hidden: true });
-      continue;
-    }
-    let id = Number(row.userId ?? row.user_id ?? row.playerId ?? row.player_id ?? row.id ?? 0);
-    let name = String(row.username ?? row.name ?? row.playerName ?? row.player_name ?? "").trim();
-    if (id > 0 && name) out.push({ id, name, hidden: false });
-  }
-  return out.length ? out : null;
-}
-
-async function try_fetch_rolimons_uaid_owners_json(numeric_uaid) {
-  let id = Number(numeric_uaid) || 0;
-  if (!(id > 0)) return null;
-  try {
-    let response = await fetch(`https://api.rolimons.com/uaid/v1/${id}`, {
-      headers: { "From-Extension": "true", Accept: "application/json, text/plain, */*" },
-    });
-    let ct = response.headers.get("content-type") || "";
-    if (!response.ok || !/json/i.test(ct)) return null;
-    let data = await parse_json_response_safe(response, "Rolimons UAID owners");
-    if (!data) return null;
-    return normalize_uaid_api_owner_list(data);
-  } catch {
-    return null;
-  }
-}
-
 async function fetch_authenticated_user() {
   let response = await fetch("https://users.roblox.com/v1/users/authenticated", {
     credentials: "include",
@@ -1530,291 +1280,6 @@ async function fetch_authenticated_user() {
   return {
     id: Number(data?.id) || 0,
     name: String(data?.name || data?.displayName || "You"),
-  };
-}
-
-async function resolve_expected_poison_owner(message) {
-  let trade_tab = parse_trade_tab(message.tradeTab);
-  if (trade_tab === "completed") {
-    let from_page = message.authenticatedUser;
-    if (from_page && Number(from_page.id) > 0) {
-      return {
-        id: Number(from_page.id),
-        name: String(from_page.name || "You"),
-      };
-    }
-    try {
-      return await fetch_authenticated_user();
-    } catch {
-      throw new Error(
-        "Could not read your Roblox login for completed trades. Reload this trades page while logged in, then try again."
-      );
-    }
-  }
-  return {
-    id: Number(message.partnerId || message.userId) || 0,
-    name: String(message.partnerName || "Unknown"),
-  };
-}
-
-function build_player_snapshot_from_chart_and_assets(owner, player_id, chart_data, private_from_html, assets_data) {
-  let chart_signals = analyze_rolimons_chart(chart_data);
-  let private_inventory =
-    !!assets_data?.playerPrivacyEnabled || !!private_from_html;
-  let terminated_account = !!assets_data?.playerTerminated;
-  let risk = score_owner_poison_risk({
-    ...chart_signals,
-    private: private_inventory,
-    terminated: terminated_account,
-  });
-
-  return {
-    id: player_id,
-    name: String(owner?.name || `Player ${player_id}`),
-    hidden: false,
-    terminated: terminated_account,
-    private: private_inventory,
-    recent_value: chart_signals.recent_value,
-    previous_high: chart_signals.previous_high,
-    biggest_drop_pct: chart_signals.biggest_drop_pct,
-    biggest_rise_pct: chart_signals.biggest_rise_pct,
-    big_dump: chart_signals.big_dump,
-    big_spike: chart_signals.big_spike,
-    score: risk.score,
-    reasons: risk.reasons,
-    severity: risk.severity,
-  };
-}
-
-async function fetch_rolimons_player_snapshot(owner, snapshot_cache, poison_prefetch) {
-  let player_id = Number(owner?.id) || 0;
-  if (!player_id) {
-    return {
-      id: 0,
-      name: String(owner?.name || "Hidden or Deleted"),
-      hidden: true,
-      terminated: false,
-      private: false,
-      recent_value: 0,
-      previous_high: 0,
-      biggest_drop_pct: 0,
-      biggest_rise_pct: 0,
-      big_dump: false,
-      big_spike: false,
-      score: 0,
-      reasons: [],
-      severity: "clean",
-    };
-  }
-
-  if (snapshot_cache.has(player_id)) {
-    return snapshot_cache.get(player_id);
-  }
-
-  let assets_data = await fetch_rolimons_player_assets(player_id).catch(() => null);
-  let pre = poison_prefetch?.players?.[String(player_id)];
-
-  if (pre?.ok === true) {
-    let snapshot = build_player_snapshot_from_chart_and_assets(
-      owner,
-      player_id,
-      pre.chart_data,
-      !!pre.private_hint,
-      assets_data
-    );
-    snapshot_cache.set(player_id, snapshot);
-    return snapshot;
-  }
-
-  let page_response = await fetch_rolimons_html(`https://www.rolimons.com/player/${player_id}`);
-
-  if (!page_response.ok) {
-    throw new Error(`Rolimons player page returned ${page_response.status} for ${owner.name || player_id}.`);
-  }
-
-  let html = await page_response.text();
-  let chart_data = parse_embedded_json_var(html, "chart_data");
-  let snapshot = build_player_snapshot_from_chart_and_assets(
-    owner,
-    player_id,
-    chart_data,
-    /This player's inventory is private/i.test(html),
-    assets_data
-  );
-
-  snapshot_cache.set(player_id, snapshot);
-  return snapshot;
-}
-
-function describe_owner_risk(owner_snapshot) {
-  if (!owner_snapshot || !owner_snapshot.reasons?.length) return "";
-  return `${owner_snapshot.name}: ${owner_snapshot.reasons.join(", ")}`;
-}
-
-function build_poison_trade_summary(item_results, expected_owner) {
-  let danger_items = item_results.filter((item) => item.severity === "danger");
-  let warn_items = item_results.filter((item) => item.severity === "warn");
-  let severity = danger_items.length ? "danger" : warn_items.length ? "warn" : "clean";
-  let title =
-    severity === "danger"
-      ? "Poison risk detected"
-      : severity === "warn"
-        ? "Trade needs review"
-        : "No issues detected";
-  let details = [];
-
-  if (danger_items.length) {
-    details.push(`${danger_items.length} trade item${danger_items.length > 1 ? "s" : ""} tripped strong poison signals.`);
-  }
-  if (warn_items.length) {
-    details.push(`${warn_items.length} item${warn_items.length > 1 ? "s" : ""} should be reviewed manually.`);
-  }
-  if (!danger_items.length && !warn_items.length) {
-    details.push(`${expected_owner.name || "The expected owner"} matches the latest Rolimons owner checks.`);
-  }
-
-  details.push("Checked the latest owner and up to 3 recent owners per UAID.");
-  if (expected_owner?.name) {
-    details.push(`Expected latest owner: ${expected_owner.name}.`);
-  }
-
-  return { severity, title, details };
-}
-
-async function analyze_poison_trade_item(item, expected_owner, owner_snapshot_cache, poison_prefetch) {
-  let safe_item_name = String(item?.name || "Unknown Item");
-  let ciiid = String(item?.ciiid || "").trim();
-
-  if (!ciiid) {
-    return {
-      name: safe_item_name,
-      ciiid: null,
-      severity: "warn",
-      badgeText: "No UAID",
-      reason: "No collectible instance ID was found, so ownership history could not be verified.",
-      latestOwnerName: "",
-      uaidUrl: "",
-    };
-  }
-
-  let pref_c = poison_prefetch?.byCiiid?.[ciiid];
-  let owner_history;
-  let response_url;
-  let numeric_uaid = Number(item?.userAssetId) || 0;
-
-  if (pref_c?.ok === true && Array.isArray(pref_c.owners)) {
-    owner_history = pref_c.owners;
-    response_url =
-      pref_c.uaidUrl ||
-      (numeric_uaid > 0
-        ? `https://www.rolimons.com/uaid/${numeric_uaid}`
-        : `https://www.rolimons.com/ciiid/${encodeURIComponent(ciiid)}`);
-  } else if (numeric_uaid > 0) {
-    response_url = `https://www.rolimons.com/uaid/${numeric_uaid}`;
-    owner_history = await try_fetch_rolimons_uaid_owners_json(numeric_uaid);
-    if (!owner_history?.length) {
-      let page = await fetch_rolimons_html(response_url);
-      if (!page.ok) {
-        page = await fetch_rolimons_html(`https://www.rolimons.com/ciiid/${encodeURIComponent(ciiid)}`);
-      }
-      if (!page.ok) {
-        throw new Error(`Rolimons UAID page returned ${page.status} for ${safe_item_name}.`);
-      }
-      let html = await page.text();
-      owner_history = parse_rolimons_owner_history(html);
-      response_url = page.url || response_url;
-    }
-  } else {
-    let response = await fetch_rolimons_html(`https://www.rolimons.com/ciiid/${encodeURIComponent(ciiid)}`);
-    if (!response.ok) {
-      throw new Error(`Rolimons UAID page returned ${response.status} for ${safe_item_name}.`);
-    }
-    let html = await response.text();
-    owner_history = parse_rolimons_owner_history(html);
-    response_url = response.url || `https://www.rolimons.com/ciiid/${encodeURIComponent(ciiid)}`;
-  }
-
-  let owner_snapshots = [];
-
-  for (let owner of owner_history.slice(0, 3)) {
-    if (owner.hidden) {
-      owner_snapshots.push({
-        id: 0,
-        name: owner.name,
-        hidden: true,
-        terminated: false,
-        private: false,
-        score: 0,
-        reasons: [],
-        severity: "clean",
-      });
-      continue;
-    }
-    owner_snapshots.push(await fetch_rolimons_player_snapshot(owner, owner_snapshot_cache, poison_prefetch));
-  }
-
-  let latest_owner = owner_history[0] || null;
-  let latest_owner_matches = compare_owner_identity(latest_owner, expected_owner);
-  let score = 0;
-  let reasons = [];
-
-  if (!latest_owner) {
-    score += 35;
-    reasons.push("Rolimons did not return any recorded owners for this UAID.");
-  } else if (latest_owner.hidden) {
-    score += 35;
-    reasons.push("The latest recorded owner is hidden or deleted on Rolimons.");
-  } else if (!latest_owner_matches) {
-    score += 80;
-    reasons.push(`Latest owner is ${latest_owner.name}, not ${expected_owner.name || "the expected owner"}.`);
-  }
-
-  let owner_weights = [1, 0.8, 0.6];
-  for (let i = 0; i < owner_snapshots.length; i++) {
-    let snapshot = owner_snapshots[i];
-    if (!snapshot || snapshot.hidden) continue;
-    score += Math.round(snapshot.score * owner_weights[i]);
-    if (snapshot.score >= 35) {
-      reasons.push(describe_owner_risk(snapshot));
-    }
-  }
-
-  score = Math.min(100, score);
-  let severity = score >= 80 ? "danger" : score >= 35 ? "warn" : "clean";
-  let badge_text = severity === "danger" ? "Risk" : severity === "warn" ? "Review" : "Clean";
-
-  if (!reasons.length) {
-    reasons.push(`Latest owner matches ${expected_owner.name || "the expected owner"} and no strong dump/spike signals were found.`);
-  }
-
-  return {
-    name: safe_item_name,
-    ciiid,
-    severity,
-    badge_text,
-    reason: reasons[0],
-    latestOwnerName: latest_owner?.name || "",
-    latestOwnerMatches: latest_owner_matches,
-    uaidUrl: response_url,
-  };
-}
-
-async function scan_trade_poison(message) {
-  let expected_owner = await resolve_expected_poison_owner(message);
-  let offer_items = Array.isArray(message.offerItems) ? message.offerItems : [];
-  let poison_prefetch = message.poisonPrefetch || null;
-  let owner_snapshot_cache = new Map();
-  let item_results = [];
-
-  for (let item of offer_items) {
-    item_results.push(await analyze_poison_trade_item(item, expected_owner, owner_snapshot_cache, poison_prefetch));
-  }
-
-  return {
-    success: true,
-    expectedOwner: expected_owner,
-    itemResults: item_results,
-    summary: build_poison_trade_summary(item_results, expected_owner),
   };
 }
 
@@ -2437,7 +1902,7 @@ async function evaluate_trade_analysis(message) {
     receive_item_ids: normalize_trade_analysis_item_ids(message?.receive_item_ids),
     give_robux: normalize_trade_analysis_robux(message?.give_robux),
     receive_robux: normalize_trade_analysis_robux(message?.receive_robux),
-    engine: "v3.2",
+    engine: "3.2-profit",
   };
   if (!body.give_item_ids.length && body.give_robux <= 0) throw new Error("Could not read what you give from this trade.");
   if (!body.receive_item_ids.length && body.receive_robux <= 0) throw new Error("Could not read what you receive from this trade.");
@@ -2677,6 +2142,100 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (!id) return respond(null);
       let cached = await get_pruned_cached_trades();
       respond(cached[id] || null);
+    })();
+    return true;
+  }
+
+  if (message?.type === "quickProofFetchImage") {
+    (async () => {
+      try {
+        let url = String(message.url || "");
+        let ext_base = chrome.runtime.getURL("");
+        if (!url.startsWith(ext_base) && !/^https:\/\/(tr\.rbxcdn\.com|[^/]+\.rbxcdn\.com|[^/]+\.roblox\.com)\//i.test(url)) return respond({ ok: false });
+        let response = await fetch(url, { credentials: "omit" });
+        if (!response.ok) return respond({ ok: false });
+        let blob = await response.blob();
+        try {
+          if (typeof createImageBitmap === "function" && typeof OffscreenCanvas !== "undefined" && /^image\//i.test(blob.type || "")) {
+            let image = await createImageBitmap(blob),
+              canvas = new OffscreenCanvas(Math.max(1, image.width), Math.max(1, image.height)),
+              ctx = canvas.getContext("2d");
+            ctx.drawImage(image, 0, 0);
+            image.close?.();
+            blob = await canvas.convertToBlob({ type: "image/png" });
+          }
+        } catch {}
+        let content_type = blob.type || response.headers.get("content-type") || "image/png";
+        let bytes = new Uint8Array(await blob.arrayBuffer());
+        let binary = "";
+        for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.slice(i, i + 8192));
+        respond({ ok: true, dataUrl: `data:${content_type};base64,${btoa(binary)}` });
+      } catch {
+        respond({ ok: false });
+      }
+    })();
+    return true;
+  }
+
+  if (message?.type === "quickProofCaptureTab") {
+    (async () => {
+      try {
+        let window_id = sender?.tab?.windowId;
+        let tab_id = sender?.tab?.id;
+        if ((!chrome.tabs?.captureVisibleTab && !globalThis.browser?.tabs?.captureTab) || window_id === undefined) return respond({ ok: false, error: "Screenshot API unavailable." });
+        let capture_tab = () =>
+          new Promise((resolve) => {
+            let sent = false;
+            let timer = setTimeout(() => done("", "Screenshot request timed out."), 10000);
+            let done = (dataUrl, error_message = "") => {
+              if (sent) return;
+              sent = true;
+              clearTimeout(timer);
+              let err = chrome.runtime.lastError;
+              if (err || !dataUrl) return resolve({ ok: false, error: error_message || err?.message || "Could not capture the current tab." });
+              resolve({ ok: true, dataUrl });
+            };
+            try {
+              let capture = globalThis.browser?.tabs?.captureTab && tab_id !== undefined
+                ? globalThis.browser.tabs.captureTab(tab_id, { format: "png" })
+                : chrome.tabs.captureVisibleTab(window_id, { format: "png" }, done);
+              if (capture?.then) capture.then(done).catch((err) => done("", err?.message || "Could not capture the current tab."));
+            } catch (err) {
+              done("", err?.message || "Could not capture the current tab.");
+            }
+          });
+        let captured = await capture_tab();
+        if (captured?.ok) return respond(captured);
+        let has_all_urls = await new Promise((resolve) => {
+          let timer = setTimeout(() => resolve(false), 2500);
+          if (!chrome.permissions?.contains) {
+            clearTimeout(timer);
+            return resolve(true);
+          }
+          chrome.permissions.contains({ origins: ["<all_urls>"] }, (allowed) => {
+            clearTimeout(timer);
+            resolve(!!allowed);
+          });
+        });
+        if (!has_all_urls && chrome.permissions?.request) {
+          has_all_urls = await new Promise((resolve) => {
+            let timer = setTimeout(() => resolve(false), 4000);
+            try {
+              chrome.permissions.request({ origins: ["<all_urls>"] }, (granted) => {
+                clearTimeout(timer);
+                resolve(!!granted);
+              });
+            } catch {
+              clearTimeout(timer);
+              resolve(false);
+            }
+          });
+        }
+        if (!has_all_urls) return respond(captured);
+        respond(await capture_tab());
+      } catch (err) {
+        respond({ ok: false, error: err?.message || "Could not capture the current tab." });
+      }
     })();
     return true;
   }
@@ -3091,6 +2650,32 @@ async function ta_fetch_user_collectibles(user_id) {
   return ids;
 }
 
+function ta_get_trade_item_target_id(item) {
+  return parseInt(
+    item?.assetId ??
+      item?.itemTarget?.targetId ??
+      item?.targetId ??
+      item?.itemId ??
+      item?.asset?.id ??
+      item?.asset?.assetId ??
+      item?.item?.id ??
+      0,
+    10,
+  ) || 0;
+}
+
+async function ta_user_owns_asset(user_id, target_id) {
+  if (!user_id || !(Number(target_id) > 0)) return null;
+  try {
+    let resp = await ta_fetch(`https://inventory.roblox.com/v1/users/${user_id}/items/Asset/${target_id}/is-owned`, { credentials: "include" });
+    if (!resp.ok) return null;
+    let value = await resp.json().catch(() => null);
+    return typeof value === "boolean" ? value : !!(value?.isOwned ?? value?.owned);
+  } catch {
+    return null;
+  }
+}
+
 async function ta_run_action(action, min_overpay_pct = 0) {
   if (ta_state.running) return;
   ta_state = { running: true, action, phase: "fetching", done: 0, total: 0, checked: 0, skipped: 0, fetched_pages: 0, error: "", wait_until: 0, min_overpay_pct };
@@ -3208,7 +2793,11 @@ async function ta_run_action(action, min_overpay_pct = 0) {
           if (!owned) continue;
           for (let item of side.items) {
             let ua_id = get_user_asset_id(item);
-            if (ua_id && !owned.has(ua_id)) { has_unowned = true; break; }
+            if (ua_id && !owned.has(ua_id)) {
+              let asset_owned = await ta_user_owns_asset(side.user_id, ta_get_trade_item_target_id(item));
+              if (asset_owned === true) continue;
+              if (asset_owned === false) { has_unowned = true; break; }
+            }
           }
           if (has_unowned) break;
         }
