@@ -228,6 +228,10 @@
       return "dark";
     }
 
+    function inventory_fetch_delay(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
     async function get_user_inventory(user_id) {
       let cursor = "";
       let items = [];
@@ -241,9 +245,21 @@
         if (cursor) params.set("cursor", cursor);
 
         let url = `https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`;
-        let resp = await fetch(url, { credentials: "include" });
-        if (resp.status !== 200) return false;
-        let data = await resp.json();
+        let resp = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            resp = await fetch(url, { credentials: "include" });
+          } catch {
+            resp = null;
+          }
+          if (resp && resp.status !== 429 && resp.status < 500) break;
+          if (attempt < 2) await inventory_fetch_delay(350 * (attempt + 1));
+        }
+        if (!resp) return items.length ? normalize_tradeable_inventory_items(items) : null;
+        if (resp.status === 401 || resp.status === 403) return false;
+        if (resp.status !== 200) return items.length ? normalize_tradeable_inventory_items(items) : null;
+        let data = await resp.json().catch(() => null);
+        if (!data) return items.length ? normalize_tradeable_inventory_items(items) : null;
         items = items.concat(Array.isArray(data?.items) ? data.items : []);
         cursor = data?.nextPageCursor || "";
         if (!cursor) break;
@@ -866,6 +882,7 @@
   var PILL_OVERLAY =
     '<div role="presentation" class="absolute inset-[0] transition-colors group-hover/interactable:bg-[var(--color-state-hover)] group-active/interactable:bg-[var(--color-state-press)] group-disabled/interactable:bg-none"></div>';
   var PROFILE_SUMMARY_ID = "nte-profile-summary";
+  var profile_value_display_mode_key = "profile_value_display_mode";
   var profile_observer = null;
   var profile_render_timer = null;
   var profile_inventory_cache = {};
@@ -878,6 +895,14 @@
       parseInt(window.location.pathname.match(/\/users\/(\d+)\//)?.[1]) ||
       0
     );
+  }
+
+  function normalize_profile_value_display_mode(value) {
+    return String(value || "").toLowerCase() === "value" ? "value" : "rap";
+  }
+
+  async function get_profile_value_display_mode() {
+    return normalize_profile_value_display_mode(await utils.getOption(profile_value_display_mode_key));
   }
 
   function find_profile_stats_row() {
@@ -957,7 +982,7 @@
     profile_inventory_pending[user_id] = utils
       .getUserInventory(user_id)
       .then((inventory) => {
-        profile_inventory_cache[user_id] = inventory;
+        if (inventory !== null) profile_inventory_cache[user_id] = inventory;
         return inventory;
       })
       .finally(() => {
@@ -1002,7 +1027,7 @@
 
     rap_label.classList.remove("nte-loading-dots");
 
-    if (inventory) {
+    if (Array.isArray(inventory)) {
       let rolimons_data = utils.getRolimonsData();
       let total_value = 0;
       let total_rap = 0;
@@ -1012,7 +1037,9 @@
         total_rap += item.recentAveragePrice || utils.getRAP(item.assetId, item.name, item.recentAveragePrice);
       }
 
-      rap_label.innerText = utils.commafy(total_rap) + " RAP";
+      let display_mode = await get_profile_value_display_mode();
+      let display_total = display_mode === "value" ? total_value : total_rap;
+      rap_label.innerText = utils.commafy(display_total) + (display_mode === "value" ? " Value" : " RAP");
       utils.addTooltip(rap_label, "Click to view inventory breakdown");
       window.__nteInvData = {
         items: inventory,
@@ -1020,9 +1047,12 @@
         totalValue: total_value,
         totalRAP: total_rap,
       };
-    } else {
+    } else if (inventory === false) {
       rap_label.innerText = "Private";
       utils.addTooltip(rap_label, "This user's inventory is private");
+    } else {
+      rap_label.innerText = "Unavailable";
+      utils.addTooltip(rap_label, "Inventory could not be loaded. Try again in a moment.");
     }
 
     utils.initTooltips();

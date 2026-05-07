@@ -80,6 +80,10 @@ function set_option_value(name, value) {
   return set_storage({ [name]: value });
 }
 
+function normalize_profile_value_display_mode(value) {
+  return String(value || "").toLowerCase() === "value" ? "value" : "rap";
+}
+
 const nte_roblox_tab_url_query_patterns = ["https://*.roblox.com/*", "https://roblox.com/*"];
 const extension_update_state_key = "nte_extension_update_state";
 const extension_update_last_check_key = "nte_extension_update_last_check";
@@ -96,6 +100,8 @@ const inbound_trade_notification_min_gain_key = "inbound_trade_notification_min_
 const inbound_trade_notification_min_gain_default = 0;
 const duplicate_trade_warning_hours_key = "duplicate_trade_warning_hours";
 const duplicate_trade_warning_hours_default = 24;
+const profile_value_display_mode_key = "profile_value_display_mode";
+const profile_value_display_mode_default = "rap";
 const colorblind_mode_option_name = "Colorblind Mode";
 const legacy_colorblind_mode_option_name = "Colorblind Profit Mode";
 const post_tax_trade_values_option_name = "Post-Tax Trade Values";
@@ -1041,8 +1047,56 @@ function create_option_row(option, checked, extra = {}) {
     label_el.append(note_btn);
   }
 
+  if (option.name === "Values on User Pages") {
+    row.classList.add("profile-value-option-row");
+    const controls = document.createElement("div");
+    controls.className = "profile-value-option-controls";
+    controls.append(create_profile_value_display_toggle(extra.profile_value_display_mode), create_toggle(option, checked));
+    row.append(label_el, controls);
+    return row;
+  }
+
   row.append(label_el, create_toggle(option, checked));
   return row;
+}
+
+function create_profile_value_display_toggle(mode) {
+  let active_mode = normalize_profile_value_display_mode(mode);
+  const toggle = document.createElement("div");
+  toggle.className = "profile-value-mode-toggle";
+  toggle.setAttribute("role", "group");
+  toggle.setAttribute("aria-label", "Profile stat display");
+
+  function sync() {
+    toggle.querySelectorAll("button").forEach((button) => {
+      let active = button.dataset.mode === active_mode;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+  }
+
+  [
+    { value: "rap", label: "RAP" },
+    { value: "value", label: "Value" },
+  ].forEach((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.mode = option.value;
+    button.textContent = option.label;
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (active_mode === option.value) return;
+      active_mode = option.value;
+      sync();
+      await set_option_value(profile_value_display_mode_key, active_mode);
+      send_option_update("Values");
+    });
+    toggle.append(button);
+  });
+
+  sync();
+  return toggle;
 }
 
 async function refresh_all_panels() {
@@ -1115,7 +1169,7 @@ async function render_options() {
   const container = document.getElementById("options-container");
   container.innerHTML = "";
 
-  const option_names = get_option_names();
+  const option_names = [...get_option_names(), profile_value_display_mode_key];
   let saved = await get_storage([
     ...option_names,
     legacy_colorblind_mode_option_name,
@@ -1193,6 +1247,7 @@ async function render_options() {
         colorblind_mode_profile: saved[colorblind_mode_profile_key],
         inbound_trade_min_gain: saved[inbound_trade_notification_min_gain_key],
         duplicate_trade_warning_hours: saved[duplicate_trade_warning_hours_key],
+        profile_value_display_mode: saved[profile_value_display_mode_key],
       }),
     );
     section_option_count++;
@@ -2074,6 +2129,7 @@ function restore_defaults() {
     updates[colorblind_mode_profile_key] = colorblind_mode_profile_default;
     updates[inbound_trade_notification_min_gain_key] = inbound_trade_notification_min_gain_default;
     updates[duplicate_trade_warning_hours_key] = duplicate_trade_warning_hours_default;
+    updates[profile_value_display_mode_key] = profile_value_display_mode_default;
     updates[ROBLOX_TOTP_ENABLED_KEY] = false;
     updates[ROBLOX_TOTP_SECRET_KEY] = "";
     updates[popup_theme_storage_key] = popup_theme_default;

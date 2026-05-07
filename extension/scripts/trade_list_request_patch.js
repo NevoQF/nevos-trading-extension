@@ -316,7 +316,7 @@
     if (uncached.length) {
       let request_lookup = {};
       for (let request of uncached) request_lookup[make_thumb_request_id(request.targetId, "", request.type)] = request;
-      let request = fetch("https://thumbnails.roblox.com/v1/batch", {
+      let request = fetch("https://thumbnails.roblox.com/v1/batch?NTERequest=1", {
         method: "POST",
         credentials: "omit",
         headers: { "content-type": "application/json" },

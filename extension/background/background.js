@@ -2,6 +2,33 @@ if ("undefined" === typeof globalThis.chrome && "undefined" !== typeof globalThi
   globalThis.chrome = globalThis.browser;
 }
 
+function nte_mark_roblox_request_url(value) {
+  try {
+    let url = new URL(String(value), "https://www.roblox.com/");
+    if (url.hostname === "roblox.com" || url.hostname.endsWith(".roblox.com")) {
+      url.searchParams.set("NTERequest", "1");
+      return url.toString();
+    }
+  } catch {}
+  return value;
+}
+
+function nte_mark_roblox_request_input(input) {
+  if ("string" === typeof input || input instanceof URL) return nte_mark_roblox_request_url(input);
+  if ("undefined" !== typeof Request && input instanceof Request) {
+    let url = nte_mark_roblox_request_url(input.url);
+    return url === input.url ? input : new Request(url, input);
+  }
+  return input;
+}
+
+if ("function" === typeof globalThis.fetch && !globalThis.fetch.__nte_request_marked) {
+  let native_fetch = globalThis.fetch.bind(globalThis);
+  let marked_fetch = (input, init) => native_fetch(nte_mark_roblox_request_input(input), init);
+  Object.defineProperty(marked_fetch, "__nte_request_marked", { value: true });
+  globalThis.fetch = marked_fetch;
+}
+
 const option_groups = JSON.parse(
   '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]'
 );
@@ -2204,34 +2231,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
               done("", err?.message || "Could not capture the current tab.");
             }
           });
+        let has_host_access = await check_host_permissions();
+        if (!has_host_access) has_host_access = await request_host_permissions();
         let captured = await capture_tab();
         if (captured?.ok) return respond(captured);
-        let has_all_urls = await new Promise((resolve) => {
-          let timer = setTimeout(() => resolve(false), 2500);
-          if (!chrome.permissions?.contains) {
-            clearTimeout(timer);
-            return resolve(true);
-          }
-          chrome.permissions.contains({ origins: ["<all_urls>"] }, (allowed) => {
-            clearTimeout(timer);
-            resolve(!!allowed);
-          });
-        });
-        if (!has_all_urls && chrome.permissions?.request) {
-          has_all_urls = await new Promise((resolve) => {
-            let timer = setTimeout(() => resolve(false), 4000);
-            try {
-              chrome.permissions.request({ origins: ["<all_urls>"] }, (granted) => {
-                clearTimeout(timer);
-                resolve(!!granted);
-              });
-            } catch {
-              clearTimeout(timer);
-              resolve(false);
-            }
-          });
-        }
-        if (!has_all_urls) return respond(captured);
+        if (!has_host_access) return respond({ ok: false, error: "Grant Roblox site access for Quick Proof, then try again." });
+        await request_host_permissions();
         respond(await capture_tab());
       } catch (err) {
         respond({ ok: false, error: err?.message || "Could not capture the current tab." });

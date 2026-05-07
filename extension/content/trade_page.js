@@ -5056,6 +5056,8 @@
     ],
     trade_filter_state = { value: "all" },
     trade_filter_bound = !1,
+    trade_focus_selected_only = !1,
+    trade_focus_selected_observer = null,
     trade_search_q = "";
   function make_item_acronym(name) {
     if (!name) return "";
@@ -5365,8 +5367,9 @@
     );
   }
   function clear_trade_list_filter_ui() {
-    document.getElementById("nteTradeListFilter")?.remove(), document.getElementById("nteTradeListFilterEmpty")?.remove();
+    document.getElementById("nteTradeListFilter")?.remove(), document.getElementById("nteTradeFocusSelectedBar")?.remove(), document.getElementById("nteTradeListFilterEmpty")?.remove();
     for (let e of document.querySelectorAll(".trade-row-list .trade-row")) e.style.display = "";
+    trade_focus_selected_only = !1;
     trade_search_q = "";
   }
   function close_trade_list_filter_menu() {
@@ -5380,6 +5383,39 @@
     t && (t.textContent = e.label);
     for (let t of document.querySelectorAll("#nteTradeListFilterMenu li"))
       t.classList.toggle("active", t.getAttribute("data-value") === trade_filter_state.value);
+    sync_trade_focus_button();
+  }
+  function has_selected_trade_row() {
+    return !!document.querySelector(".trade-row-list .trade-row.selected");
+  }
+  function should_show_trade_row(row, base_match) {
+    return trade_focus_selected_only ? row.classList.contains("selected") : base_match;
+  }
+  function sync_trade_focus_button() {
+    let btn = document.getElementById("nteTradeFocusSelectedBtn");
+    if (!btn) return;
+    let has_selected = has_selected_trade_row();
+    btn.textContent = trade_focus_selected_only ? "Show all" : "Hide others";
+    btn.disabled = !has_selected;
+    btn.setAttribute("aria-pressed", trade_focus_selected_only ? "true" : "false");
+    btn.style.opacity = has_selected ? (trade_focus_selected_only ? "1" : "0.88") : "0.45";
+    btn.style.cursor = has_selected ? "pointer" : "default";
+  }
+  function bind_trade_focus_selected_observer() {
+    if (trade_focus_selected_observer) return;
+    let list = document.querySelector(".trade-row-list");
+    if (!list) return;
+    let timer = 0;
+    trade_focus_selected_observer = new MutationObserver((mutations) => {
+      let needs_sync = mutations.some((mutation) => mutation.type === "childList" || mutation.attributeName === "class");
+      if (!needs_sync) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        sync_trade_focus_button();
+        trade_focus_selected_only && apply_trade_list_filter();
+      }, 30);
+    });
+    trade_focus_selected_observer.observe(list, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
   }
   function show_trade_list_search_input() {
     let dd = document.querySelector("#nteTradeListFilter .input-group-btn");
@@ -5479,12 +5515,46 @@
       (r.style.gap = "12px"),
       (r.style.width = "100%"),
       (function () {
+        let left = document.createElement("div");
+        left.style.display = "flex";
+        left.style.flexDirection = "column";
+        left.style.alignItems = "flex-start";
+        left.style.flex = "1 1 auto";
+        left.style.minWidth = "0";
         let lbl = document.createElement("div");
         lbl.className = "trade-quality-label";
         lbl.style.paddingTop = "10px";
-        lbl.style.flex = "1 1 auto";
-        lbl.style.minWidth = "0";
         lbl.textContent = "Sort by";
+        let focus_btn = document.createElement("button");
+        focus_btn.type = "button";
+        focus_btn.id = "nteTradeFocusSelectedBtn";
+        focus_btn.textContent = "Hide others";
+        focus_btn.setAttribute("aria-pressed", "false");
+        focus_btn.style.cssText =
+          "margin-top:4px;height:23px;padding:0 9px;border-radius:999px;border:1px solid rgba(128,128,128,0.24);background:rgba(128,128,128,0.10);color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:22px;white-space:nowrap;transition:background .14s,border-color .14s,opacity .14s;";
+        focus_btn.addEventListener("mouseenter", () => {
+          focus_btn.style.background = "rgba(128,128,128,0.18)";
+          focus_btn.style.borderColor = "rgba(128,128,128,0.34)";
+        });
+        focus_btn.addEventListener("mouseleave", () => {
+          focus_btn.style.background = "rgba(128,128,128,0.10)";
+          focus_btn.style.borderColor = "rgba(128,128,128,0.24)";
+        });
+        focus_btn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (!has_selected_trade_row()) return sync_trade_focus_button();
+          trade_focus_selected_only = !trade_focus_selected_only;
+          sync_trade_focus_button();
+          apply_trade_list_filter();
+        });
+        let focus_bar = document.createElement("div");
+        focus_bar.id = "nteTradeFocusSelectedBar";
+        focus_bar.style.cssText =
+          "width:100%;display:flex;align-items:center;justify-content:flex-start;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
+        focus_bar.append(focus_btn);
+        r._nte_focus_bar = focus_bar;
+        left.append(lbl);
         let col = document.createElement("div");
         col.style.display = "flex";
         col.style.flexDirection = "column";
@@ -5547,7 +5617,7 @@
         cnt.style.opacity = "0.85";
         cnt.textContent = "Showing 0/0";
         col.append(dd, cnt);
-        r.append(lbl, col);
+        r.append(left, col);
       })(),
       e.parentElement)
     ) {
@@ -5578,6 +5648,11 @@
         }),
         trade_filter_bound ||
           (document.addEventListener("click", (e) => {
+            e.target?.closest?.(".trade-row-list .trade-row") &&
+              setTimeout(() => {
+                sync_trade_focus_button();
+                trade_focus_selected_only && apply_trade_list_filter();
+              }, 0);
             document.getElementById("nteTradeListFilter")?.contains?.(e.target) || close_trade_list_filter_menu();
           }),
           (trade_filter_bound = !0))),
@@ -5585,6 +5660,17 @@
     }
     if (!r || !t) return r;
     if (r.previousElementSibling !== e && e.parentElement) e.insertAdjacentElement("afterend", r);
+    let focus_bar = document.getElementById("nteTradeFocusSelectedBar") || r._nte_focus_bar;
+    if (!focus_bar) {
+      focus_bar = document.createElement("div");
+      focus_bar.id = "nteTradeFocusSelectedBar";
+      focus_bar.style.cssText =
+        "width:100%;display:flex;align-items:center;justify-content:flex-start;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
+    }
+    let scroll_container = document.getElementById("trade-row-scroll-container");
+    if (scroll_container?.parentElement && focus_bar.previousElementSibling !== scroll_container) scroll_container.insertAdjacentElement("afterend", focus_bar);
+    else if (!scroll_container && focus_bar.previousElementSibling !== r && r.parentElement) r.insertAdjacentElement("afterend", focus_bar);
+    bind_trade_focus_selected_observer();
     return sync_trade_list_filter_ui_state(), r;
   }
   function get_trade_row_filter_metrics(e) {
@@ -5695,6 +5781,8 @@
     if (trade_search_q && trade_search_q.trim()) {
       let q = trade_search_q.trim();
       n.textContent = `No trades contain "${q}".`;
+    } else if (trade_focus_selected_only) {
+      n.textContent = "Select a trade to focus it.";
     } else {
       n.textContent = `No trades match ${a.label.toLowerCase()}.`;
     }
@@ -5710,8 +5798,8 @@
     let displays = new Array(total);
     for (let i = 0; i < total; i++) {
       let match = does_trade_row_match_search(rows[i], q);
-      displays[i] = match;
-      if (match) shown++;
+      displays[i] = should_show_trade_row(rows[i], match);
+      if (displays[i]) shown++;
     }
     for (let i = 0; i < total; i++) {
       rows[i].style.display = displays[i] ? "" : "none";
@@ -5730,8 +5818,9 @@
     for (let i = 0; i < total; i++) {
       let row = t[i];
       let n = does_trade_row_match_filter(row, fv);
-      row.style.display = n ? "" : "none";
-      if (n) r++;
+      let visible = should_show_trade_row(row, n);
+      row.style.display = visible ? "" : "none";
+      if (visible) r++;
     }
     let cnt = document.getElementById("nteTradeListFilterCount");
     if (cnt) cnt.textContent = `Showing ${r}/${total}`;
