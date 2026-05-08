@@ -64,10 +64,9 @@ cd nevos-trading-extension
 ### Trade Review
 
 - Analyze Trade button for deeper trade review.
-- Quick Proof button for completed trades.
+- Quick Proof button for completed trades. (couldn't figure out how to get an image on firefox)
 - Proof preview popup with image and text copy actions.
 - Proof text includes biggest item names, values, sender, receiver, completion date, and item acronyms when available.
-- Browser-specific proof behavior: Chromium browsers can copy proof images; Firefox falls back to proof text when image capture is not available.
 
 ### Notifications
 
