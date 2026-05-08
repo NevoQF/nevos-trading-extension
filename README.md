@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://nevos-extension.com">Website</a> ·
-  <a href="https://www.youtube.com/watch?v=_KB9yUQk95I">YouTube</a> ·
+  <a href="https://nevos-extension.com">Website</a> -
+  <a href="https://www.youtube.com/watch?v=_KB9yUQk95I">YouTube</a> -
   <a href="https://discord.gg/tHReJPn2q5">Discord</a>
 </p>
 
@@ -27,7 +27,7 @@ Release builds stay minified. This repo keeps the readable source, manifests, an
 
 ## What It Is
 
-nevos trading extension is a Roblox trading extension for Chrome, Brave, Edge, Opera, Firefox, and Safari. It adds trading tools directly into Roblox pages so traders can check values, review trades, search trade windows, spot item flags, and move through trade pages faster without bouncing between sites.
+nevos trading extension is a Roblox trading extension for Chrome, Brave, Edge, Opera, Firefox, and Safari. It adds trading tools directly into Roblox pages so traders can check values, inspect trades, search faster, flag risky items, generate proof, and move through trade pages without bouncing between sites.
 
 ## Clone
 
@@ -36,26 +36,38 @@ git clone https://github.com/NevoQF/nevos-trading-extension.git
 cd nevos-trading-extension
 ```
 
-## Features ✨
+## Features
 
 ### Values
 
 - Rolimons values on trade windows, trade lists, catalog pages, and user pages.
 - Optional Routility USD values.
+- Profile inventory pill with a RAP or Value display toggle.
+- Profile inventory overview with total value, total RAP, item count, item flags, demand, serials, and search/sort controls.
+- Improved profile inventory loading so temporary Roblox fetch failures are not shown as private inventories.
 - Post-tax trade value and Robux tax difference helpers.
-- Profile inventory overview with value, RAP, item count, and item flags.
 - Sale data button on trade items.
 - RAP raise/drop indicators for items sitting over or under nearby value tiers.
 
-### Trading
+### Trade Pages
 
-- Trade win/loss stats.
-- Trade analysis tools for deeper trade review.
+- Trade win/loss stats with value and RAP deltas.
+- Trade list values and color indicators.
+- Trade list filters for all trades, overpay, equal, underpay, upgrade, downgrade, Robux, and item search.
+- Hide-others button that focuses the selected trade while keeping the rest of the trade list available again with one click.
+- Quick decline button on trade rows.
 - Trade window item search.
 - Duplicate trade warning.
-- Quick decline button.
-- Bulk trade actions.
+- Counter trade prompt.
 - Mobile trade items button.
+
+### Trade Review
+
+- Analyze Trade button for deeper trade review.
+- Quick Proof button for completed trades.
+- Proof preview popup with image and text copy actions.
+- Proof text includes biggest item names, values, sender, receiver, completion date, and item acronyms when available.
+- Browser-specific proof behavior: Chromium browsers can copy proof images; Firefox falls back to proof text when image capture is not available.
 
 ### Notifications
 
@@ -71,16 +83,18 @@ cd nevos-trading-extension
 - Item ownership history links.
 - User profile links.
 - User badge display.
+- Quick item search from the Roblox navbar.
 
 ### Extra Tools
 
 - Colorblind mode.
 - Optional Roblox 2FA autofill with password-protected encrypted storage.
 - Option to disable RAP in win/loss stats.
+- Extension-originated Roblox requests are marked with `NTERequest=1` for easier network debugging.
 - Direct manual install builds for supported browsers.
 - Settings stored locally through browser storage.
 
-## Demos 🎥
+## Demos
 
 <table>
   <tr>
@@ -89,14 +103,14 @@ cd nevos-trading-extension
         <img src="docs/media/trade-review-tools.gif" width="260" alt="Trade review and filters demo">
       </a>
       <br>
-      Trade review & filters
+      Trade review and filters
     </td>
     <td align="center">
       <a href="docs/media/inventory-overview.mp4">
         <img src="docs/media/inventory-overview.gif" width="260" alt="Inventory values and item flags demo">
       </a>
       <br>
-      Inventory values & flags
+      Inventory values and flags
     </td>
     <td align="center">
       <a href="docs/media/trade-window-search.mp4">
@@ -114,7 +128,7 @@ GitHub README pages do not play YouTube embeds inline. Use the thumbnail link.
 
 [![YouTube demo](https://img.youtube.com/vi/_KB9yUQk95I/hqdefault.jpg)](https://www.youtube.com/watch?v=_KB9yUQk95I)
 
-## Source 🔎
+## Source
 
 The readable extension source is in `extension/`. Internal release packaging tools are intentionally excluded from this public source repo.
 
@@ -129,6 +143,6 @@ docs/media/           demo previews and videos
 
 Source is shared for review and verification only. Official builds are free for personal use. Reuploading, rebranding, reselling, or claiming authorship is not allowed. See `LICENSE`.
 
-## Star ⭐
+## Star
 
 If this source helps you verify the extension or you like the project, a star on the repo helps.

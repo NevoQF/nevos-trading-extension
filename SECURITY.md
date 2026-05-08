@@ -4,7 +4,7 @@ Current supported source version: `3.10.32`.
 
 Use `npm run check` before trusting a local copy.
 
-The scanner checks syntax, comments, camelCase local declarations, risky dynamic code patterns, cookie APIs, and manifest cookie permissions.
+The scanner checks syntax, comments and stuff like that.
 
 ## Reporting
 
