@@ -2235,9 +2235,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         if (!has_host_access) has_host_access = await request_host_permissions();
         let captured = await capture_tab();
         if (captured?.ok) return respond(captured);
+        if (is_quick_proof_capture_permission_error(captured?.error)) return respond({ ok: false, error: quick_proof_capture_permission_message });
         if (!has_host_access) return respond({ ok: false, error: "Grant Roblox site access for Quick Proof, then try again." });
         await request_host_permissions();
-        respond(await capture_tab());
+        captured = await capture_tab();
+        if (!captured?.ok && is_quick_proof_capture_permission_error(captured?.error)) return respond({ ok: false, error: quick_proof_capture_permission_message });
+        respond(captured);
       } catch (err) {
         respond({ ok: false, error: err?.message || "Could not capture the current tab." });
       }
@@ -2411,6 +2414,20 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
 
+  if (message?.type === "open_first_roblox_popup") {
+    (async () => {
+      if (/firefox/i.test(navigator.userAgent || "") || !chrome.action?.openPopup) return respond({ ok: false });
+      try {
+        let options = sender?.tab?.windowId === undefined ? undefined : { windowId: sender.tab.windowId };
+        await chrome.action.openPopup(options);
+        respond({ ok: true });
+      } catch (err) {
+        respond({ ok: false, error: err?.message || "Could not open extension popup." });
+      }
+    })();
+    return true;
+  }
+
   if (message?.type === "trade_row_prepare_decline") {
     trade_row_get_csrf().then((csrf) => respond({ ok: !!csrf }));
     return true;
@@ -2486,6 +2503,12 @@ const required_host_origins = [
   "https://thumbnails.roblox.com/*",
 ];
 
+const quick_proof_capture_permission_message = "Open the extension popup from the toolbar once, then try Proof again.";
+
+function is_quick_proof_capture_permission_error(error) {
+  return /'<all_urls>'|<all_urls>|activeTab/i.test(String(error || ""));
+}
+
 async function check_host_permissions() {
   if (!chrome.permissions?.contains) return true;
   return new Promise((resolve) => {
@@ -2523,7 +2546,6 @@ async function request_host_permissions() {
     }
   });
 }
-
 
 let ta_state = { running: false, action: "", phase: "", done: 0, total: 0, checked: 0, skipped: 0, fetched_pages: 0, error: "", wait_until: 0 };
 let ta_abort = false;

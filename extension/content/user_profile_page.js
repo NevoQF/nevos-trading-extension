@@ -235,11 +235,12 @@
     async function get_user_inventory(user_id) {
       let cursor = "";
       let items = [];
+      let limit = "100";
 
       while (true) {
         let params = new URLSearchParams({
           sortBy: "CreationTime",
-          limit: "50",
+          limit,
           sortOrder: "Desc",
         });
         if (cursor) params.set("cursor", cursor);
@@ -257,6 +258,10 @@
         }
         if (!resp) return items.length ? normalize_tradeable_inventory_items(items) : null;
         if (resp.status === 401 || resp.status === 403) return false;
+        if (resp.status === 500 && limit === "100") {
+          limit = "50";
+          continue;
+        }
         if (resp.status !== 200) return items.length ? normalize_tradeable_inventory_items(items) : null;
         let data = await resp.json().catch(() => null);
         if (!data) return items.length ? normalize_tradeable_inventory_items(items) : null;
@@ -917,7 +922,8 @@
     let style = document.createElement("style");
     style.id = "nte-profile-dominance-style";
     style.textContent = `
-      .nte-profile-rolimons-link,.user-profile-link,#${PROFILE_SUMMARY_ID},.nte-discord-link,.nte-inv-hash-serial-btn{position:relative!important;z-index:2147483600!important;pointer-events:auto!important;isolation:isolate!important}
+      .nte-profile-rolimons-link,.user-profile-link,#${PROFILE_SUMMARY_ID},.nte-discord-link,.nte-inv-hash-serial-btn,.nte-inv-image-btn{position:relative!important;z-index:2147483600!important;pointer-events:auto!important;isolation:isolate!important}
+      .nte-inv-image-toast{z-index:2147483647!important;pointer-events:auto!important;isolation:isolate!important}
       .nte-modal-overlay{z-index:2147483646!important;pointer-events:auto!important;isolation:isolate!important}
       .nte-modal{position:relative!important;z-index:2147483647!important;pointer-events:auto!important;isolation:isolate!important}
     `;
@@ -1079,9 +1085,23 @@
   }
 
 
+  var mobile_trade_check_cache = {};
+
   async function add_mobile_trade_button(user_id) {
     let enabled = await utils.getOption("Mobile Trade Items Button");
-    let can_trade = (await (await fetch(`https://trades.roblox.com/v1/users/${user_id}/can-trade-with`, { credentials: "include" })).json()).canTrade;
+    if (!enabled) return;
+    let id = String(user_id || "");
+    if (mobile_trade_check_cache[id] === undefined) {
+      let viewer_id = parseInt(document.querySelector('meta[name="user-data"]')?.getAttribute("data-userid") || "0", 10) || 0;
+      if (viewer_id && String(viewer_id) === id) {
+        mobile_trade_check_cache[id] = false;
+      } else {
+        let resp = await fetch(`https://trades.roblox.com/v1/users/${id}/can-trade-with`, { credentials: "include" }).catch(() => null);
+        let data = resp?.ok ? await resp.json().catch(() => null) : null;
+        mobile_trade_check_cache[id] = !!data?.canTrade;
+      }
+    }
+    let can_trade = mobile_trade_check_cache[id];
     if (!enabled || !can_trade) return;
 
     async function inject() {
@@ -1308,14 +1328,20 @@
       .nte-stat-card.routility-usd-card .nte-stat-value.usd-color{color:#f1f3f5}
       .nte-stat-sub{font-size:11px;color:#7f8691;margin-top:4px;line-height:1.35}
       .nte-controls{padding:14px 24px;display:flex;gap:10px;align-items:center;flex-shrink:0;min-width:0}
-      .nte-inv-hash-serial-btn{flex-shrink:0;min-width:40px;height:40px;padding:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,#1a1c20,#121317);color:#eceef2;font-size:16px;font-weight:800;line-height:1;cursor:pointer;font-family:inherit;transition:background .15s,border-color .15s,box-shadow .15s}
-      .nte-inv-hash-serial-btn:hover{background:linear-gradient(180deg,#202329,#15181d);border-color:rgba(255,255,255,.16)}
-      .nte-inv-hash-serial-btn.nte-inv-hash-serial-active{border-color:rgba(255,255,255,.22);box-shadow:0 0 0 3px rgba(255,255,255,.08)}
-      #nte-inv-modal.nte-inv-blur-serials .nte-inv-serial{color:transparent!important;text-shadow:0 0 12px rgba(255,255,255,.72)!important;user-select:none!important}
-      .light-theme #nte-inv-modal.nte-inv-blur-serials .nte-inv-serial{text-shadow:0 0 12px rgba(107,114,128,.35)!important}
+      .nte-inv-hash-serial-btn{flex-shrink:0;min-width:40px;height:40px;padding:0 12px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(180deg,#1a1c20,#121317);color:#eceef2;font-size:16px;font-weight:800;line-height:1;cursor:pointer;font-family:inherit;transition:transform .15s,background .15s,border-color .15s,box-shadow .15s}
+      .nte-inv-hash-serial-btn:hover{transform:translateY(-1px);background:linear-gradient(180deg,#202329,#15181d);border-color:rgba(255,255,255,.16)}
+      .nte-inv-hash-serial-btn.nte-inv-hash-serial-active{border-color:rgba(129,140,248,.5);box-shadow:0 0 0 3px rgba(129,140,248,.14)}
+      .nte-inv-hash-serial-btn.nte-inv-hash-serial-pop{animation:nteSerialPop .32s cubic-bezier(.2,.9,.25,1.4)}
+      .nte-inv-image-btn{flex-shrink:0;height:40px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(180deg,#23262c,#15171c);color:#f3f5f8;font-size:12px;font-weight:800;line-height:1;cursor:pointer;font-family:inherit;letter-spacing:.01em;transition:transform .15s,background .15s,border-color .15s,box-shadow .15s}
+      .nte-inv-image-btn:hover{transform:translateY(-1px);background:linear-gradient(180deg,#2a2e36,#191c22);border-color:rgba(255,255,255,.18);box-shadow:0 8px 22px rgba(0,0,0,.22)}
+      .nte-inv-image-btn:active{transform:translateY(0)}
+      .nte-inv-image-btn[disabled]{opacity:.62;cursor:default;transform:none;box-shadow:none}
+      .nte-inv-serial[data-nte-blurred="1"]{letter-spacing:.04em;user-select:none!important}
       .light-theme .nte-inv-hash-serial-btn{border-color:rgba(17,24,39,.1);background:linear-gradient(180deg,#ffffff,#f2f3f5);color:#171a1f;box-shadow:0 1px 2px rgba(15,23,42,.04)}
       .light-theme .nte-inv-hash-serial-btn:hover{background:linear-gradient(180deg,#ffffff,#eceef1);border-color:rgba(17,24,39,.14)}
-      .light-theme .nte-inv-hash-serial-btn.nte-inv-hash-serial-active{border-color:rgba(17,24,39,.18);box-shadow:0 0 0 3px rgba(17,24,39,.07)}
+      .light-theme .nte-inv-hash-serial-btn.nte-inv-hash-serial-active{border-color:rgba(79,70,229,.34);box-shadow:0 0 0 3px rgba(79,70,229,.1)}
+      .light-theme .nte-inv-image-btn{border-color:rgba(17,24,39,.1);background:linear-gradient(180deg,#ffffff,#eef0f3);color:#171a1f;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+      .light-theme .nte-inv-image-btn:hover{background:linear-gradient(180deg,#ffffff,#e8ebef);border-color:rgba(17,24,39,.15);box-shadow:0 8px 18px rgba(34,55,99,.08)}
       .nte-search{flex:1;min-width:0;height:40px;padding:0 14px;border-radius:12px;border:1px solid rgba(255,255,255,.08);background:#14161a;color:#f7f7f8;font-size:13px;outline:none;transition:border-color .15s,background .15s,box-shadow .15s}
       .nte-search:focus{border-color:rgba(255,255,255,.18);background:#191b20;box-shadow:0 0 0 3px rgba(255,255,255,.08)}
       .nte-search::placeholder{color:#727986}
@@ -1371,7 +1397,47 @@
       .nte-item-count{top:7px;right:7px;padding:4px 8px;border-radius:999px;background:rgba(16,18,22,.86);border:1px solid rgba(255,255,255,.12);color:#f5f6f8;font-size:9px;font-weight:800;letter-spacing:.04em;box-shadow:0 4px 16px rgba(0,0,0,.35)}
       .nte-loading-modal{display:flex;align-items:center;justify-content:center;padding:64px;color:#9aa0aa;font-size:14px;gap:10px}
       .nte-loading-modal .spinner{width:20px;height:20px;border:2px solid rgba(255,255,255,.12);border-top-color:#f2f2f3;border-radius:50%;animation:nteSpin .6s linear infinite}
+      .nte-inv-image-toast{position:fixed;right:18px;bottom:18px;width:min(420px,calc(100vw - 24px));box-sizing:border-box;border-radius:16px;background:linear-gradient(180deg,#17191e,#101115);border:1px solid rgba(255,255,255,.12);box-shadow:0 22px 70px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.05);padding:14px;color:#f5f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;opacity:0;transform:translateY(14px) scale(.98);transition:opacity .18s,transform .18s}
+      .nte-inv-image-toast.is-visible{opacity:1;transform:translateY(0) scale(1)}
+      .nte-inv-image-toast-close{position:absolute;top:10px;right:10px;width:28px;height:28px;border:0;border-radius:9px;background:rgba(255,255,255,.07);color:#c9ced8;font-size:18px;line-height:1;cursor:pointer}
+      .nte-inv-image-toast-close:hover{background:rgba(255,255,255,.12);color:#fff}
+      .nte-inv-image-toast-title{font-size:13px;font-weight:850;line-height:1.2;padding-right:34px}
+      .nte-inv-image-toast-sub{margin-top:4px;font-size:11px;line-height:1.35;color:#9aa2af;padding-right:34px}
+      .nte-inv-image-toast-preview{display:block;width:100%;max-height:310px;object-fit:contain;margin:12px 0;border-radius:12px;background:#090a0c;border:1px solid rgba(255,255,255,.08)}
+      .nte-inv-image-list{margin:0 0 12px;border-radius:12px;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);overflow:hidden}
+      .nte-inv-image-list summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:34px;padding:0 11px;cursor:pointer;color:#e8ebf2;font-size:12px;font-weight:850}
+      .nte-inv-image-list summary::-webkit-details-marker{display:none}
+      .nte-inv-image-list summary::after{content:'+';width:18px;height:18px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;background:rgba(255,255,255,.08);color:#cbd2df;font-size:14px;line-height:1}
+      .nte-inv-image-list[open] summary::after{content:'-';background:rgba(129,140,248,.22);color:#fff}
+      .nte-inv-image-list-mode{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin:0 11px 9px;padding:4px;border-radius:10px;background:rgba(255,255,255,.055);border:1px solid rgba(255,255,255,.07)}
+      .nte-inv-image-list-mode button{height:25px;border:0;border-radius:7px;background:transparent;color:#aeb6c5;font-family:inherit;font-size:11px;font-weight:800;line-height:25px;cursor:pointer}
+      .nte-inv-image-list-mode button:hover{background:rgba(255,255,255,.07);color:#fff}
+      .nte-inv-image-list-mode button.is-active{background:linear-gradient(180deg,rgba(99,102,241,.95),rgba(79,70,229,.92));color:#fff;box-shadow:0 8px 18px rgba(79,70,229,.18)}
+      .nte-inv-image-list-text{margin:0 11px 10px;max-height:120px;overflow:auto;border-radius:9px;background:rgba(0,0,0,.18);padding:9px 10px;color:#cdd3df;font-size:11px;font-weight:700;line-height:1.45;word-break:break-word;scrollbar-width:thin}
+      .nte-inv-image-list-copy{display:block;width:calc(100% - 22px);height:30px;margin:0 11px 11px;border-radius:9px;border:1px solid rgba(129,140,248,.3);background:linear-gradient(180deg,rgba(99,102,241,.92),rgba(79,70,229,.92));color:#fff;font-size:12px;font-weight:850;cursor:pointer;font-family:inherit}
+      .nte-inv-image-list-copy:hover{filter:brightness(1.06)}
+      .nte-inv-image-toast-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+      .nte-inv-image-toast-copy{height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(180deg,#24272e,#171a20);color:#f5f6f8;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
+      .nte-inv-image-toast-copy:hover{border-color:rgba(255,255,255,.18);background:linear-gradient(180deg,#2b3038,#1b1e25)}
+      .nte-inv-image-toast-copy[disabled]{opacity:.62;cursor:default}
+      .nte-inv-image-prompt{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(7,8,11,.58);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);opacity:0;transition:opacity .16s}
+      .nte-inv-image-prompt.is-visible{opacity:1}
+      .nte-inv-image-prompt-card{width:min(360px,100%);border-radius:16px;background:linear-gradient(180deg,#181a20,#101115);border:1px solid rgba(255,255,255,.12);box-shadow:0 24px 80px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.05);padding:16px;color:#f5f6f8;transform:translateY(10px) scale(.98);transition:transform .16s}
+      .nte-inv-image-prompt.is-visible .nte-inv-image-prompt-card{transform:translateY(0) scale(1)}
+      .nte-inv-image-prompt-title{font-size:14px;font-weight:850;line-height:1.2}
+      .nte-inv-image-prompt-sub{margin-top:5px;color:#9ca4b2;font-size:11px;line-height:1.35}
+      .nte-inv-image-prompt-fields{display:grid;grid-template-columns:1fr 118px;gap:9px;margin-top:13px}
+      .nte-inv-image-prompt-field{display:flex;flex-direction:column;gap:5px}
+      .nte-inv-image-prompt-label{color:#858d9d;font-size:9px;font-weight:850;letter-spacing:.05em;text-transform:uppercase}
+      .nte-inv-image-prompt-input{width:100%;box-sizing:border-box;margin-top:13px;height:38px;border-radius:11px;border:1px solid rgba(255,255,255,.12);background:#111318;color:#f7f8fa;font:800 14px -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:0 12px;outline:none}
+      .nte-inv-image-prompt-fields .nte-inv-image-prompt-input{margin-top:0}
+      .nte-inv-image-prompt-input:focus{border-color:rgba(255,255,255,.22);box-shadow:0 0 0 3px rgba(255,255,255,.08)}
+      .nte-inv-image-prompt-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px}
+      .nte-inv-image-prompt-actions button{height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(180deg,#24272e,#171a20);color:#f5f6f8;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
+      .nte-inv-image-prompt-actions button:hover{border-color:rgba(255,255,255,.18);background:linear-gradient(180deg,#2b3038,#1b1e25)}
+      .nte-inv-image-prompt-actions .nte-inv-image-prompt-muted{background:transparent;color:#aab2bf}
       @keyframes nteSpin{to{transform:rotate(360deg)}}
+      @keyframes nteSerialPop{0%{transform:scale(.96)}62%{transform:scale(1.045)}100%{transform:scale(1)}}
       .light-theme .nte-modal{background:radial-gradient(circle at top,rgba(255,255,255,.92) 0%,transparent 28%),linear-gradient(180deg,#ffffff 0%,#f3f4f6 100%);box-shadow:0 30px 90px rgba(12,18,34,.12),0 0 0 1px rgba(15,23,42,.08)}
       .light-theme .nte-modal-header{border-color:rgba(17,24,39,.08)}
       .light-theme .nte-modal-title{color:#101215}
@@ -1429,8 +1495,32 @@
       .light-theme .nte-discord-link:hover{color:#111827}
       .light-theme .nte-loading-modal{color:#6b7280}
       .light-theme .nte-loading-modal .spinner{border-color:rgba(17,24,39,.12);border-top-color:#4b5563}
+      .light-theme .nte-inv-image-toast{background:linear-gradient(180deg,#ffffff,#f3f4f6);border-color:rgba(17,24,39,.1);box-shadow:0 22px 70px rgba(34,55,99,.16),inset 0 1px 0 rgba(255,255,255,.8);color:#15181d}
+      .light-theme .nte-inv-image-toast-close{background:rgba(17,24,39,.06);color:#5f6672}
+      .light-theme .nte-inv-image-toast-close:hover{background:rgba(17,24,39,.11);color:#111827}
+      .light-theme .nte-inv-image-toast-sub{color:#687080}
+      .light-theme .nte-inv-image-toast-preview{background:#f5f6f8;border-color:rgba(17,24,39,.08)}
+      .light-theme .nte-inv-image-list{background:rgba(17,24,39,.035);border-color:rgba(17,24,39,.08)}
+      .light-theme .nte-inv-image-list summary{color:#171a1f}
+      .light-theme .nte-inv-image-list summary::after{background:rgba(17,24,39,.06);color:#4b5563}
+      .light-theme .nte-inv-image-list[open] summary::after{background:rgba(79,70,229,.14);color:#312e81}
+      .light-theme .nte-inv-image-list-mode{background:rgba(17,24,39,.04);border-color:rgba(17,24,39,.07)}
+      .light-theme .nte-inv-image-list-mode button{color:#647084}
+      .light-theme .nte-inv-image-list-mode button:hover{background:rgba(17,24,39,.055);color:#111827}
+      .light-theme .nte-inv-image-list-text{background:rgba(255,255,255,.72);color:#4b5563}
+      .light-theme .nte-inv-image-toast-copy{border-color:rgba(17,24,39,.1);background:linear-gradient(180deg,#ffffff,#eef0f3);color:#171a1f}
+      .light-theme .nte-inv-image-toast-copy:hover{border-color:rgba(17,24,39,.15);background:linear-gradient(180deg,#ffffff,#e7eaee)}
+      .light-theme .nte-inv-image-prompt{background:rgba(245,247,250,.62)}
+      .light-theme .nte-inv-image-prompt-card{background:linear-gradient(180deg,#ffffff,#f3f4f6);border-color:rgba(17,24,39,.1);box-shadow:0 24px 80px rgba(34,55,99,.18),inset 0 1px 0 rgba(255,255,255,.8);color:#15181d}
+      .light-theme .nte-inv-image-prompt-sub{color:#687080}
+      .light-theme .nte-inv-image-prompt-label{color:#707888}
+      .light-theme .nte-inv-image-prompt-input{background:#fff;border-color:rgba(17,24,39,.12);color:#111827}
+      .light-theme .nte-inv-image-prompt-input:focus{border-color:rgba(17,24,39,.22);box-shadow:0 0 0 3px rgba(17,24,39,.08)}
+      .light-theme .nte-inv-image-prompt-actions button{border-color:rgba(17,24,39,.1);background:linear-gradient(180deg,#ffffff,#eef0f3);color:#171a1f}
+      .light-theme .nte-inv-image-prompt-actions button:hover{border-color:rgba(17,24,39,.15);background:linear-gradient(180deg,#ffffff,#e7eaee)}
+      .light-theme .nte-inv-image-prompt-actions .nte-inv-image-prompt-muted{background:transparent;color:#667085}
       .light-theme .nte-items-container::-webkit-scrollbar-thumb{background:rgba(17,24,39,.16)}
-      @media(max-width:640px){.nte-modal-overlay{align-items:flex-start}.nte-modal{width:100%;max-height:calc(100vh - 8px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));max-height:calc(100dvh - 8px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));border-radius:16px}.nte-modal-header{padding:12px 14px 8px;align-items:flex-start}.nte-modal-logo{width:28px;height:28px;border-radius:9px}.nte-modal-title{gap:8px}.nte-modal-title-text{font-size:14px}.nte-modal-discord-sub{display:none}.nte-stats{display:flex;grid-template-columns:none;gap:7px;padding:8px 14px 6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}.nte-stats::-webkit-scrollbar{display:none}.nte-stat-card{flex:0 0 112px;padding:9px 10px;border-radius:12px;scroll-snap-align:start}.nte-stats .nte-stat-card:last-child{flex-basis:146px}.nte-stats .nte-stat-card:last-child .nte-stat-value{font-size:12px;line-height:1.25;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.nte-stat-label{font-size:9px;letter-spacing:.05em;margin-bottom:4px}.nte-stat-label.has-logo{gap:5px}.nte-stat-label-logo{width:11px;height:11px}.nte-stat-value{font-size:16px;line-height:1.1}.nte-stat-sub{font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nte-controls{padding:8px 14px 10px;flex-direction:column;align-items:stretch;gap:8px}.nte-inv-hash-serial-btn,.nte-search,.nte-sort{width:100%}.nte-inv-hash-serial-btn{min-height:36px;height:36px}.nte-search,.nte-sort{height:36px;font-size:12px}.nte-items-container{padding:4px 14px 14px}.nte-items-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.nte-item-card{padding:8px}.nte-item-thumb{margin-bottom:7px;border-radius:9px}.nte-thumb-tag{font-size:8px;padding:3px 6px}.nte-thumb-tag.rare{width:20px;height:20px}.nte-thumb-tag.rare svg{width:9px;height:9px}.nte-thumb-tag.serial{font-size:8px;padding:3px 6px}.nte-item-name{font-size:11px;min-height:30px;margin-bottom:7px}.nte-item-values{gap:4px}.nte-item-val{padding:6px 7px;border-radius:9px}.nte-item-val span:first-child{font-size:8px}.nte-item-val .v,.nte-item-val .r{font-size:10px}.nte-item-footer{margin-top:6px;min-height:24px}.nte-item-demand{font-size:8.5px;padding:4px 7px}.nte-item-demand-dot{width:5px;height:5px}.nte-item-count{top:5px;right:5px;font-size:8px;padding:3px 6px}.nte-modal-close{width:32px;height:32px;font-size:18px;flex-shrink:0}}
+      @media(max-width:640px){.nte-modal-overlay{align-items:flex-start}.nte-modal{width:100%;max-height:calc(100vh - 8px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));max-height:calc(100dvh - 8px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));border-radius:16px}.nte-modal-header{padding:12px 14px 8px;align-items:flex-start}.nte-modal-logo{width:28px;height:28px;border-radius:9px}.nte-modal-title{gap:8px}.nte-modal-title-text{font-size:14px}.nte-modal-discord-sub{display:none}.nte-stats{display:flex;grid-template-columns:none;gap:7px;padding:8px 14px 6px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-snap-type:x proximity}.nte-stats::-webkit-scrollbar{display:none}.nte-stat-card{flex:0 0 112px;padding:9px 10px;border-radius:12px;scroll-snap-align:start}.nte-stats .nte-stat-card:last-child{flex-basis:146px}.nte-stats .nte-stat-card:last-child .nte-stat-value{font-size:12px;line-height:1.25;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}.nte-stat-label{font-size:9px;letter-spacing:.05em;margin-bottom:4px}.nte-stat-label.has-logo{gap:5px}.nte-stat-label-logo{width:11px;height:11px}.nte-stat-value{font-size:16px;line-height:1.1}.nte-stat-sub{font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.nte-controls{padding:8px 14px 10px;flex-direction:column;align-items:stretch;gap:8px}.nte-inv-hash-serial-btn,.nte-inv-image-btn,.nte-search,.nte-sort{width:100%}.nte-inv-hash-serial-btn,.nte-inv-image-btn{min-height:36px;height:36px}.nte-search,.nte-sort{height:36px;font-size:12px}.nte-items-container{padding:4px 14px 14px}.nte-items-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.nte-item-card{padding:8px}.nte-item-thumb{margin-bottom:7px;border-radius:9px}.nte-thumb-tag{font-size:8px;padding:3px 6px}.nte-thumb-tag.rare{width:20px;height:20px}.nte-thumb-tag.rare svg{width:9px;height:9px}.nte-thumb-tag.serial{font-size:8px;padding:3px 6px}.nte-item-name{font-size:11px;min-height:30px;margin-bottom:7px}.nte-item-values{gap:4px}.nte-item-val{padding:6px 7px;border-radius:9px}.nte-item-val span:first-child{font-size:8px}.nte-item-val .v,.nte-item-val .r{font-size:10px}.nte-item-footer{margin-top:6px;min-height:24px}.nte-item-demand{font-size:8.5px;padding:4px 7px}.nte-item-demand-dot{width:5px;height:5px}.nte-item-count{top:5px;right:5px;font-size:8px;padding:3px 6px}.nte-modal-close{width:32px;height:32px;font-size:18px;flex-shrink:0}.nte-inv-image-toast{right:12px;bottom:12px}}
     `;
     document.head.appendChild(style);
 
@@ -1525,6 +1615,584 @@
       );
     }
 
+    var inv_image_asset_cache = {};
+
+    function inv_image_message(message, ms) {
+      return new Promise((resolve) => {
+        let done = false;
+        let timer = setTimeout(() => {
+          if (done) return;
+          done = true;
+          resolve(null);
+        }, ms || 7000);
+        nte_send_message(message, function (result) {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve(result || null);
+        });
+      });
+    }
+
+    function inv_image_load_image(src) {
+      if (!src) return Promise.resolve(null);
+      return new Promise((resolve) => {
+        let img = new Image();
+        let timer = setTimeout(() => resolve(null), 9000);
+        img.onload = () => {
+          clearTimeout(timer);
+          resolve(img);
+        };
+        img.onerror = () => {
+          clearTimeout(timer);
+          resolve(null);
+        };
+        img.src = src;
+      });
+    }
+
+    async function inv_image_safe_image(src) {
+      src = String(src || "").trim();
+      if (!src) return null;
+      if (inv_image_asset_cache[src]) return inv_image_asset_cache[src];
+      let data_url = src;
+      if (!src.startsWith("data:")) {
+        let result = await inv_image_message({ type: "quickProofFetchImage", url: src }, 7000);
+        if (result?.ok && result.dataUrl) data_url = result.dataUrl;
+      }
+      let image = await inv_image_load_image(data_url);
+      inv_image_asset_cache[src] = image;
+      return image;
+    }
+
+    function inv_image_canvas_blob(canvas) {
+      return new Promise((resolve, reject) => {
+        try {
+          canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not create inventory image."))), "image/png");
+        } catch (err) {
+          reject(new Error(err?.message || "Could not create inventory image."));
+        }
+      });
+    }
+
+    function inv_image_round(ctx, x, y, w, h, r) {
+      r = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+
+    function inv_image_text(ctx, text, x, y, max_width, line_height, max_lines) {
+      let words = String(text || "").split(/\s+/).filter(Boolean);
+      let lines = [];
+      let line = "";
+      let truncated = false;
+      for (let i = 0; i < words.length; i++) {
+        let word = words[i];
+        let test = line ? line + " " + word : word;
+        if (ctx.measureText(test).width <= max_width || !line) {
+          line = test;
+        } else {
+          lines.push(line);
+          line = word;
+        }
+        if (lines.length >= max_lines) {
+          truncated = i < words.length - 1 || !!line;
+          break;
+        }
+      }
+      if (line && lines.length < max_lines) lines.push(line);
+      if (truncated && lines.length === max_lines) {
+        while (ctx.measureText(lines[lines.length - 1] + "...").width > max_width && lines[lines.length - 1].length > 1) {
+          lines[lines.length - 1] = lines[lines.length - 1].slice(0, -1);
+        }
+        lines[lines.length - 1] += "...";
+      }
+      for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], x, y + i * line_height);
+      return lines.length * line_height;
+    }
+
+    function inv_image_compact(n) {
+      n = Math.round(Number(n) || 0);
+      let abs = Math.abs(n);
+      if (abs >= 1000000) return (n / 1000000).toFixed(abs >= 10000000 ? 1 : 2).replace(/\.0+$/, "") + "M";
+      if (abs >= 1000) return (n / 1000).toFixed(abs >= 100000 ? 0 : 1).replace(/\.0+$/, "") + "K";
+      return String(n);
+    }
+
+    async function inv_image_profile_name() {
+      let user_id =
+        parseInt(document.querySelector("[data-profileuserid]")?.getAttribute("data-profileuserid"), 10) ||
+        parseInt(window.location.pathname.match(/\/users\/(\d+)\//)?.[1], 10) ||
+        0;
+      if (user_id) {
+        try {
+          let resp = await fetch(`https://users.roblox.com/v1/users/${user_id}?NTERequest=1`, { credentials: "include" });
+          if (resp.ok) {
+            let data = await resp.json();
+            let name = String(data?.name || "").trim();
+            if (name) return name;
+          }
+        } catch {}
+      }
+      let username =
+        document.querySelector("[data-profileusername]")?.getAttribute("data-profileusername") ||
+        document.querySelector("#profile-header-title-container-username")?.textContent?.trim() ||
+        document.querySelector(".profile-header-title-container-username")?.textContent?.trim() ||
+        "";
+      username = username.replace(/^@+/, "").trim();
+      if (username) return username;
+      return (
+        document.querySelector("#profile-header-title-container-name")?.textContent?.trim() ||
+        "Roblox user"
+      );
+    }
+
+    function inv_image_filename(name) {
+      return `inventory-${String(name || "user").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 42) || "user"}.png`;
+    }
+
+    function inv_image_badge(ctx, text, x, y, fill, color) {
+      ctx.save();
+      ctx.font = "800 11px Segoe UI, Arial, sans-serif";
+      let w = Math.ceil(ctx.measureText(text).width) + 18;
+      inv_image_round(ctx, x, y, w, 22, 11);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.fillStyle = color;
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, x + 9, y + 11);
+      ctx.restore();
+      return w;
+    }
+
+    function inv_image_draw_logo(ctx, image, x, y, size) {
+      ctx.save();
+      inv_image_round(ctx, x, y, size, size, 9);
+      ctx.clip();
+      if (image) {
+        ctx.drawImage(image, x, y, size, size);
+      } else {
+        ctx.fillStyle = "#eef2ff";
+        ctx.fillRect(x, y, size, size);
+        ctx.fillStyle = "#315db8";
+        ctx.font = `900 ${Math.round(size * .55)}px Segoe UI, Arial, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("N", x + size / 2, y + size / 2 + 1);
+      }
+      ctx.restore();
+    }
+
+    function inv_image_draw_card(ctx, item, image, x, y, w, h, dark) {
+      ctx.save();
+      inv_image_round(ctx, x, y, w, h, 16);
+      ctx.fillStyle = dark ? "#181a20" : "#ffffff";
+      ctx.fill();
+      ctx.strokeStyle = item.rare ? (dark ? "rgba(255,255,255,.28)" : "rgba(15,23,42,.22)") : dark ? "rgba(255,255,255,.10)" : "rgba(15,23,42,.10)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      let thumb = w - 28;
+      let tx = x + 14;
+      let ty = y + 12;
+      inv_image_round(ctx, tx, ty, thumb, thumb, 13);
+      ctx.fillStyle = dark ? "#252833" : "#eef1f5";
+      ctx.fill();
+      if (image) {
+        ctx.save();
+        inv_image_round(ctx, tx, ty, thumb, thumb, 13);
+        ctx.clip();
+        let iw = image.naturalWidth || image.width || thumb;
+        let ih = image.naturalHeight || image.height || thumb;
+        let scale = Math.min(thumb / iw, thumb / ih) * .94;
+        let dw = iw * scale;
+        let dh = ih * scale;
+        ctx.drawImage(image, tx + (thumb - dw) / 2, ty + (thumb - dh) / 2, dw, dh);
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.shadowColor = dark ? "rgba(0,0,0,.75)" : "rgba(255,255,255,.88)";
+      ctx.shadowBlur = 5;
+      ctx.fillStyle = dark ? "#f8fafc" : "#111827";
+      ctx.font = "900 10px Segoe UI, Arial, sans-serif";
+      ctx.textBaseline = "top";
+      if (item.count > 1) {
+        ctx.textAlign = "right";
+        ctx.fillText("x" + item.count, tx + thumb - 8, ty + 8);
+      }
+      if (item.rare) {
+        ctx.save();
+        ctx.translate(tx + 17, ty + 17);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = "#93d7ff";
+        ctx.fillRect(-7, -7, 14, 14);
+        ctx.restore();
+      } else if (item.proj) {
+        inv_image_badge(ctx, "PROJ", tx + 8, ty + 8, dark ? "rgba(96,64,20,.86)" : "rgba(255,238,204,.95)", dark ? "#ffe1ad" : "#7c5415");
+      }
+      if (item.serial) {
+        ctx.textAlign = "left";
+        ctx.fillText("#" + fmt(item.serial), tx + 9, ty + thumb - 19);
+      }
+      ctx.restore();
+
+      ctx.fillStyle = dark ? "#f6f7f9" : "#14171d";
+      ctx.font = "800 13px Segoe UI, Arial, sans-serif";
+      ctx.textBaseline = "top";
+      let name_y = ty + thumb + 10;
+      inv_image_text(ctx, item.name, x + 14, name_y, w - 28, 16, 2);
+
+      let metric_y = y + h - 48;
+      let metric_gap = 8;
+      let metric_w = (w - 28 - metric_gap) / 2;
+      let metrics = [
+        ["VALUE", inv_image_compact(item.count > 1 ? item.total_val : item.val), "#e8eef9"],
+        ["RAP", inv_image_compact(item.count > 1 ? item.total_rap : item.rap), "#9bd2ff"],
+      ];
+      for (let i = 0; i < metrics.length; i++) {
+        let mx = x + 14 + i * (metric_w + metric_gap);
+        inv_image_round(ctx, mx, metric_y, metric_w, 36, 10);
+        ctx.fillStyle = dark ? "rgba(255,255,255,.055)" : "rgba(15,23,42,.045)";
+        ctx.fill();
+        ctx.strokeStyle = dark ? "rgba(255,255,255,.07)" : "rgba(15,23,42,.06)";
+        ctx.stroke();
+        ctx.fillStyle = dark ? "#858d9d" : "#6b7280";
+        ctx.font = "800 8px Segoe UI, Arial, sans-serif";
+        ctx.fillText(metrics[i][0], mx + 8, metric_y + 7);
+        ctx.fillStyle = dark ? metrics[i][2] : "#111827";
+        ctx.font = "900 12px Segoe UI, Arial, sans-serif";
+        ctx.fillText(metrics[i][1], mx + 8, metric_y + 19);
+      }
+      ctx.restore();
+    }
+
+    function inv_image_items_for_output(items, limit) {
+      let out = [...items].sort((a, b) => (b.total_val || b.val) - (a.total_val || a.val) || (b.total_rap || b.rap) - (a.total_rap || a.rap));
+      if (Number(limit) > 0) out = out.slice(0, Math.min(out.length, Math.floor(Number(limit))));
+      return out;
+    }
+
+    function inv_image_item_acronym(item) {
+      let acronym = String(item?.acronym || "").trim();
+      if (!acronym || acronym === "-" || /^n\/?a$/i.test(acronym)) return "";
+      let clean_name = String(item?.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      let clean_acr = acronym.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      if (!clean_acr || clean_acr === clean_name) return "";
+      return acronym.toUpperCase();
+    }
+
+    function inv_image_item_names_text(items, mode) {
+      let text = items
+        .map((item) => {
+          let name = String(item?.name || "Unknown").trim() || "Unknown";
+          let acronym = inv_image_item_acronym(item);
+          if (mode === "full") return name;
+          if (mode === "acronym") return acronym || name;
+          return acronym ? `${name} (${acronym})` : name;
+        })
+        .join(", ");
+      return text ? `${text},` : "";
+    }
+
+    async function inv_image_create_blob(data) {
+      let items = inv_image_items_for_output(data.items, data.limit);
+      if (!items.length) throw new Error("No inventory items to image.");
+      let dark = utils.getColorMode() !== "light";
+      let requested_cols = Math.floor(Number(data.items_per_row) || 5);
+      let cols = Math.max(3, Math.min(7, requested_cols));
+      let card_w = cols >= 7 ? 136 : 146;
+      let card_h = cols >= 7 ? 214 : 228;
+      let gap = 14;
+      let pad = 42;
+      let header_h = 154;
+      let rows = Math.ceil(items.length / cols);
+      let width = pad * 2 + cols * card_w + (cols - 1) * gap;
+      let height = header_h + 22 + rows * card_h + Math.max(0, rows - 1) * gap + 58;
+      let canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      let ctx = canvas.getContext("2d");
+      ctx.fillStyle = dark ? "#101115" : "#f3f4f6";
+      ctx.fillRect(0, 0, width, height);
+
+      let grd = ctx.createLinearGradient(0, 0, width, height);
+      grd.addColorStop(0, dark ? "rgba(255,255,255,.06)" : "rgba(255,255,255,.86)");
+      grd.addColorStop(1, dark ? "rgba(255,255,255,0)" : "rgba(226,232,240,.2)");
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, width, height);
+
+      let logo = await inv_image_safe_image(utils.getURL("assets/icons/logo128.png"));
+      inv_image_draw_logo(ctx, logo, pad, 34, 44);
+      ctx.textBaseline = "top";
+      ctx.fillStyle = dark ? "#ffffff" : "#101318";
+      ctx.font = "900 31px Segoe UI, Arial, sans-serif";
+      ctx.fillText("Inventory Overview", pad + 58, 30);
+      ctx.fillStyle = dark ? "#9ba3b1" : "#667085";
+      ctx.font = "700 13px Segoe UI, Arial, sans-serif";
+      ctx.fillText(`${data.username}  |  ${fmt(data.total_count)} items`, pad + 60, 67);
+
+      let summary_w = 168;
+      let summary_gap = 16;
+      let summary_y = 100;
+      let summary_x = Math.round((width - summary_w * 2 - summary_gap) / 2);
+      let summaries = [
+        ["Total Value", short_num(data.total_value), fmt(data.total_value)],
+        ["Total RAP", short_num(data.total_rap), fmt(data.total_rap)],
+      ];
+      for (let i = 0; i < summaries.length; i++) {
+        let sx = summary_x + i * (summary_w + summary_gap);
+        inv_image_round(ctx, sx, summary_y, summary_w, 48, 14);
+        ctx.fillStyle = dark ? "rgba(255,255,255,.055)" : "rgba(255,255,255,.86)";
+        ctx.fill();
+        ctx.strokeStyle = dark ? "rgba(255,255,255,.09)" : "rgba(15,23,42,.08)";
+        ctx.stroke();
+        ctx.fillStyle = dark ? "#8f97a6" : "#6b7280";
+        ctx.font = "800 9px Segoe UI, Arial, sans-serif";
+        ctx.fillText(summaries[i][0].toUpperCase(), sx + 14, summary_y + 9);
+        ctx.fillStyle = dark ? "#f8fafc" : "#111827";
+        ctx.font = "900 21px Segoe UI, Arial, sans-serif";
+        ctx.fillText(summaries[i][1], sx + 14, summary_y + 21);
+        ctx.fillStyle = dark ? "#818997" : "#707888";
+        ctx.font = "700 10px Segoe UI, Arial, sans-serif";
+        ctx.textAlign = "right";
+        ctx.fillText(summaries[i][2], sx + summary_w - 14, summary_y + 28);
+        ctx.textAlign = "left";
+      }
+
+      let images = {};
+      for (let i = 0; i < items.length; i += 12) {
+        let chunk = items.slice(i, i + 12);
+        await Promise.all(chunk.map(async (item) => {
+          images[item.thumb_key] = await inv_image_safe_image(thumb_cache[item.thumb_key]);
+        }));
+      }
+
+      let grid_y = header_h + 22;
+      for (let i = 0; i < items.length; i++) {
+        let col = i % cols;
+        let row = Math.floor(i / cols);
+        let x = pad + col * (card_w + gap);
+        let y = grid_y + row * (card_h + gap);
+        inv_image_draw_card(ctx, items[i], images[items[i].thumb_key], x, y, card_w, card_h, dark);
+      }
+
+      ctx.fillStyle = dark ? "rgba(255,255,255,.72)" : "rgba(17,24,39,.62)";
+      ctx.font = "800 12px Segoe UI, Arial, sans-serif";
+      let mark = "nevos trading extension";
+      let mark_w = ctx.measureText(mark).width;
+      let mark_logo = 18;
+      let mark_gap = 7;
+      let mark_x = width - pad - mark_logo - mark_gap - mark_w;
+      let mark_y = height - 42;
+      inv_image_draw_logo(ctx, logo, mark_x, mark_y - 4, mark_logo);
+      ctx.fillText(mark, mark_x + mark_logo + mark_gap, mark_y);
+      let invite = "discord.gg/4XWE7yy2uE";
+      ctx.fillStyle = dark ? "rgba(255,255,255,.46)" : "rgba(17,24,39,.44)";
+      ctx.font = "800 10px Segoe UI, Arial, sans-serif";
+      let invite_w = ctx.measureText(invite).width;
+      ctx.fillText(invite, width - pad - invite_w, height - 22);
+      return inv_image_canvas_blob(canvas);
+    }
+
+    async function inv_image_copy_blob(blob) {
+      if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("Image clipboard is not supported here.");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    }
+
+    async function inv_image_copy_text(text) {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      let area = document.createElement("textarea");
+      area.value = text;
+      area.style.position = "fixed";
+      area.style.left = "-9999px";
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
+    }
+
+    function inv_image_set_button_state(button, text, delay) {
+      button.textContent = text;
+      if (delay) setTimeout(() => {
+        if (button?.isConnected) button.textContent = button.getAttribute("data-label") || text;
+      }, delay);
+    }
+
+    function inv_image_close_toast(toast) {
+      toast?.classList.remove("is-visible");
+      setTimeout(() => {
+        toast?.__nte_cleanup?.();
+        toast?.remove();
+      }, 200);
+    }
+
+    function inv_image_error_toast(message) {
+      document.querySelector(".nte-inv-image-toast")?.remove();
+      let toast = document.createElement("div");
+      toast.className = "nte-inv-image-toast";
+      toast.innerHTML = `<button type="button" class="nte-inv-image-toast-close" aria-label="Close">x</button><div class="nte-inv-image-toast-title">Inventory image failed</div><div class="nte-inv-image-toast-sub">${escape_html(message || "Could not create the image.")}</div>`;
+      toast.querySelector(".nte-inv-image-toast-close").onclick = () => inv_image_close_toast(toast);
+      document.body.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add("is-visible"));
+    }
+
+    function inv_image_prompt(max_count) {
+      return new Promise((resolve) => {
+        document.querySelector(".nte-inv-image-prompt")?.remove();
+        let prompt = document.createElement("div");
+        prompt.className = "nte-inv-image-prompt";
+        prompt.innerHTML = `
+          <div class="nte-inv-image-prompt-card" role="dialog" aria-modal="true" aria-label="Choose item count">
+            <div class="nte-inv-image-prompt-title">How many items?</div>
+            <div class="nte-inv-image-prompt-sub">The image uses your highest-value unique items first. Enter a number or render all ${fmt(max_count)}.</div>
+            <div class="nte-inv-image-prompt-fields">
+              <label class="nte-inv-image-prompt-field">
+                <span class="nte-inv-image-prompt-label">Items</span>
+                <input class="nte-inv-image-prompt-input" type="number" min="1" max="${max_count}" value="${Math.min(max_count, 60)}" inputmode="numeric">
+              </label>
+              <label class="nte-inv-image-prompt-field">
+                <span class="nte-inv-image-prompt-label">Per Row</span>
+                <select class="nte-inv-image-prompt-input nte-inv-image-prompt-cols">
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5" selected>5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                </select>
+              </label>
+            </div>
+            <div class="nte-inv-image-prompt-actions">
+              <button type="button" class="nte-inv-image-prompt-muted" data-action="cancel">Cancel</button>
+              <button type="button" data-action="all">All</button>
+              <button type="button" data-action="render">Render</button>
+            </div>
+          </div>
+        `;
+        let input = prompt.querySelector(".nte-inv-image-prompt-input");
+        let cols = prompt.querySelector(".nte-inv-image-prompt-cols");
+        let closed = false;
+        function value(limit) {
+          return {
+            limit,
+            items_per_row: Math.max(3, Math.min(7, parseInt(cols.value, 10) || 5)),
+          };
+        }
+        function close(value) {
+          if (closed) return;
+          closed = true;
+          prompt.classList.remove("is-visible");
+          setTimeout(() => prompt.remove(), 160);
+          resolve(value);
+        }
+        prompt.addEventListener("click", (event) => {
+          if (event.target === prompt) return close(0);
+          let action = event.target?.getAttribute?.("data-action");
+          if (action === "cancel") return close(0);
+          if (action === "all") return close(value(max_count));
+          if (action === "render") {
+            let count = Math.max(1, Math.min(max_count, parseInt(input.value, 10) || 0));
+            return close(value(count));
+          }
+        });
+        input.addEventListener("keydown", (event) => {
+          if (event.key === "Escape") close(0);
+          if (event.key === "Enter") close(value(Math.max(1, Math.min(max_count, parseInt(input.value, 10) || 0))));
+        });
+        document.body.appendChild(prompt);
+        requestAnimationFrame(() => {
+          prompt.classList.add("is-visible");
+          input.focus();
+          input.select();
+        });
+      });
+    }
+
+    function inv_image_preview_toast(blob, filename, item_names_items) {
+      document.querySelector(".nte-inv-image-toast")?.remove();
+      let url = URL.createObjectURL(blob);
+      let toast = document.createElement("div");
+      toast.className = "nte-inv-image-toast";
+      toast.__nte_cleanup = () => URL.revokeObjectURL(url);
+      item_names_items = Array.isArray(item_names_items) ? item_names_items : [];
+      let item_names_text = inv_image_item_names_text(item_names_items, "both");
+      let list_html = item_names_items.length
+        ? `<details class="nte-inv-image-list"><summary>Item names</summary><div class="nte-inv-image-list-mode" role="group" aria-label="Item name format"><button type="button" data-mode="full">Full</button><button type="button" data-mode="acronym">Acronyms</button><button type="button" data-mode="both" class="is-active">Both</button></div><div class="nte-inv-image-list-text">${escape_html(item_names_text)}</div><button type="button" class="nte-inv-image-list-copy" data-label="Copy Item Names">Copy Item Names</button></details>`
+        : "";
+      toast.innerHTML = `
+        <button type="button" class="nte-inv-image-toast-close" aria-label="Close">x</button>
+        <div class="nte-inv-image-toast-title">Inventory image ready</div>
+        <div class="nte-inv-image-toast-sub">Preview it here, then copy or download it.</div>
+        <img class="nte-inv-image-toast-preview" src="${escape_html(url)}" alt="Inventory image preview">
+        ${list_html}
+        <div class="nte-inv-image-toast-actions">
+          <button type="button" class="nte-inv-image-toast-copy" data-label="Copy Image">Copy Image</button>
+          <button type="button" class="nte-inv-image-toast-copy" data-label="Download">Download</button>
+        </div>
+      `;
+      let close = toast.querySelector(".nte-inv-image-toast-close");
+      let buttons = toast.querySelectorAll(".nte-inv-image-toast-copy");
+      let list_copy = toast.querySelector(".nte-inv-image-list-copy");
+      let list_text = toast.querySelector(".nte-inv-image-list-text");
+      let list_modes = toast.querySelectorAll(".nte-inv-image-list-mode button");
+      let current_names_text = item_names_text;
+      close.onclick = () => inv_image_close_toast(toast);
+      list_modes.forEach((button) => {
+        button.onclick = () => {
+          let mode = button.getAttribute("data-mode") || "both";
+          current_names_text = inv_image_item_names_text(item_names_items, mode);
+          if (list_text) list_text.textContent = current_names_text;
+          list_modes.forEach((el) => el.classList.toggle("is-active", el === button));
+        };
+      });
+      if (list_copy) {
+        list_copy.onclick = async () => {
+          list_copy.disabled = true;
+          inv_image_set_button_state(list_copy, "Copying...");
+          try {
+            await inv_image_copy_text(current_names_text);
+            inv_image_set_button_state(list_copy, "Copied", 1200);
+          } catch {
+            inv_image_set_button_state(list_copy, "Copy Failed", 1400);
+          } finally {
+            setTimeout(() => {
+              if (list_copy?.isConnected) list_copy.disabled = false;
+            }, 500);
+          }
+        };
+      }
+      buttons[0].onclick = async () => {
+        buttons[0].disabled = true;
+        inv_image_set_button_state(buttons[0], "Copying...");
+        try {
+          await inv_image_copy_blob(blob);
+          inv_image_set_button_state(buttons[0], "Copied", 1200);
+        } catch {
+          inv_image_set_button_state(buttons[0], "Copy Failed", 1400);
+        } finally {
+          setTimeout(() => {
+            if (buttons[0]?.isConnected) buttons[0].disabled = false;
+          }, 500);
+        }
+      };
+      buttons[1].onclick = () => {
+        let a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        inv_image_set_button_state(buttons[1], "Saved", 1200);
+      };
+      document.body.appendChild(toast);
+      requestAnimationFrame(() => toast.classList.add("is-visible"));
+    }
+
     function attach_modal_logo(overlay) {
       var el = overlay.querySelector(".nte-modal-logo");
       if (!el) return;
@@ -1598,6 +2266,7 @@
           item_type: item.itemType || "Asset",
           thumb_key: get_thumb_cache_key(item.itemType || "Asset", item.assetId),
           name: item.name || "Unknown",
+          acronym: rolimons_item ? rolimons_item[1] : "",
           val: val,
           rap: rap,
           proj: rolimons_item && rolimons_item[7] === 1,
@@ -1711,6 +2380,7 @@
       overlay.querySelector(".nte-modal-close").addEventListener("click", close_modal);
 
       var inv_serial_blur_on = false;
+      var update_inv_serial_blur = function () {};
       var ctrl_row = overlay.querySelector(".nte-controls");
       if (ctrl_row && !ctrl_row.querySelector(".nte-inv-hash-serial-btn")) {
         var inv_hash_btn = document.createElement("button");
@@ -1718,15 +2388,77 @@
         inv_hash_btn.className = "nte-inv-hash-serial-btn";
         inv_hash_btn.textContent = "#";
         inv_hash_btn.setAttribute("aria-label", "Blur serial numbers in this list");
-        inv_hash_btn.title = "Blur serial numbers";
-        inv_hash_btn.addEventListener("click", function () {
-          inv_serial_blur_on = !inv_serial_blur_on;
-          overlay.classList.toggle("nte-inv-blur-serials", inv_serial_blur_on);
+        inv_hash_btn.title = "Blur Serials";
+        function set_inv_hash_btn_state() {
           inv_hash_btn.classList.toggle("nte-inv-hash-serial-active", inv_serial_blur_on);
           inv_hash_btn.setAttribute("aria-pressed", inv_serial_blur_on ? "true" : "false");
-          inv_hash_btn.title = inv_serial_blur_on ? "Show serial numbers" : "Blur serial numbers";
+          inv_hash_btn.setAttribute("aria-label", inv_serial_blur_on ? "Unblur serial numbers in this list" : "Blur serial numbers in this list");
+          inv_hash_btn.title = inv_serial_blur_on ? "Unblur Serials" : "Blur Serials";
+        }
+        update_inv_serial_blur = function () {
+          overlay.querySelectorAll(".nte-inv-serial").forEach((el) => {
+            var original = el.getAttribute("data-nte-serial-text") || el.textContent || "";
+            if (!el.hasAttribute("data-nte-serial-text")) el.setAttribute("data-nte-serial-text", original);
+            el.textContent = inv_serial_blur_on ? "#\u2022\u2022\u2022\u2022" : original;
+            el.setAttribute("data-nte-blurred", inv_serial_blur_on ? "1" : "0");
+          });
+        };
+        inv_hash_btn.addEventListener("click", function () {
+          inv_serial_blur_on = !inv_serial_blur_on;
+          inv_hash_btn.classList.remove("nte-inv-hash-serial-pop");
+          void inv_hash_btn.offsetWidth;
+          inv_hash_btn.classList.add("nte-inv-hash-serial-pop");
+          set_inv_hash_btn_state();
+          update_inv_serial_blur();
         });
+        set_inv_hash_btn_state();
         ctrl_row.insertBefore(inv_hash_btn, ctrl_row.firstChild);
+      }
+      if (ctrl_row && !ctrl_row.querySelector(".nte-inv-image-btn")) {
+        var inv_image_btn = document.createElement("button");
+        inv_image_btn.type = "button";
+        inv_image_btn.className = "nte-inv-image-btn";
+        inv_image_btn.textContent = "Image";
+        inv_image_btn.setAttribute("data-label", "Image");
+        inv_image_btn.setAttribute("aria-label", "Create inventory image");
+        inv_image_btn.title = "Create inventory image";
+        inv_image_btn.addEventListener("click", async function () {
+          let image_opts = await inv_image_prompt(unique_count);
+          if (!image_opts) return;
+          try {
+            inv_image_btn.disabled = true;
+            inv_image_btn.textContent = "Rendering...";
+            let username = await inv_image_profile_name();
+            let image_items = inv_image_items_for_output(enriched, image_opts.limit);
+            let blob = await inv_image_create_blob({
+              items: enriched,
+              limit: image_opts.limit,
+              items_per_row: image_opts.items_per_row,
+              username,
+              total_value,
+              total_rap,
+              total_count,
+              unique_count,
+              rare_count,
+              proj_count,
+              top_item,
+            });
+            inv_image_preview_toast(blob, inv_image_filename(username), image_items);
+            inv_image_btn.textContent = "Image";
+          } catch (err) {
+            inv_image_error_toast(err?.message || "Could not create the inventory image.");
+            inv_image_btn.textContent = "Failed";
+            setTimeout(() => {
+              if (inv_image_btn?.isConnected) inv_image_btn.textContent = "Image";
+            }, 1200);
+          } finally {
+            setTimeout(() => {
+              if (inv_image_btn?.isConnected) inv_image_btn.disabled = false;
+            }, 350);
+          }
+        });
+        var after_serial_btn = ctrl_row.querySelector(".nte-inv-hash-serial-btn");
+        after_serial_btn ? after_serial_btn.insertAdjacentElement("afterend", inv_image_btn) : ctrl_row.insertBefore(inv_image_btn, ctrl_row.firstChild);
       }
 
       function render_items(sort_key, query) {
@@ -1775,8 +2507,9 @@
             var dv = item.count > 1 ? item.total_val : item.val;
             var dr = item.count > 1 ? item.total_rap : item.rap;
             var safe_name = escape_html(item.name);
-            var serial_tag = item.serial
-              ? '<div class="nte-thumb-tag serial"><span class="nte-inv-serial">#' + fmt(item.serial) + "</span></div>"
+            var serial_text = item.serial ? "#" + fmt(item.serial) : "";
+            var serial_tag = serial_text
+              ? '<div class="nte-thumb-tag serial"><span class="nte-inv-serial" data-nte-serial-text="' + escape_html(serial_text) + '">' + escape_html(serial_text) + "</span></div>"
               : "";
             var proj_tag = item.proj ? '<div class="nte-thumb-tag proj">Projected</div>' : "";
             var rare_tag = item.rare
@@ -1822,6 +2555,7 @@
             );
           })
           .join("");
+        update_inv_serial_blur();
       }
 
       render_items("val-d", "");

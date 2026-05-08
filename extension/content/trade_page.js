@@ -2818,10 +2818,7 @@
         do {
           let params = new URLSearchParams({ sortBy: "CreationTime", cursor, limit: "50", sortOrder: "Desc" });
           let resp = await fetch(`https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`, { credentials: "include" });
-          if (429 === resp.status || resp.status >= 500) {
-            await U(500);
-            continue;
-          }
+          if (429 === resp.status || resp.status >= 500) break;
           if (!resp.ok) break;
           let data = await resp.json();
           let page_items = Array.isArray(data?.items) ? data.items : Array.isArray(data?.data) ? data.data : [];
@@ -3938,13 +3935,21 @@
       .light-theme .nte-serial-hide-host .hide-button {
         background-color: #424141;
       }
-      .text-blur {
-        color: transparent !important;
-        text-shadow: 0 0 15px rgba(255,255,255,0.5) !important;
+      .nte-serial-hide-host .hide-button {
+        transition: transform .16s ease, filter .16s ease;
       }
-      .light-theme .text-blur {
-        color: transparent !important;
-        text-shadow: 0 0 15px rgba(0,0,0,0.5) !important;
+      .nte-serial-hide-host:not(.inactive) .hide-button {
+        filter: brightness(1.12) saturate(1.08);
+      }
+      .nte-serial-hide-host:not(.inactive):hover .hide-button {
+        filter: brightness(1.18) saturate(1.1);
+      }
+      .nte-serial-hide-host.nte-serial-hide-pop .hide-button {
+        animation: nteSerialHidePop .24s ease-out;
+      }
+      .nte-serial-masked {
+        user-select: none !important;
+        letter-spacing: .04em;
       }
       .nte-serial-hide-host.buttontooltip {
         position: relative;
@@ -3963,6 +3968,11 @@
       }
       .nte-serial-hide-host.buttontooltip:hover .tooltiptext {
         visibility: visible;
+      }
+      @keyframes nteSerialHidePop {
+        0% { transform: scale(1); }
+        48% { transform: scale(.88); }
+        100% { transform: scale(1); }
       }
       .nte-proof-btn {
         display: inline-flex;
@@ -4162,10 +4172,7 @@
     return document.querySelector(".light-theme") ? c.getURL("assets/serials_on_lightmode.svg") : c.getURL("assets/serials_on.svg");
   }
   function nte_serials_currently_blurred() {
-    for (let c of document.getElementsByClassName("limited-number-container")) {
-      if (c.querySelector("span.text-blur")) return !0;
-    }
-    return !!document.querySelector(".nte-trade-serial.text-blur");
+    return !!document.querySelector("[data-nte-serial-blurred='1']");
   }
   function nte_tag_trade_page_serial_spans() {
     let scopes = [];
@@ -4188,24 +4195,51 @@
       }
     }
   }
-  function toggle_nte_serial_text_blur() {
+  function nte_serial_mask(text) {
+    return String(text || "").trim().startsWith("#") ? "#\u2022\u2022\u2022\u2022" : "\u2022\u2022\u2022\u2022";
+  }
+  function nte_set_serial_target_blur(el, blurred) {
+    if (!el) return;
+    let original = el.getAttribute("data-nte-serial-text") || el.textContent || "";
+    if (!el.hasAttribute("data-nte-serial-text")) el.setAttribute("data-nte-serial-text", original);
+    el.textContent = blurred ? nte_serial_mask(original) : original;
+    el.classList.toggle("nte-serial-masked", blurred);
+    if (blurred) el.setAttribute("data-nte-serial-blurred", "1");
+    else el.removeAttribute("data-nte-serial-blurred");
+  }
+  function nte_collect_serial_targets() {
     let seen = new Set();
-    function toggle_el(t) {
-      if (seen.has(t)) return;
-      seen.add(t), t.classList.toggle("text-blur");
+    let targets = [];
+    function add(el) {
+      if (!el || seen.has(el)) return;
+      seen.add(el), targets.push(el);
     }
-    let e = document.getElementsByClassName("limited-number-container");
-    for (let t = 0; t < e.length; t++) {
-      let r = e[t].getElementsByTagName("span");
-      for (let n = 0; n < r.length; n++) toggle_el(r[n]);
+    for (let c of document.getElementsByClassName("limited-number-container")) {
+      for (let el of c.querySelectorAll(".limited-number, span")) {
+        let text = (el.getAttribute("data-nte-serial-text") || el.textContent || "").trim();
+        if (/^\d[\d,]*$/.test(text)) add(el);
+      }
     }
-    for (let t of document.querySelectorAll(".nte-trade-serial")) toggle_el(t);
+    for (let el of document.querySelectorAll(".nte-trade-serial")) add(el);
+    return targets;
+  }
+  function set_nte_serial_text_blur(blurred) {
+    nte_tag_trade_page_serial_spans();
+    for (let el of nte_collect_serial_targets()) nte_set_serial_target_blur(el, blurred);
+  }
+  function toggle_nte_serial_text_blur() {
+    set_nte_serial_text_blur(!nte_serials_currently_blurred());
   }
   function update_nte_serial_hide_controls() {
     let e = nte_serials_currently_blurred(),
       t = nte_serial_hide_icon_url();
-    for (let r of document.querySelectorAll(".nte-serial-hide-host"))
-      r.classList.toggle("inactive", !e), r.querySelector("img") && (r.querySelector("img").src = t);
+    for (let r of document.querySelectorAll(".nte-serial-hide-host")) {
+      r.classList.toggle("inactive", !e);
+      r.classList.toggle("is-active", e);
+      r.querySelector("img") && (r.querySelector("img").src = t);
+      let tip = r.querySelector(".tooltiptext");
+      if (tip) tip.textContent = e ? "Unblur Serials" : "Blur Serials";
+    }
   }
   function nte_paired_name_visible(e) {
     if (!e || !e.isConnected) return !1;
@@ -4240,7 +4274,7 @@
       n.appendChild(a),
       n.appendChild(o),
       (n.onclick = (e) => {
-        e.preventDefault(), e.stopPropagation(), toggle_nte_serial_text_blur(), update_nte_serial_hide_controls();
+        e.preventDefault(), e.stopPropagation(), n.classList.remove("nte-serial-hide-pop"), void n.offsetWidth, n.classList.add("nte-serial-hide-pop"), toggle_nte_serial_text_blur(), update_nte_serial_hide_controls();
       }),
       r.classList.contains("ng-hide") && ((r.innerHTML = ""), r.classList.remove("ng-hide")),
       r.appendChild(n),
@@ -4252,7 +4286,9 @@
     let e = c.getPageType(),
       t = !!document.querySelector(".trades-container, .trade-request-window, .trade-row, .trades-list-detail");
     if (!t && "details" !== e && "sendOrCounter" !== e) return;
+    let was_blurred = nte_serials_currently_blurred();
     nte_tag_trade_page_serial_spans();
+    if (was_blurred) set_nte_serial_text_blur(!0);
     {
       let e = document.querySelector(".nte-serial-hide-host");
       if (e && e.isConnected) return void update_nte_serial_hide_controls();
@@ -6394,8 +6430,7 @@
           quick_decline_tab && sync_trade_row_decline_position(t);
         }
         r || (r = {});
-        let _ct = get_current_trade_tab();
-        if (_ct === "inbound" || _ct === "outbound") prefetch_uncached_trades(r);
+        prefetch_uncached_trades(r);
         let n = get_trade_rows_for_processing();
         for (let e = 0; e < n.length; e++) t(n[e], e);
         apply_trade_list_filter();
@@ -6504,7 +6539,7 @@
               continue;
             }
           } catch {}
-          await new Promise((r) => setTimeout(r, 2500));
+          await new Promise((r) => setTimeout(r, 1500));
         }
       } finally {
         if (fetch_token === bg_fetch_token) {
@@ -8755,13 +8790,8 @@
     if (!is_duplicate_trade_warning_modal(modal)) return;
     let label = String(btn.textContent || "").trim().toLowerCase();
     if (!/send|submit|confirm/.test(label) && !btn.classList.contains("btn-primary-md") && !btn.classList.contains("btn-cta-md")) return;
-    let partner_id = get_duplicate_trade_warning_partner_id();
-    if (!partner_id) return;
-    duplicate_trade_warning_local_sent[String(partner_id)] = Date.now();
-    if (duplicate_trade_warning_cache?.latest_by_user) {
-      let current = duplicate_trade_warning_cache.latest_by_user[String(partner_id)] || 0;
-      duplicate_trade_warning_cache.latest_by_user[String(partner_id)] = Math.max(current, duplicate_trade_warning_local_sent[String(partner_id)]);
-    }
+    duplicate_trade_warning_cache = null;
+    schedule_duplicate_trade_warning_update(2500);
   }
 
   function ensure_duplicate_trade_warning_observer() {
@@ -8809,6 +8839,22 @@
   var ownership_last_trade_id = null;
   var ownership_run_token = 0;
   var ownership_selected_row_key = "";
+  var ownership_fetch_backoff = {};
+
+  function is_ownership_check_allowed() {
+    if (!/\/trades\b/i.test(location.pathname)) return false;
+    let tab = (new URLSearchParams(location.search).get("tab") || "").toLowerCase();
+    if (!tab) tab = String(document.querySelector(".trades-header .rbx-selection-label")?.textContent || "").toLowerCase();
+    return !(tab.includes("completed") || tab.includes("inactive"));
+  }
+
+  function is_ownership_fetch_backed_off(user_id) {
+    return (ownership_fetch_backoff[String(user_id)] || 0) > Date.now();
+  }
+
+  function backoff_ownership_fetch(user_id) {
+    ownership_fetch_backoff[String(user_id)] = Date.now() + 60000;
+  }
 
   function reset_ownership_check_state() {
     ownership_selected_row_key = "";
@@ -8953,6 +8999,7 @@
   }
 
   async function fetch_tradable_owned_items(user_id, wanted_offers = null) {
+    if (is_ownership_fetch_backed_off(user_id)) return null;
     let owned = create_owned_item_state();
     let cursor = "";
     for (let page = 0; page < 40; page++) {
@@ -8963,6 +9010,7 @@
       } catch {
         return null;
       }
+      if (resp.status === 429) backoff_ownership_fetch(user_id);
       if (!resp.ok) return null;
       let json = await resp.json().catch(() => null);
       if (!json) return null;
@@ -9024,8 +9072,10 @@
   }
 
   async function prewarm_user_ownership(user_id) {
+    if (!is_ownership_check_allowed()) return null;
     let id = String(user_id || "").trim();
     if (!/^\d+$/.test(id)) return null;
+    if (is_ownership_fetch_backed_off(id)) return null;
     let cache = ownership_cache[id];
     if (cache && cache.ts > Date.now() - 600000 && cache.complete) return cache.ids;
     let pending_key = `${id}:prewarm`;
@@ -9034,6 +9084,7 @@
       let owned = create_owned_item_state();
       let params = new URLSearchParams({ sortBy: "CreationTime", cursor: "", limit: "100", sortOrder: "Desc" });
       let resp = await fetch(`https://trades.roblox.com/v2/users/${id}/tradableitems?${params.toString()}`, { credentials: "include" }).catch(() => null);
+      if (resp?.status === 429) backoff_ownership_fetch(id);
       if (!resp?.ok) return null;
       let json = await resp.json().catch(() => null);
       if (!json) return null;
@@ -9057,6 +9108,7 @@
   }
 
   async function fetch_user_collectible_ids(user_id, wanted_offers = null) {
+    if (!is_ownership_check_allowed()) return null;
     let prewarm_key = `${user_id}:prewarm`;
     if (ownership_pending[prewarm_key]) await ownership_pending[prewarm_key].catch(() => null);
     let cache = ownership_cache[user_id];
@@ -9099,6 +9151,7 @@
   }
 
   function prewarm_ownership_for_row(row) {
+    if (!is_ownership_check_allowed()) return;
     let partner_id = get_selected_trade_partner_id(row);
     if (!partner_id) return;
     prewarm_user_ownership(partner_id).catch(() => {});
@@ -9223,9 +9276,7 @@
   }
 
   async function run_ownership_check() {
-    if (!/\/trades\b/i.test(location.pathname)) return;
-    let _oc_tab = (new URLSearchParams(location.search).get("tab") || "inbound").toLowerCase();
-    if (_oc_tab === "completed") return;
+    if (!is_ownership_check_allowed()) return;
     inject_ownership_styles();
 
     let row = document.querySelector(".trade-row.selected");
@@ -9271,6 +9322,7 @@
   }
 
   function schedule_ownership_check(delay = 120) {
+    if (!is_ownership_check_allowed()) return;
     let due = Date.now() + Math.max(0, Number(delay) || 0);
     if (ownership_check_timer && due >= ownership_check_due) return;
     clearTimeout(ownership_check_timer);

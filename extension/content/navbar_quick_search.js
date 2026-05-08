@@ -46,6 +46,34 @@
     });
   }
 
+  function set_storage_values(values) {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.set(values, () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  async function open_first_roblox_popup() {
+    if (window.top !== window || !/^https:\/\/(?:www\.)?roblox\.com\//i.test(location.href)) return;
+    const done_key = "nte_first_roblox_popup_done";
+    const attempt_key = "nte_first_roblox_popup_attempt";
+    const day_ms = 24 * 60 * 60 * 1000;
+    const state = await new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([done_key, attempt_key], (r) => resolve(r || {}));
+      } catch {
+        resolve({});
+      }
+    });
+    if (state[done_key] || Date.now() - Number(state[attempt_key] || 0) < day_ms) return;
+    await set_storage_values({ [attempt_key]: Date.now() });
+    const result = await send_message({ type: "open_first_roblox_popup" });
+    if (result?.ok) await set_storage_values({ [done_key]: true });
+  }
+
   async function load_item_data() {
     if (item_data && Date.now() - item_data_time < data_age_ms) return item_data;
     if (item_data_promise) return item_data_promise;
@@ -268,6 +296,7 @@
   }
 
   find_and_attach();
+  setTimeout(open_first_roblox_popup, 1200);
 
   let raf = 0;
   const observer = new MutationObserver(() => {
