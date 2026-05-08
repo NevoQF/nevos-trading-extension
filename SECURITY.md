@@ -1,6 +1,6 @@
 # Security
 
-Current supported source version: `3.10.32`.
+Current supported source version: `3.10.34`.
 
 Use `npm run check` before trusting a local copy.
 
