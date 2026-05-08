@@ -27,7 +27,7 @@ Release builds stay minified. This repo keeps the readable source, manifests, an
 
 ## What It Is
 
-nevos trading extension is a Roblox trading extension for Chrome, Brave, Edge, Opera, Firefox, and Safari. It adds trading tools directly into Roblox pages so traders can check values, inspect trades, search faster, flag risky items, generate proof, and move through trade pages without bouncing between sites.
+nevos trading extension is a Roblox trading extension for Chrome, Brave, Edge, Opera, Firefox, and Safari. It adds trading tools directly into Roblox pages so traders can check values, inspect trades, search faster, flag risky items, generate proofs, and generally just makes trading easier.
 
 ## Clone
 
