@@ -39,7 +39,10 @@
   async function fetch_trade_api_with_timeout(url, init) {
     if (typeof AbortController === "undefined") return fetch(url, init);
     let controller = new AbortController();
-    let timeout_id = setTimeout(() => controller.abort(), TRADE_API_FETCH_TIMEOUT_MS);
+    let timeout_id = setTimeout(
+      () => controller.abort(),
+      TRADE_API_FETCH_TIMEOUT_MS,
+    );
     try {
       return await fetch(url, { ...(init || {}), signal: controller.signal });
     } finally {
@@ -50,10 +53,13 @@
   function get_shared_trade_api_resume_at() {
     return new Promise((resolve) => {
       try {
-        chrome.storage.local.get([TRADE_API_RATE_LIMIT_RESUME_KEY], (result) => {
-          let value = Number(result?.[TRADE_API_RATE_LIMIT_RESUME_KEY]) || 0;
-          resolve(Number.isFinite(value) ? value : 0);
-        });
+        chrome.storage.local.get(
+          [TRADE_API_RATE_LIMIT_RESUME_KEY],
+          (result) => {
+            let value = Number(result?.[TRADE_API_RATE_LIMIT_RESUME_KEY]) || 0;
+            resolve(Number.isFinite(value) ? value : 0);
+          },
+        );
       } catch {
         resolve(0);
       }
@@ -62,7 +68,10 @@
 
   function set_shared_trade_api_resume_at(value) {
     try {
-      chrome.storage.local.set({ [TRADE_API_RATE_LIMIT_RESUME_KEY]: value }, () => {});
+      chrome.storage.local.set(
+        { [TRADE_API_RATE_LIMIT_RESUME_KEY]: value },
+        () => {},
+      );
     } catch {}
   }
 
@@ -73,7 +82,10 @@
 
   function prune_trade_api_times(now) {
     let cutoff = now - TRADE_API_WINDOW_MS;
-    while (trade_api_request_times.length && trade_api_request_times[0] < cutoff) {
+    while (
+      trade_api_request_times.length &&
+      trade_api_request_times[0] < cutoff
+    ) {
       trade_api_request_times.shift();
     }
   }
@@ -85,12 +97,16 @@
           let value = result?.[TRADE_API_TIMES_KEY];
           resolve(Array.isArray(value) ? value.filter(Number.isFinite) : []);
         });
-      } catch { resolve([]); }
+      } catch {
+        resolve([]);
+      }
     });
   }
 
   function set_shared_trade_api_times(times) {
-    try { chrome.storage.local.set({ [TRADE_API_TIMES_KEY]: times }, () => {}); } catch {}
+    try {
+      chrome.storage.local.set({ [TRADE_API_TIMES_KEY]: times }, () => {});
+    } catch {}
   }
 
   function parse_trade_api_header_number(response, name) {
@@ -102,16 +118,25 @@
 
   function get_trade_api_reset_delay_ms(response) {
     let reset = parse_trade_api_header_number(response, "x-ratelimit-reset");
-    if (reset === null) reset = parse_trade_api_header_number(response, "retry-after");
+    if (reset === null)
+      reset = parse_trade_api_header_number(response, "retry-after");
     if (reset === null) return TRADE_API_RATE_LIMIT_DEFAULT_PAUSE_MS;
-    if (reset > 1000000000) return Math.max(0, reset * 1000 - Date.now()) + TRADE_API_RATE_LIMIT_RESET_PAD_MS;
+    if (reset > 1000000000)
+      return (
+        Math.max(0, reset * 1000 - Date.now()) +
+        TRADE_API_RATE_LIMIT_RESET_PAD_MS
+      );
     return Math.max(0, reset * 1000) + TRADE_API_RATE_LIMIT_RESET_PAD_MS;
   }
 
   function update_trade_api_rate_limit(response) {
     let pause = response?.status === 429;
-    let remaining = parse_trade_api_header_number(response, "x-ratelimit-remaining");
-    if (remaining !== null && remaining <= TRADE_API_RATE_LIMIT_BUFFER) pause = true;
+    let remaining = parse_trade_api_header_number(
+      response,
+      "x-ratelimit-remaining",
+    );
+    if (remaining !== null && remaining <= TRADE_API_RATE_LIMIT_BUFFER)
+      pause = true;
     if (!pause) return;
 
     trade_api_rate_limit_resume_at = Math.max(
@@ -123,7 +148,10 @@
 
   async function fetch_trade_api(url, init) {
     let run = trade_api_rate_limit_queue.then(async () => {
-      trade_api_rate_limit_resume_at = Math.max(trade_api_rate_limit_resume_at, await get_shared_trade_api_resume_at());
+      trade_api_rate_limit_resume_at = Math.max(
+        trade_api_rate_limit_resume_at,
+        await get_shared_trade_api_resume_at(),
+      );
       let wait_ms = trade_api_rate_limit_resume_at - Date.now();
       if (wait_ms > 0) await trade_api_delay(wait_ms);
 
@@ -131,18 +159,26 @@
       let now = Date.now();
       let merged = trade_api_request_times.concat(shared);
       let seen = new Set();
-      trade_api_request_times = merged.filter(t => !seen.has(t) && seen.add(t)).sort((a, b) => a - b);
+      trade_api_request_times = merged
+        .filter((t) => !seen.has(t) && seen.add(t))
+        .sort((a, b) => a - b);
       prune_trade_api_times(now);
       if (trade_api_request_times.length >= TRADE_API_WINDOW_LIMIT) {
         let oldest = trade_api_request_times[0];
-        let window_wait = oldest + TRADE_API_WINDOW_MS + TRADE_API_RATE_LIMIT_RESET_PAD_MS - now;
+        let window_wait =
+          oldest +
+          TRADE_API_WINDOW_MS +
+          TRADE_API_RATE_LIMIT_RESET_PAD_MS -
+          now;
         if (window_wait > 0) await trade_api_delay(window_wait);
         prune_trade_api_times(Date.now());
       }
 
       trade_api_request_times.push(Date.now());
       prune_trade_api_times(Date.now());
-      set_shared_trade_api_times(trade_api_request_times.slice(-TRADE_API_WINDOW_LIMIT * 2));
+      set_shared_trade_api_times(
+        trade_api_request_times.slice(-TRADE_API_WINDOW_LIMIT * 2),
+      );
 
       let response = await fetch_trade_api_with_timeout(url, init);
       update_trade_api_rate_limit(response);
@@ -197,7 +233,8 @@
     function o(e) {
       if (window.__NTE_ICONS && window.__NTE_ICONS[e]) {
         let d = window.__NTE_ICONS[e];
-        if (window.__NTE_resolveInlineIcon) d = window.__NTE_resolveInlineIcon(e, d);
+        if (window.__NTE_resolveInlineIcon)
+          d = window.__NTE_resolveInlineIcon(e, d);
         return d;
       }
       return chrome.runtime.getURL(e);
@@ -219,7 +256,11 @@
       });
     }
     function l(e, t, r) {
-      for (var n = e.length, a = -1; r-- && a++ < n && !((a = e.indexOf(t, a)) < 0); );
+      for (
+        var n = e.length, a = -1;
+        r-- && a++ < n && !((a = e.indexOf(t, a)) < 0);
+
+      );
       return a;
     }
     function d(e) {
@@ -228,25 +269,39 @@
     function c(e) {
       return new Promise((t) => {
         chrome.storage.local.get([e], function (r) {
-          chrome.runtime.lastError && console.info(chrome.runtime.lastError), t(r[e]);
+          chrome.runtime.lastError && console.info(chrome.runtime.lastError),
+            t(r[e]);
         });
       });
     }
     function u() {
-      let e = document.querySelector('[ng-show="layout.view === tradesConstants.views.tradeRequest"]');
-      if (e) return e.classList.contains("ng-hide") ? "details" : "sendOrCounter";
+      let e = document.querySelector(
+        '[ng-show="layout.view === tradesConstants.views.tradeRequest"]',
+      );
+      if (e)
+        return e.classList.contains("ng-hide") ? "details" : "sendOrCounter";
       let t = location.pathname || "";
-      if (document.querySelector(".trades-container") || /\/trades(\/|$|\?)/i.test(t) || /\/users\/\d+\/trade/i.test(t)) {
+      if (
+        document.querySelector(".trades-container") ||
+        /\/trades(\/|$|\?)/i.test(t) ||
+        /\/users\/\d+\/trade/i.test(t)
+      ) {
         let e = document.querySelector(".trade-request-window");
-        return e && !e.classList.contains("ng-hide") ? "sendOrCounter" : "details";
+        return e && !e.classList.contains("ng-hide")
+          ? "sendOrCounter"
+          : "details";
       }
       return document.querySelector(".results-container")
         ? "catalog"
-        : document.querySelector("[data-internal-page-name]")?.getAttribute("data-internal-page-name") === "CatalogItem"
+        : document
+              .querySelector("[data-internal-page-name]")
+              ?.getAttribute("data-internal-page-name") === "CatalogItem"
           ? "itemProfile"
           : document.querySelector("[data-profileuserid]")
             ? "userProfile"
-            : document.querySelector('meta[data-internal-page-name="Inventory"]')
+            : document.querySelector(
+                  'meta[data-internal-page-name="Inventory"]',
+                )
               ? "userInventory"
               : void 0;
     }
@@ -272,10 +327,16 @@
       return null !== a ? a : 0;
     }
     function f(e) {
-      return e ? chrome.runtime.getManifest().name : chrome.runtime.getManifest().short_name;
+      return e
+        ? chrome.runtime.getManifest().name
+        : chrome.runtime.getManifest().short_name;
     }
     function g() {
-      return document.getElementById("rbx-body").classList.contains("light-theme") ? "light" : "dark";
+      return document
+        .getElementById("rbx-body")
+        .classList.contains("light-theme")
+        ? "light"
+        : "dark";
     }
     async function y(e) {
       let t;
@@ -293,16 +354,23 @@
       return n;
     }
     async function h() {
-      return parseInt(document.querySelector('meta[name="user-data"]').getAttribute("data-userid"));
+      return parseInt(
+        document
+          .querySelector('meta[name="user-data"]')
+          .getAttribute("data-userid"),
+      );
     }
     function v(e, t) {
       e.setAttribute("data-toggle", "tooltip"), e.setAttribute("title", t);
     }
     function x(e) {
-      for (let element of document.querySelectorAll(`.${e}`)) element.removeAttribute("data-toggle"), element.removeAttribute("data-original-title");
+      for (let element of document.querySelectorAll(`.${e}`))
+        element.removeAttribute("data-toggle"),
+          element.removeAttribute("data-original-title");
     }
     function b() {
-      if (document.getElementById("nruInitTooltipsScript")) document.dispatchEvent(new CustomEvent("nru_init_tooltips"));
+      if (document.getElementById("nruInitTooltipsScript"))
+        document.dispatchEvent(new CustomEvent("nru_init_tooltips"));
       else {
         let e = document.createElement("script");
         (e.id = "nruInitTooltipsScript"),
@@ -328,7 +396,8 @@
       return (
         -1 !==
         [
-          8, 17, 18, 19, 27, 28, 29, 30, 31, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72,
+          8, 17, 18, 19, 27, 28, 29, 30, 31, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+          50, 51, 52, 53, 54, 55, 56, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72,
           76, 77, 78, 79,
         ].indexOf(e)
       );
@@ -353,7 +422,15 @@
     }
     function I(e) {
       if (!(e instanceof Element)) return null;
-      let t = ["data-asset-id", "data-assetid", "data-item-id", "data-itemid", "data-id", "data-target-id", "thumbnail-target-id"],
+      let t = [
+          "data-asset-id",
+          "data-assetid",
+          "data-item-id",
+          "data-itemid",
+          "data-id",
+          "data-target-id",
+          "thumbnail-target-id",
+        ],
         r = [
           e,
           ...e.querySelectorAll(
@@ -371,7 +448,9 @@
     }
     function R(e) {
       if (!(e instanceof Element)) return null;
-      let t = e.querySelector(".item-card-name, .item-card-name-link, .text-overflow, .text-name, h3, h4"),
+      let t = e.querySelector(
+          ".item-card-name, .item-card-name-link, .text-overflow, .text-name, h3, h4",
+        ),
         r = t?.textContent?.trim();
       if (r) return r;
       let n = e.querySelector("img[alt]");
@@ -380,10 +459,17 @@
     function extract_displayed_rap(e) {
       if (!(e instanceof Element)) return 0;
       let t = e.cloneNode(!0);
-      for (let e of t.querySelectorAll(".valueSpan, .icon-rolimons, .icon-link, br")) e.remove();
+      for (let e of t.querySelectorAll(
+        ".valueSpan, .icon-rolimons, .icon-link, br",
+      ))
+        e.remove();
       let r = (t.textContent || "").match(/\d[\d,]*/);
       if (r) return parseInt(r[0].replace(/,/g, ""), 10) || 0;
-      return get_trade_el_value_ctx(e.closest?.(".trade-request-item, .item-card-container") || e).rap || 0;
+      return (
+        get_trade_el_value_ctx(
+          e.closest?.(".trade-request-item, .item-card-container") || e,
+        ).rap || 0
+      );
     }
     function D(e, t) {
       let r = n?.items?.[e];
@@ -430,28 +516,50 @@
       for (let item of r) {
         let e = I(item),
           t = R(item),
-          r = extract_displayed_rap(item.querySelector(".item-card-price, .item-value"));
+          r = extract_displayed_rap(
+            item.querySelector(".item-card-price, .item-value"),
+          );
         n += m(e, t, r);
       }
       let a = n,
         o = e.querySelector('[name="robux"]'),
         l = parseInt(o?.value, 10) || 0;
-      return (o?.parentElement?.classList.contains("form-has-error") && (l = 0), (n += l), t) ? [a, l] : n;
+      return (o?.parentElement?.classList.contains("form-has-error") && (l = 0),
+      (n += l),
+      t)
+        ? [a, l]
+        : n;
     }
-    function apply_total_trade_difference(items_total, robux_total, use_post_tax = !1) {
+    function apply_total_trade_difference(
+      items_total,
+      robux_total,
+      use_post_tax = !1,
+    ) {
       let item_value = parseInt(items_total, 10) || 0,
         robux_value = parseInt(robux_total, 10) || 0;
-      return item_value + (use_post_tax ? Math.round(0.7 * robux_value) : robux_value);
+      return (
+        item_value +
+        (use_post_tax ? Math.round(0.7 * robux_value) : robux_value)
+      );
     }
-    function apply_trade_difference_total(items_total, robux_total, use_post_tax = !1) {
-      return apply_total_trade_difference(items_total, robux_total, use_post_tax);
+    function apply_trade_difference_total(
+      items_total,
+      robux_total,
+      use_post_tax = !1,
+    ) {
+      return apply_total_trade_difference(
+        items_total,
+        robux_total,
+        use_post_tax,
+      );
     }
     function T(e, t) {
       function r(e, t) {
         let r = t.querySelector(".icon-link");
         r ? t.insertBefore(e, r.parentElement) : t.appendChild(e);
       }
-      (e.style.height = "44px"), t?.inline || r(document.createElement("br"), e);
+      (e.style.height = "44px"),
+        t?.inline || r(document.createElement("br"), e);
       let n = document.createElement("span");
       (n.className = "icon icon-rolimons"),
         (n.style.backgroundImage = `url(${JSON.stringify(o("assets/rolimons.png"))})`),
@@ -467,7 +575,9 @@
         (n.style.backgroundColor = "transparent"),
         r(n, e);
       let a = document.createElement("span");
-      (a.className = `valueSpan ${t?.large ? "text-robux-lg" : "text-robux"}`), (a.innerHTML = ""), r(a, e);
+      (a.className = `valueSpan ${t?.large ? "text-robux-lg" : "text-robux"}`),
+        (a.innerHTML = ""),
+        r(a, e);
     }
     let username_id_cache = {},
       username_id_pending = {};
@@ -481,7 +591,9 @@
       if (cached && cached.expires_at > now) return cached.value;
       if (cached) delete username_id_cache[key];
       try {
-        cached = JSON.parse(sessionStorage.getItem(username_id_cache_prefix + key) || "null");
+        cached = JSON.parse(
+          sessionStorage.getItem(username_id_cache_prefix + key) || "null",
+        );
         if (cached && cached.expires_at > now) {
           username_id_cache[key] = cached;
           return cached.value;
@@ -494,7 +606,10 @@
       let cached = { value: value || null, expires_at: Date.now() + ttl_ms };
       username_id_cache[key] = cached;
       try {
-        sessionStorage.setItem(username_id_cache_prefix + key, JSON.stringify(cached));
+        sessionStorage.setItem(
+          username_id_cache_prefix + key,
+          JSON.stringify(cached),
+        );
       } catch {}
       return cached.value;
     }
@@ -514,11 +629,19 @@
               Accept: "application/json",
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ usernames: [username], excludeBannedUsers: !1 }),
+            body: JSON.stringify({
+              usernames: [username],
+              excludeBannedUsers: !1,
+            }),
           });
-          if (!t.ok) return set_username_id_cache(key, null, username_id_miss_ttl_ms);
+          if (!t.ok)
+            return set_username_id_cache(key, null, username_id_miss_ttl_ms);
           let id = ((await t.json()).data || [])[0]?.id || null;
-          return set_username_id_cache(key, id, id ? username_id_hit_ttl_ms : username_id_miss_ttl_ms);
+          return set_username_id_cache(
+            key,
+            id,
+            id ? username_id_hit_ttl_ms : username_id_miss_ttl_ms,
+          );
         } catch {
           return set_username_id_cache(key, null, username_id_miss_ttl_ms);
         } finally {
@@ -533,7 +656,8 @@
         function e(t) {
           let r = "getData";
           void 0 !== n && (r = "getDataPeriodic");
-          let rm = void 0 !== rt ? "getRoutilityDataPeriodic" : "getRoutilityData";
+          let rm =
+            void 0 !== rt ? "getRoutilityDataPeriodic" : "getRoutilityData";
           nte_send_message(rm, function (d) {
             if (d) rt = d;
           });
@@ -567,8 +691,16 @@
       r(e.exports, "getItemNameFromElement", () => R),
       r(e.exports, "resolveRolimonsItemId", () => P),
       r(e.exports, "isUnsupportedBundle", () => is_unsupported_bundle),
-      r(e.exports, "apply_total_trade_difference", () => apply_total_trade_difference),
-      r(e.exports, "apply_trade_difference_total", () => apply_trade_difference_total),
+      r(
+        e.exports,
+        "apply_total_trade_difference",
+        () => apply_total_trade_difference,
+      ),
+      r(
+        e.exports,
+        "apply_trade_difference_total",
+        () => apply_trade_difference_total,
+      ),
       r(e.exports, "calculateValueTotalDetails", () => S),
       r(e.exports, "calculateValueTotalSendOrCounter", () => k),
       r(e.exports, "createValuesSpans", () => T),
@@ -592,11 +724,17 @@
           document.querySelectorAll(".hasAssetLink").forEach((e) => {
             e.classList.remove("hasAssetLink");
           }));
-        "itemProfile" === a.getPageType() && i(), -1 !== ["details", "sendOrCounter", "catalog", "userInventory"].indexOf(a.getPageType()) && c();
+        "itemProfile" === a.getPageType() && i(),
+          -1 !==
+            ["details", "sendOrCounter", "catalog", "userInventory"].indexOf(
+              a.getPageType(),
+            ) && c();
       }
       async function i() {
         await a.waitForElm(".item-name-container");
-        let e = document.querySelector(".item-name-container").getElementsByTagName("h1")[0];
+        let e = document
+          .querySelector(".item-name-container")
+          .getElementsByTagName("h1")[0];
         if (null === e.querySelector(".icon-link")) {
           e.style.overflow = "visible";
           let t = document.getElementById("asset-resale-data-container"),
@@ -612,7 +750,10 @@
               (t.style.transform = "translateY(4px)"),
               a.addTooltip(t, "Open item data page");
             let n = document.createElement("span"),
-              o = "dark" === a.getColorMode() ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
+              o =
+                "dark" === a.getColorMode()
+                  ? "rolimonsLink.svg"
+                  : "rolimonsLinkDark.svg";
             (n.style.backgroundImage = `url(${JSON.stringify(a.getURL(`assets/${o}`))})`),
               (n.className = "icon icon-link"),
               (n.style.display = "inline-block"),
@@ -638,7 +779,11 @@
       let l = {},
         d = !1;
       function is_roblox_bundle_card(e) {
-        return !!(e && (e.querySelector('a[href*="/bundles/"]') || e.querySelector('[thumbnail-type="BundleThumbnail"]')));
+        return !!(
+          e &&
+          (e.querySelector('a[href*="/bundles/"]') ||
+            e.querySelector('[thumbnail-type="BundleThumbnail"]'))
+        );
       }
       function f(e) {
         if (!e) return null;
@@ -653,26 +798,37 @@
       function y(e) {
         if (!e?.querySelectorAll) return false;
         for (let t of e.querySelectorAll('a[href*="rolimons.com/"]')) {
-          if (t.classList?.contains("nte-rolimons-thumb-link") || t.classList?.contains("nte-uaid-thumb-link")) continue;
+          if (
+            t.classList?.contains("nte-rolimons-thumb-link") ||
+            t.classList?.contains("nte-uaid-thumb-link")
+          )
+            continue;
           return true;
         }
         return false;
       }
       function remove_our_rolimons_links(e, t = null) {
         if (!e?.querySelectorAll) return;
-        for (let r of e.querySelectorAll("a.nte-rolimons-thumb-link")) r !== t && r.remove();
+        for (let r of e.querySelectorAll("a.nte-rolimons-thumb-link"))
+          r !== t && r.remove();
       }
       function p(e, t) {
         let r = e.querySelector(".icon-link");
         if (!r) return;
-        let host_card = t?.closest(".item-card-container, .trade-request-item") || t;
+        let host_card =
+          t?.closest(".item-card-container, .trade-request-item") || t;
         if (y(host_card)) {
           e.remove();
           return;
         }
-        e.removeAttribute("data-nte-inline-link"), remove_our_rolimons_links(host_card, e);
-        if ("static" === getComputedStyle(t).position) t.style.position = "relative";
-        let n = "dark" === a.getColorMode() ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
+        e.removeAttribute("data-nte-inline-link"),
+          remove_our_rolimons_links(host_card, e);
+        if ("static" === getComputedStyle(t).position)
+          t.style.position = "relative";
+        let n =
+          "dark" === a.getColorMode()
+            ? "rolimonsLink.svg"
+            : "rolimonsLinkDark.svg";
         (r.style.backgroundImage = `url(${JSON.stringify(a.getURL(`assets/${n}`))})`),
           (r.className = "icon icon-link"),
           (r.style.display = "block"),
@@ -703,7 +859,8 @@
           (e.style.transform = ""),
           (e.style.transition = "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)"),
           e.addEventListener("mouseenter", () => {
-            (e.style.transform = "scale(1.12)"), (r.style.filter = "brightness(1.22)");
+            (e.style.transform = "scale(1.12)"),
+              (r.style.filter = "brightness(1.22)");
           }),
           e.addEventListener("mouseleave", () => {
             (e.style.transform = "scale(1)"), (r.style.filter = "");
@@ -713,7 +870,9 @@
           t.appendChild(e);
       }
       function h() {
-        for (let e of document.querySelectorAll(".item-card-container, .trade-request-item")) {
+        for (let e of document.querySelectorAll(
+          ".item-card-container, .trade-request-item",
+        )) {
           if (e.closest(".trade-request-window-offer")) continue;
           let t = e.querySelector("a.nte-rolimons-thumb-link");
           if (!t?.isConnected) continue;
@@ -730,13 +889,22 @@
         }
       }
       async function c() {
-        for (let text_div of document.querySelectorAll(".item-card-price:not(.hasAssetLink), .item-value:not(.hasAssetLink)")) {
-          for (let old_link of text_div.querySelectorAll("a.nte-rolimons-thumb-link")) old_link.remove();
-          let card = text_div.closest(".item-card-container, .trade-request-item"),
+        for (let text_div of document.querySelectorAll(
+          ".item-card-price:not(.hasAssetLink), .item-value:not(.hasAssetLink)",
+        )) {
+          for (let old_link of text_div.querySelectorAll(
+            "a.nte-rolimons-thumb-link",
+          ))
+            old_link.remove();
+          let card = text_div.closest(
+              ".item-card-container, .trade-request-item",
+            ),
             item_id_raw = a.getItemIdFromElement(card),
             item_name = a.getItemNameFromElement(card),
             card_bundle = is_roblox_bundle_card(card),
-            is_trade_offer_item = !!card?.closest(".trade-request-window-offer");
+            is_trade_offer_item = !!card?.closest(
+              ".trade-request-window-offer",
+            );
           remove_our_rolimons_links(card);
           if (a.isUnsupportedBundle(item_id_raw, item_name)) continue;
           let n = a.resolveRolimonsItemId(item_id_raw, item_name, card_bundle);
@@ -757,7 +925,10 @@
             (link_el.className = "nte-rolimons-thumb-link"),
             link_el.setAttribute("aria-label", "Rolimons");
           let icon_span = document.createElement("span"),
-            svg_asset = "dark" === a.getColorMode() ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
+            svg_asset =
+              "dark" === a.getColorMode()
+                ? "rolimonsLink.svg"
+                : "rolimonsLinkDark.svg";
           (icon_span.style.backgroundImage = `url(${JSON.stringify(a.getURL(`assets/${svg_asset}`))})`),
             (icon_span.className = "icon icon-link"),
             (icon_span.style.display = "block"),
@@ -776,7 +947,8 @@
             (link_el.style.display = "inline-block"),
               (link_el.style.paddingLeft = "2px"),
               (link_el.style.transform = "translateY(-2px)"),
-              (link_el.style.transition = "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)"),
+              (link_el.style.transition =
+                "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)"),
               (icon_span.style.display = "inline-block"),
               (icon_span.style.verticalAlign = "bottom"),
               (icon_span.style.width = "18px"),
@@ -795,8 +967,11 @@
               (text_div.style.overflow = "visible"),
               text_div.querySelector('[ng-bind="item.priceStatus"]') &&
                 (text_div.parentElement.querySelector(".creator-name")
-                  ? ((link_el.style.float = "left"), (link_el.style.marginTop = "-7px"))
-                  : ((link_el.style.position = "absolute"), (link_el.style.bottom = "18px"), (link_el.style.right = "50px")));
+                  ? ((link_el.style.float = "left"),
+                    (link_el.style.marginTop = "-7px"))
+                  : ((link_el.style.position = "absolute"),
+                    (link_el.style.bottom = "18px"),
+                    (link_el.style.right = "50px")));
           }
           text_div.classList.add("hasAssetLink");
         }
@@ -815,14 +990,21 @@
           e.forEach((e) => {
             t.items.length < 100 && t.items.push({ itemType: 1, id: e });
           }),
-            void 0 === n && (n = document.querySelector('meta[name="csrf-token"]').getAttribute("data-token"));
-          let r = await fetch("https://catalog.roblox.com/v1/catalog/items/details", {
-            method: "POST",
-            headers: { "X-CSRF-TOKEN": n },
-            body: JSON.stringify(t),
-            credentials: "include",
-          });
-          if (403 === r.status && 0 === (await r.json()).code) return (n = r.headers.get("X-CSRF-TOKEN")), (d = !1), c();
+            void 0 === n &&
+              (n = document
+                .querySelector('meta[name="csrf-token"]')
+                .getAttribute("data-token"));
+          let r = await fetch(
+            "https://catalog.roblox.com/v1/catalog/items/details",
+            {
+              method: "POST",
+              headers: { "X-CSRF-TOKEN": n },
+              body: JSON.stringify(t),
+              credentials: "include",
+            },
+          );
+          if (403 === r.status && 0 === (await r.json()).code)
+            return (n = r.headers.get("X-CSRF-TOKEN")), (d = !1), c();
           if (
             (200 === r.status
               ? (await r.json()).data.forEach((e) => {
@@ -846,16 +1028,28 @@
       async function a() {
         await n.waitForElm(".profile-header-title-container");
         let e = document.querySelector(".profile-header-title-container"),
-          t = parseInt(document.querySelector("[data-profileuserid]").getAttribute("data-profileuserid")),
+          t = parseInt(
+            document
+              .querySelector("[data-profileuserid]")
+              .getAttribute("data-profileuserid"),
+          ),
           r = document.createElement("a");
-        (r.href = `https://www.rolimons.com/player/${t}`), (r.target = "_blank"), (r.style.display = "inline-block"), (r.style.order = 1);
+        (r.href = `https://www.rolimons.com/player/${t}`),
+          (r.target = "_blank"),
+          (r.style.display = "inline-block"),
+          (r.style.order = 1);
         let a = document.createElement("span"),
-          o = "dark" === n.getColorMode() ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
+          o =
+            "dark" === n.getColorMode()
+              ? "rolimonsLink.svg"
+              : "rolimonsLinkDark.svg";
         (a.style.backgroundImage = `url(${JSON.stringify(n.getURL(`assets/${o}`))})`),
           (a.className = "icon icon-link user-profile-link"),
           (a.style.display = "inline-block"),
           (a.style.backgroundSize = "cover"),
-          screen.width > 767 ? ((a.style.width = "32px"), (a.style.height = "32px")) : ((a.style.width = "20px"), (a.style.height = "20px")),
+          screen.width > 767
+            ? ((a.style.width = "32px"), (a.style.height = "32px"))
+            : ((a.style.width = "20px"), (a.style.height = "20px")),
           (a.style.cursor = "pointer"),
           (a.style.transition = "filter 0.2s"),
           (a.style.backgroundColor = "transparent"),
@@ -871,14 +1065,26 @@
       }
       async function o() {
         await n.waitForElm(".trades-header-nowrap");
-        let t = [...document.getElementsByClassName("trades-header-nowrap")].at(-1)?.querySelector(".paired-name");
+        let t = [...document.getElementsByClassName("trades-header-nowrap")]
+          .at(-1)
+          ?.querySelector(".paired-name");
         if (!t) return;
         let container = t.parentElement || t;
         let e =
-            parseInt((window.location.pathname.match(/\/users\/(\d+)\/trade/) || [])[1], 10) ||
-            parseInt((String(t.getAttribute("href") || t.href || "").match(/\/users\/(\d+)\//) || [])[1], 10) ||
+            parseInt(
+              (window.location.pathname.match(/\/users\/(\d+)\/trade/) ||
+                [])[1],
+              10,
+            ) ||
+            parseInt(
+              (String(t.getAttribute("href") || t.href || "").match(
+                /\/users\/(\d+)\//,
+              ) || [])[1],
+              10,
+            ) ||
             null,
-          existing = container.querySelector(".user-profile-link")?.parentElement,
+          existing =
+            container.querySelector(".user-profile-link")?.parentElement,
           username = "";
         if (!e) {
           username =
@@ -887,12 +1093,14 @@
             t.children?.[2]?.innerText?.trim() ||
             "";
           if (!username) return;
-          if (existing?.getAttribute("data-nte-profile-name") === username) return;
+          if (existing?.getAttribute("data-nte-profile-name") === username)
+            return;
           e = await n.fetchIDFromName(username);
         }
         if (!e) return;
         let href = `https://www.rolimons.com/player/${e}`;
-        if (existing?.href === href || existing?.getAttribute("href") === href) return;
+        if (existing?.href === href || existing?.getAttribute("href") === href)
+          return;
         let r = t.innerText.length;
         container.style.position = "relative";
         let a = document.createElement("a");
@@ -901,13 +1109,17 @@
           (a.href = href),
           (a.target = "_blank"),
           (a.style.display = "inline-block"),
-          r > 35 && ((a.style.display = "block"), (a.style.marginBottom = "5px")),
+          r > 35 &&
+            ((a.style.display = "block"), (a.style.marginBottom = "5px")),
           (a.style.paddingLeft = "4px"),
           (a.style.width = "28px"),
           (a.style.height = "28px"),
           (a.style.transform = "translateY(3px)");
         let o = document.createElement("span"),
-          l = "dark" === n.getColorMode() ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
+          l =
+            "dark" === n.getColorMode()
+              ? "rolimonsLink.svg"
+              : "rolimonsLinkDark.svg";
         (o.style.backgroundImage = `url(${JSON.stringify(n.getURL(`assets/${l}`))})`),
           (o.className = "icon icon-link user-profile-link"),
           (o.style.display = "inline-block"),
@@ -934,7 +1146,10 @@
       }
       var l = async function () {
         if (!(await n.getOption("Add User Profile Links"))) return i();
-        ("details" === n.getPageType() || "sendOrCounter" === n.getPageType()) && o(), "userProfile" === n.getPageType() && a();
+        ("details" === n.getPageType() ||
+          "sendOrCounter" === n.getPageType()) &&
+          o(),
+          "userProfile" === n.getPageType() && a();
       };
     }),
     d("fgypU", function (e, t) {
@@ -956,21 +1171,38 @@
           let t = e?.querySelector?.(".item-card-link") || e;
           if (!t) return null;
           let r = t.getBoundingClientRect(),
-            a = [e?.querySelector?.(".ropro-projected-badge"), e?.querySelector?.(".ropro-icon"), ...Array.from(e?.querySelectorAll?.(".flagBox:not([data-nte-side])") || [])];
+            a = [
+              e?.querySelector?.(".ropro-projected-badge"),
+              e?.querySelector?.(".ropro-icon"),
+              ...Array.from(
+                e?.querySelectorAll?.(".flagBox:not([data-nte-side])") || [],
+              ),
+            ];
           for (let e of a) {
-            if (!(e instanceof Element) || e.classList?.contains("ng-hide")) continue;
+            if (!(e instanceof Element) || e.classList?.contains("ng-hide"))
+              continue;
             let t = getComputedStyle(e);
-            if ("none" === t.display || "hidden" === t.visibility || Number(t.opacity || "1") < 0.05) continue;
+            if (
+              "none" === t.display ||
+              "hidden" === t.visibility ||
+              Number(t.opacity || "1") < 0.05
+            )
+              continue;
             let a = e.getBoundingClientRect();
             if (a.width < 8 || a.height < 8) continue;
-            return a.left + a.width / 2 <= r.left + r.width / 2 ? "left" : "right";
+            return a.left + a.width / 2 <= r.left + r.width / 2
+              ? "left"
+              : "right";
           }
           return null;
         }
         function r(r) {
           let a = n.getItemIdFromElement(r),
             o = n.getItemNameFromElement(r),
-            is_bundle_card = !!(r.querySelector('a[href*="/bundles/"]') || r.querySelector('[thumbnail-type="BundleThumbnail"]')),
+            is_bundle_card = !!(
+              r.querySelector('a[href*="/bundles/"]') ||
+              r.querySelector('[thumbnail-type="BundleThumbnail"]')
+            ),
             l = n.resolveRolimonsItemId(a, o, is_bundle_card);
           let f = r.querySelector(".item-card-link"),
             u = m(r);
@@ -990,21 +1222,30 @@
           f = c.parentElement;
           let g = null != l ? n.getRolimonsData().items[l] : null;
           if (g)
-            for (let hlist of (e && 1 === g[9] && d(c, "rare"), t && 1 === g[7] && d(c, "projected"), document.getElementsByClassName("hlist")))
-              (hlist.style.getPropertyValue("overflow") === "visible" && hlist.style.getPropertyPriority("overflow") === "important") ||
+            for (let hlist of (e && 1 === g[9] && d(c, "rare"),
+            t && 1 === g[7] && d(c, "projected"),
+            document.getElementsByClassName("hlist")))
+              (hlist.style.getPropertyValue("overflow") === "visible" &&
+                hlist.style.getPropertyPriority("overflow") === "important") ||
                 hlist.style.setProperty("overflow", "visible", "important");
           s(f, c);
         }
         if ("details" === n.getPageType()) {
           let e = await n.waitForElm(".trades-list-detail");
           if (e)
-            for (let offer of (await n.waitForElm(".trade-list-detail-offer"), e.getElementsByClassName("trade-list-detail-offer")))
-              for (let item of (await n.waitForElm(".item-card-container"), offer.querySelectorAll(".item-card-container"))) r(item);
+            for (let offer of (await n.waitForElm(".trade-list-detail-offer"),
+            e.getElementsByClassName("trade-list-detail-offer")))
+              for (let item of (await n.waitForElm(".item-card-container"),
+              offer.querySelectorAll(".item-card-container")))
+                r(item);
         }
         if ("sendOrCounter" === n.getPageType()) {
           let e = await n.waitForElm(".inventory-panel-holder");
-          for (let inventory of (await n.waitForElm(".hlist", e), e.querySelectorAll(".hlist")))
-            for (let item of (await n.waitForElm(".item-card-container"), inventory.querySelectorAll(".item-card-container"))) r(item);
+          for (let inventory of (await n.waitForElm(".hlist", e),
+          e.querySelectorAll(".hlist")))
+            for (let item of (await n.waitForElm(".item-card-container"),
+            inventory.querySelectorAll(".item-card-container")))
+              r(item);
         }
         if ("catalog" === n.getPageType())
           for (let item of (await n.waitForElm(".item-card-container"),
@@ -1019,14 +1260,17 @@
       };
       async function i(e) {
         var t = document.createElement("div");
-        let r = void 0 === document.getElementsByClassName("ropro-icon")[0] ? "left" : "right";
+        let r =
+          void 0 === document.getElementsByClassName("ropro-icon")[0]
+            ? "left"
+            : "right";
         (t.style.display = "flex"),
           (t.style.alignItems = "center"),
           (t.style.gap = "2px"),
           (t.style.position = "absolute"),
           (t.style.pointerEvents = "none"),
           (t.style.top = "2px"),
-          ("left" === r ? (t.style.left = "2px") : (t.style.right = "2px")),
+          "left" === r ? (t.style.left = "2px") : (t.style.right = "2px"),
           (t.style.zIndex = "8"),
           (t.dataset.nteSide = r),
           (t.className = "flagBox"),
@@ -1034,7 +1278,9 @@
       }
       function d(e, t) {
         let r = document.createElement("div");
-        (r.style.display = "inline-flex"), (r.style.alignItems = "center"), (r.className = `${t}-flag`);
+        (r.style.display = "inline-flex"),
+          (r.style.alignItems = "center"),
+          (r.className = `${t}-flag`);
         let a = document.createElement("img");
         (a.src = o[t]),
           (a.style.height = "27px"),
@@ -1064,7 +1310,9 @@
   function get_uaid_link_host(e, t = null) {
     if (!(e instanceof Element)) return null;
     return (
-      t?.closest?.(".item-card-thumb-container,.item-card-link,.thumbnail-2d-container,thumbnail-2d,.trade-request-item") ||
+      t?.closest?.(
+        ".item-card-thumb-container,.item-card-link,.thumbnail-2d-container,thumbnail-2d,.trade-request-item",
+      ) ||
       e.querySelector(".item-card-thumb-container") ||
       e.querySelector(".item-card-link") ||
       e.querySelector(".thumbnail-2d-container") ||
@@ -1074,7 +1322,10 @@
   }
   function sync_uaid_link_overlay(e, t, r) {
     if (!(e instanceof Element) || !(t instanceof Element) || !r) return null;
-    let n = [...(e.children || [])].find((e) => e.classList?.contains("nte-uaid-thumb-link")) || null;
+    let n =
+      [...(e.children || [])].find((e) =>
+        e.classList?.contains("nte-uaid-thumb-link"),
+      ) || null;
     n instanceof HTMLAnchorElement ||
       ((n = document.createElement("a")),
       (n.className = "nte-uaid-thumb-link"),
@@ -1103,7 +1354,8 @@
         e.stopPropagation();
       }),
       e.appendChild(n));
-    "static" === getComputedStyle(e).position && (e.style.position = "relative");
+    "static" === getComputedStyle(e).position &&
+      (e.style.position = "relative");
     let a = e.getBoundingClientRect(),
       o = t.getBoundingClientRect(),
       i = Math.max(Math.round(o.width || t.offsetWidth || 0), 16),
@@ -1114,7 +1366,10 @@
       Number.isFinite(d) || (d = 0),
       Number.isFinite(s) || (s = 0),
       (n.href = `https://www.rolimons.com/ciiid/${encodeURIComponent(String(r))}`),
-      n.setAttribute("aria-label", "Quick link to this specific copy's Rolimon's page"),
+      n.setAttribute(
+        "aria-label",
+        "Quick link to this specific copy's Rolimon's page",
+      ),
       n.setAttribute("data-nte-uaid-link", "1"),
       n.setAttribute("data-nte-uaid-instance-id", String(r)),
       (n.style.left = `${Math.max(0, d)}px`),
@@ -1127,7 +1382,9 @@
   }
   function get_uaid_link_target(e) {
     if (!(e instanceof Element)) return null;
-    return e.querySelector(".limited-icon-container:not(.infocardbutton):not(.tooltip-pastnames)");
+    return e.querySelector(
+      ".limited-icon-container:not(.infocardbutton):not(.tooltip-pastnames)",
+    );
   }
   let uaid_link_refresh_timer = 0;
   let uaid_link_refresh_retry_timer = 0;
@@ -1147,9 +1404,13 @@
   }
   let trade_detail_uaid_observer_started = !1;
   async function bind_trade_detail_uaid_refresh() {
-    if (trade_detail_uaid_observer_started || "details" !== c.getPageType()) return;
+    if (trade_detail_uaid_observer_started || "details" !== c.getPageType())
+      return;
     trade_detail_uaid_observer_started = !0;
-    let detail_root = await c.waitForElm(".trades-list-detail").catch(() => null);
+    if (!document.querySelector(".trades-list-detail")) return;
+    let detail_root = await c
+      .waitForElm(".trades-list-detail")
+      .catch(() => null);
     if (!(detail_root instanceof Element)) return;
     let queue = () => schedule_uaid_link_refresh(80, !0);
     new MutationObserver((records) => {
@@ -1157,7 +1418,9 @@
         if ("attributes" === record.type) {
           let node = record.target;
           if (
-            node?.matches?.(".trade-list-detail-offer,.item-card-container,.item-card-price,.limited-icon-container,[data-collectibleiteminstanceid],thumbnail-2d")
+            node?.matches?.(
+              ".trade-list-detail-offer,.item-card-container,.item-card-price,.limited-icon-container,[data-collectibleiteminstanceid],thumbnail-2d",
+            )
           ) {
             queue();
             return;
@@ -1181,15 +1444,20 @@
     if (!(await c.getOption("Add Item Ownership History (UAID) Links")))
       return (function () {
         clear_uaid_link_targets();
-        for (let item_card of document.querySelectorAll(".item-cards")) item_card.style.setProperty("overflow", "hidden");
+        for (let item_card of document.querySelectorAll(".item-cards"))
+          item_card.style.setProperty("overflow", "hidden");
       })();
     let e = new Set(),
       t = !1;
     for (let text_div of document.querySelectorAll(
       ".trade-list-detail-offer .item-card-price, .trade-inventory-panel .item-card-price, .trade-request-item",
     )) {
-      let card = text_div.closest?.(".item-card-container, .trade-request-item") || text_div;
-      let r = card?.getAttribute?.("data-collectibleiteminstanceid") || find_collectible_item_instance_id(card);
+      let card =
+        text_div.closest?.(".item-card-container, .trade-request-item") ||
+        text_div;
+      let r =
+        card?.getAttribute?.("data-collectibleiteminstanceid") ||
+        find_collectible_item_instance_id(card);
       if (!r) continue;
       let n = get_uaid_link_target(card);
       if (!(n instanceof Element)) continue;
@@ -1197,20 +1465,24 @@
         o = sync_uaid_link_overlay(a, n, r);
       o && (e.add(o), (t = !0));
     }
-    for (let r of document.querySelectorAll(".nte-uaid-thumb-link")) e.has(r) || r.remove();
+    for (let r of document.querySelectorAll(".nte-uaid-thumb-link"))
+      e.has(r) || r.remove();
     t &&
       (clearTimeout(uaid_tooltip_init_timer),
       (uaid_tooltip_init_timer = setTimeout(() => {
         (uaid_tooltip_init_timer = 0), c.initTooltips();
       }, 0)));
     for (let item_card of document.querySelectorAll(".item-cards"))
-      (item_card.style.getPropertyValue("overflow") === "visible" && item_card.style.getPropertyPriority("overflow") === "important") ||
+      (item_card.style.getPropertyValue("overflow") === "visible" &&
+        item_card.style.getPropertyPriority("overflow") === "important") ||
         item_card.style.setProperty("overflow", "visible", "important");
   }
   let trade_win_loss_retry_timer = null,
     trade_win_loss_retry_count = 0;
   function clear_trade_win_loss_detail_mount() {
-    for (let divider of document.querySelectorAll('.rbx-divider[data-nte-trade-win-loss-detail-mount="1"]')) {
+    for (let divider of document.querySelectorAll(
+      '.rbx-divider[data-nte-trade-win-loss-detail-mount="1"]',
+    )) {
       divider.style.removeProperty("padding-top");
       divider.style.removeProperty("border-top");
       divider.style.removeProperty("overflow");
@@ -1223,7 +1495,9 @@
     }
   }
   function clear_trade_win_loss_send_mount() {
-    for (let panel of document.querySelectorAll('.trade-inventory-panel[data-nte-trade-win-loss-send-mount="1"]')) {
+    for (let panel of document.querySelectorAll(
+      '.trade-inventory-panel[data-nte-trade-win-loss-send-mount="1"]',
+    )) {
       panel.style.removeProperty("padding-top");
       panel.style.removeProperty("border-top");
       panel.removeAttribute("data-nte-trade-win-loss-send-mount");
@@ -1235,17 +1509,32 @@
   }
   function get_trade_win_loss_mount_point() {
     if ("details" === c.getPageType()) {
-      let detail_offer = document.querySelectorAll(".trade-list-detail-offer")[1];
+      let detail_offer = document.querySelectorAll(
+        ".trade-list-detail-offer",
+      )[1];
       let divider = detail_offer?.querySelector(".rbx-divider");
-      if (divider instanceof Element) return { parent: divider, before: null, mode: "detail_divider" };
+      if (divider instanceof Element)
+        return { parent: divider, before: null, mode: "detail_divider" };
     }
     if ("sendOrCounter" === c.getPageType()) {
       let inventory_holder = document.querySelector(".inventory-panel-holder");
-      let inventory_panels = inventory_holder?.querySelectorAll(".trade-inventory-panel");
+      let inventory_panels = inventory_holder?.querySelectorAll(
+        ".trade-inventory-panel",
+      );
       if (inventory_holder instanceof Element) {
         let second_panel = inventory_panels?.[1];
-        let second_panel_host = second_panel instanceof Element ? Array.from(inventory_holder.children).find((child) => child.contains(second_panel)) : null;
-        if (second_panel_host instanceof Element) return { parent: inventory_holder, before: second_panel_host, mode: "send_holder" };
+        let second_panel_host =
+          second_panel instanceof Element
+            ? Array.from(inventory_holder.children).find((child) =>
+                child.contains(second_panel),
+              )
+            : null;
+        if (second_panel_host instanceof Element)
+          return {
+            parent: inventory_holder,
+            before: second_panel_host,
+            mode: "send_holder",
+          };
         return { parent: inventory_holder, before: null, mode: "send_holder" };
       }
       let offers = document.querySelector(".trade-request-window-offers");
@@ -1253,20 +1542,34 @@
         let action_button = offers.querySelector(
           '[ng-click="sendTrade()"], [ng-click="counterTrade()"], button.btn-cta-md.btn-full-width, button.btn-full-width',
         );
-        if (action_button instanceof Element) return { parent: offers, before: action_button };
+        if (action_button instanceof Element)
+          return { parent: offers, before: action_button };
         return { parent: offers, before: null };
       }
-      let inventory_panel = document.querySelectorAll(".trade-inventory-panel")[1];
-      if (inventory_panel instanceof Element) return { parent: inventory_panel, before: null, mode: "send_panel" };
+      let inventory_panel = document.querySelectorAll(
+        ".trade-inventory-panel",
+      )[1];
+      if (inventory_panel instanceof Element)
+        return { parent: inventory_panel, before: null, mode: "send_panel" };
     }
     let detail_offers = document.querySelectorAll(".trade-list-detail-offer");
-    if (detail_offers.length >= 2 && detail_offers[0]?.parentElement) return { parent: detail_offers[0].parentElement, before: detail_offers[0].nextSibling };
+    if (detail_offers.length >= 2 && detail_offers[0]?.parentElement)
+      return {
+        parent: detail_offers[0].parentElement,
+        before: detail_offers[0].nextSibling,
+      };
     let buttons = document.querySelector(".trade-buttons");
-    if (buttons?.parentElement) return { parent: buttons.parentElement, before: buttons };
+    if (buttons?.parentElement)
+      return { parent: buttons.parentElement, before: buttons };
     let offers = document.querySelector(".trade-request-window-offers");
-    if (offers?.parentElement) return { parent: offers.parentElement, before: offers.nextSibling };
-    let trade_window = document.querySelector(".trade-request-window, .trades-container");
-    return trade_window?.parentElement ? { parent: trade_window.parentElement, before: trade_window.nextSibling } : null;
+    if (offers?.parentElement)
+      return { parent: offers.parentElement, before: offers.nextSibling };
+    let trade_window = document.querySelector(
+      ".trade-request-window, .trades-container",
+    );
+    return trade_window?.parentElement
+      ? { parent: trade_window.parentElement, before: trade_window.nextSibling }
+      : null;
   }
   function ensure_trade_win_loss_container(mount, show_usd) {
     let is_send_panel = mount?.mode === "send_panel",
@@ -1309,7 +1612,8 @@
       row.style.marginTop = "0";
       row.style.marginLeft = "0";
       row.style.marginRight = "0";
-      if (row.parentElement !== parent || row !== parent.lastChild) parent.appendChild(row);
+      if (row.parentElement !== parent || row !== parent.lastChild)
+        parent.appendChild(row);
     } else if (is_detail_divider && mount?.parent instanceof Element) {
       let parent = mount.parent;
       parent.setAttribute("data-nte-trade-win-loss-detail-mount", "1");
@@ -1335,7 +1639,8 @@
       row.style.marginTop = "0";
       row.style.marginLeft = "0";
       row.style.marginRight = "0";
-      if (row.parentElement !== parent || row !== parent.lastChild) parent.appendChild(row);
+      if (row.parentElement !== parent || row !== parent.lastChild)
+        parent.appendChild(row);
     } else {
       row.style.position = "relative";
       row.style.clear = "both";
@@ -1350,9 +1655,20 @@
       row.style.marginTop = "0";
       row.style.marginLeft = "auto";
       row.style.marginRight = "auto";
-      if (mount?.parent && row.parentElement !== mount.parent) mount.parent.insertBefore(row, mount.before || null);
-      else if (mount?.parent && mount.before && row.nextSibling !== mount.before) mount.parent.insertBefore(row, mount.before);
-      else if (mount?.parent && !mount.before && row.parentElement === mount.parent && row !== mount.parent.lastChild)
+      if (mount?.parent && row.parentElement !== mount.parent)
+        mount.parent.insertBefore(row, mount.before || null);
+      else if (
+        mount?.parent &&
+        mount.before &&
+        row.nextSibling !== mount.before
+      )
+        mount.parent.insertBefore(row, mount.before);
+      else if (
+        mount?.parent &&
+        !mount.before &&
+        row.parentElement === mount.parent &&
+        row !== mount.parent.lastChild
+      )
         mount.parent.appendChild(row);
     }
     row.hidden = !1;
@@ -1361,7 +1677,11 @@
   function sync_trade_win_loss_send_mount(row) {
     if (!(row instanceof Element)) return;
     let parent = row.parentElement;
-    if (!(parent instanceof Element) || parent.getAttribute("data-nte-trade-win-loss-send-mount") !== "1") return;
+    if (
+      !(parent instanceof Element) ||
+      parent.getAttribute("data-nte-trade-win-loss-send-mount") !== "1"
+    )
+      return;
     let row_rect = row.getBoundingClientRect();
     if (!(row_rect.height > 0)) return;
     parent.style.paddingTop = `${Math.ceil(row_rect.height + 4)}px`;
@@ -1370,14 +1690,25 @@
     if (!(row instanceof Element)) return;
     row.style.transform = "none";
     row.style.marginBottom = "0";
-    if (row.parentElement?.getAttribute("data-nte-trade-win-loss-detail-mount") === "1") return;
+    if (
+      row.parentElement?.getAttribute(
+        "data-nte-trade-win-loss-detail-mount",
+      ) === "1"
+    )
+      return;
     if ("details" !== c.getPageType()) return;
     let offers = document.querySelectorAll(".trade-list-detail-offer"),
       first_offer = offers[0],
       second_offer = offers[1];
     if (!(first_offer instanceof Element)) return;
-    let is_compact = window.matchMedia("(max-width: 820px), (pointer: coarse)").matches;
-    let card_rects = Array.from(first_offer.querySelectorAll(".trade-item-card, .item-card.trade-item-card"))
+    let is_compact = window.matchMedia(
+      "(max-width: 820px), (pointer: coarse)",
+    ).matches;
+    let card_rects = Array.from(
+      first_offer.querySelectorAll(
+        ".trade-item-card, .item-card.trade-item-card",
+      ),
+    )
       .map((el) => el.getBoundingClientRect())
       .filter((rect) => rect.width > 0 && rect.height > 0);
     let target_center = NaN;
@@ -1386,7 +1717,9 @@
         max_right = Math.max(...card_rects.map((rect) => rect.right));
       target_center = (min_left + max_right) / 2;
     } else {
-      let fallback = first_offer.querySelector(".robux-line") || first_offer.querySelector(".trade-list-detail-offer-header");
+      let fallback =
+        first_offer.querySelector(".robux-line") ||
+        first_offer.querySelector(".trade-list-detail-offer-header");
       if (fallback instanceof Element) {
         let rect = fallback.getBoundingClientRect();
         rect.width > 0 && (target_center = rect.left + rect.width / 2);
@@ -1396,17 +1729,31 @@
     if (!(row_rect.width > 0) || !Number.isFinite(target_center)) return;
     let x_offset = target_center - (row_rect.left + row_rect.width / 2);
     if (!Number.isFinite(x_offset)) return;
-    x_offset = is_compact ? 0 : Math.max(-80, Math.min(80, Math.round(x_offset)));
+    x_offset = is_compact
+      ? 0
+      : Math.max(-80, Math.min(80, Math.round(x_offset)));
     let y_offset = 0,
-      divider = second_offer instanceof Element ? second_offer.querySelector(".rbx-divider") : null,
-      content = row.firstElementChild instanceof Element ? row.firstElementChild : row;
+      divider =
+        second_offer instanceof Element
+          ? second_offer.querySelector(".rbx-divider")
+          : null,
+      content =
+        row.firstElementChild instanceof Element ? row.firstElementChild : row;
     if (divider instanceof Element) {
       let divider_rect = divider.getBoundingClientRect(),
         content_rect = content.getBoundingClientRect();
-      if (divider_rect.width > 0 && content_rect.height > 0) y_offset = Math.round(divider_rect.top + divider_rect.height / 2 - (content_rect.top + content_rect.height / 2));
+      if (divider_rect.width > 0 && content_rect.height > 0)
+        y_offset = Math.round(
+          divider_rect.top +
+            divider_rect.height / 2 -
+            (content_rect.top + content_rect.height / 2),
+        );
     }
     row.style.marginBottom = y_offset > 0 ? `-${y_offset}px` : "0";
-    row.style.transform = Math.abs(x_offset) > 1 || Math.abs(y_offset) > 1 ? `translate(${x_offset}px, ${y_offset}px)` : "none";
+    row.style.transform =
+      Math.abs(x_offset) > 1 || Math.abs(y_offset) > 1
+        ? `translate(${x_offset}px, ${y_offset}px)`
+        : "none";
   }
   function clear_trade_win_loss_retry() {
     trade_win_loss_retry_timer && clearTimeout(trade_win_loss_retry_timer),
@@ -1425,7 +1772,8 @@
   }
   async function p() {
     let mount = get_trade_win_loss_mount_point();
-    if (!(await c.getOption("Trade Win/Loss Stats"))) return clear_trade_win_loss_retry(), h();
+    if (!(await c.getOption("Trade Win/Loss Stats")))
+      return clear_trade_win_loss_retry(), h();
     let t = !(await c.getOption("Disable Win/Loss Stats RAP"));
     let show_usd = !!(await c.getOption("Show Routility USD Values"));
     if (!mount) return schedule_trade_win_loss_retry();
@@ -1461,7 +1809,9 @@
     function l(e, t, r, l, prefix) {
       prefix = prefix || "";
       let s, d;
-      "value" === e && ((s = i), (d = o)), "RAP" === e && ((s = a), (d = n)), "USD" === e && ((s = u_amt), (d = u_pct));
+      "value" === e && ((s = i), (d = o)),
+        "RAP" === e && ((s = a), (d = n)),
+        "USD" === e && ((s = u_amt), (d = u_pct));
       let pretty = (v) => `${prefix}${c.commafy(Math.abs(Math.round(v)))}`;
       let pct_text = format_trade_percent(Math.abs(d));
       let u = {
@@ -1493,12 +1843,25 @@
     }
     let s = rap_ready && "number" === typeof n && Number.isFinite(n),
       d = "number" === typeof o && Number.isFinite(o),
-      u_show_pct = usd_ready && "number" === typeof u_pct && Number.isFinite(u_pct);
+      u_show_pct =
+        usd_ready && "number" === typeof u_pct && Number.isFinite(u_pct);
     if (value_ready) {
       let g = a > 0,
         h = i > 0,
         u_win = u_amt > 0;
-      let e = y(t && rap_ready, a, n, s, i, o, d, usd_ready, u_amt, u_pct, u_show_pct);
+      let e = y(
+        t && rap_ready,
+        a,
+        n,
+        s,
+        i,
+        o,
+        d,
+        usd_ready,
+        u_amt,
+        u_pct,
+        u_show_pct,
+      );
       let tooltip = `${t && rap_ready ? l("RAP", g, s, a) + " " : ""}${l("value", h, d, i)}`;
       if (usd_ready) tooltip += ` ${l("USD", u_win, u_show_pct, u_amt, "$")}`;
       let stats_key = `${show_usd ? "1" : "0"}|${tooltip}|${e.innerHTML}`;
@@ -1536,13 +1899,26 @@
   function format_trade_percent(value, signed = !1) {
     if (!Number.isFinite(value)) return "";
     let abs = Math.abs(value),
-      rounded = abs >= 10 ? Math.round(value) : abs >= 1 ? Math.round(10 * value) / 10 : Math.round(100 * value) / 100;
+      rounded =
+        abs >= 10
+          ? Math.round(value)
+          : abs >= 1
+            ? Math.round(10 * value) / 10
+            : Math.round(100 * value) / 100;
     Object.is(rounded, -0) && (rounded = 0);
     let rounded_abs = Math.abs(rounded),
-      text = (rounded_abs >= 10 ? rounded_abs.toFixed(0) : rounded_abs >= 1 ? rounded_abs.toFixed(1) : rounded_abs.toFixed(2))
+      text = (
+        rounded_abs >= 10
+          ? rounded_abs.toFixed(0)
+          : rounded_abs >= 1
+            ? rounded_abs.toFixed(1)
+            : rounded_abs.toFixed(2)
+      )
         .replace(/\.0+$/, "")
         .replace(/(\.\d*[1-9])0+$/, "$1");
-    return signed ? `${rounded > 0 ? "+" : rounded < 0 ? "-" : ""}${text}` : text;
+    return signed
+      ? `${rounded > 0 ? "+" : rounded < 0 ? "-" : ""}${text}`
+      : text;
   }
   const colorblind_mode_option_name = "Colorblind Mode";
   const legacy_colorblind_mode_option_name = "Colorblind Profit Mode";
@@ -1550,7 +1926,12 @@
   const legacy_post_tax_trade_value_option_name = "Post-Tax Trade Value";
   const colorblind_mode_profile_key = "colorblind_mode_profile";
   const colorblind_mode_profile_default = "deuteranopia";
-  const colorblind_mode_profiles = ["deuteranopia", "protanopia", "tritanopia", "achromatopsia"];
+  const colorblind_mode_profiles = [
+    "deuteranopia",
+    "protanopia",
+    "tritanopia",
+    "achromatopsia",
+  ];
   const colorblind_trade_refresh_messages = [
     colorblind_mode_option_name,
     legacy_colorblind_mode_option_name,
@@ -1570,13 +1951,21 @@
   let trade_profit_colorblind_mode = !1;
   let trade_profit_colorblind_profile = colorblind_mode_profile_default;
   function normalize_colorblind_mode_profile(value) {
-    let normalized = String(value || "").trim().toLowerCase();
-    return colorblind_mode_profiles.includes(normalized) ? normalized : colorblind_mode_profile_default;
+    let normalized = String(value || "")
+      .trim()
+      .toLowerCase();
+    return colorblind_mode_profiles.includes(normalized)
+      ? normalized
+      : colorblind_mode_profile_default;
   }
   function get_trade_colorblind_mode_settings() {
     return new Promise((resolve) => {
       chrome.storage.local.get(
-        [colorblind_mode_option_name, legacy_colorblind_mode_option_name, colorblind_mode_profile_key],
+        [
+          colorblind_mode_option_name,
+          legacy_colorblind_mode_option_name,
+          colorblind_mode_profile_key,
+        ],
         (result) => {
           chrome.runtime.lastError && console.info(chrome.runtime.lastError);
           let enabled =
@@ -1585,7 +1974,9 @@
               : !!result?.[legacy_colorblind_mode_option_name];
           resolve({
             enabled,
-            profile: normalize_colorblind_mode_profile(result?.[colorblind_mode_profile_key]),
+            profile: normalize_colorblind_mode_profile(
+              result?.[colorblind_mode_profile_key],
+            ),
           });
         },
       );
@@ -1638,8 +2029,10 @@
           list_loss_color: "#e11d48",
           list_even_color: "rgb(79, 81, 82)",
           list_gain_fill: "linear-gradient(180deg, #5eead4 0%, #0f766e 100%)",
-          list_loss_fill: "repeating-linear-gradient(135deg, #fda4af 0 6px, #e11d48 6px 12px)",
-          list_even_fill: "linear-gradient(180deg, rgba(148, 163, 184, 0.64) 0%, rgba(71, 85, 105, 0.95) 100%)",
+          list_loss_fill:
+            "repeating-linear-gradient(135deg, #fda4af 0 6px, #e11d48 6px 12px)",
+          list_even_fill:
+            "linear-gradient(180deg, rgba(148, 163, 184, 0.64) 0%, rgba(71, 85, 105, 0.95) 100%)",
           list_gain_label: "#ccfbf1",
           list_loss_label: "#ffe4e6",
           list_even_label: "rgba(255, 255, 255, 0.82)",
@@ -1663,8 +2056,10 @@
           list_loss_color: "#9333ea",
           list_even_color: "rgb(79, 81, 82)",
           list_gain_fill: "linear-gradient(180deg, #86efac 0%, #16a34a 100%)",
-          list_loss_fill: "repeating-linear-gradient(135deg, #d8b4fe 0 6px, #9333ea 6px 12px)",
-          list_even_fill: "linear-gradient(180deg, rgba(148, 163, 184, 0.64) 0%, rgba(71, 85, 105, 0.95) 100%)",
+          list_loss_fill:
+            "repeating-linear-gradient(135deg, #d8b4fe 0 6px, #9333ea 6px 12px)",
+          list_even_fill:
+            "linear-gradient(180deg, rgba(148, 163, 184, 0.64) 0%, rgba(71, 85, 105, 0.95) 100%)",
           list_gain_label: "#dcfce7",
           list_loss_label: "#f3e8ff",
           list_even_label: "rgba(255, 255, 255, 0.82)",
@@ -1688,8 +2083,10 @@
           list_loss_color: "#94a3b8",
           list_even_color: "rgb(79, 81, 82)",
           list_gain_fill: "linear-gradient(180deg, #cbd5e1 0%, #64748b 100%)",
-          list_loss_fill: "repeating-linear-gradient(135deg, #111827 0 6px, #6b7280 6px 12px)",
-          list_even_fill: "linear-gradient(180deg, rgba(148, 163, 184, 0.64) 0%, rgba(71, 85, 105, 0.95) 100%)",
+          list_loss_fill:
+            "repeating-linear-gradient(135deg, #111827 0 6px, #6b7280 6px 12px)",
+          list_even_fill:
+            "linear-gradient(180deg, rgba(148, 163, 184, 0.64) 0%, rgba(71, 85, 105, 0.95) 100%)",
           list_gain_label: "rgba(255, 255, 255, 0.82)",
           list_loss_label: "rgba(255, 255, 255, 0.82)",
           list_even_label: "rgba(255, 255, 255, 0.82)",
@@ -1713,8 +2110,10 @@
           list_loss_color: "#ea580c",
           list_even_color: "rgb(79, 81, 82)",
           list_gain_fill: "linear-gradient(180deg, #60a5fa 0%, #2563eb 100%)",
-          list_loss_fill: "repeating-linear-gradient(135deg, #fdba74 0 6px, #f97316 6px 12px)",
-          list_even_fill: "linear-gradient(180deg, rgba(148, 163, 184, 0.64) 0%, rgba(71, 85, 105, 0.95) 100%)",
+          list_loss_fill:
+            "repeating-linear-gradient(135deg, #fdba74 0 6px, #f97316 6px 12px)",
+          list_even_fill:
+            "linear-gradient(180deg, rgba(148, 163, 184, 0.64) 0%, rgba(71, 85, 105, 0.95) 100%)",
           list_gain_label: "#dbeafe",
           list_loss_label: "#ffedd5",
           list_even_label: "rgba(255, 255, 255, 0.82)",
@@ -1735,13 +2134,34 @@
     let palette = get_trade_profit_palette(),
       root = document.documentElement;
     root.style.setProperty("--nte-history-profit-up-bg", palette.history_up_bg);
-    root.style.setProperty("--nte-history-profit-up-border", palette.history_up_border);
-    root.style.setProperty("--nte-history-profit-up-color", palette.history_up_color);
-    root.style.setProperty("--nte-history-profit-up-light", palette.history_up_light);
-    root.style.setProperty("--nte-history-profit-down-bg", palette.history_down_bg);
-    root.style.setProperty("--nte-history-profit-down-border", palette.history_down_border);
-    root.style.setProperty("--nte-history-profit-down-color", palette.history_down_color);
-    root.style.setProperty("--nte-history-profit-down-light", palette.history_down_light);
+    root.style.setProperty(
+      "--nte-history-profit-up-border",
+      palette.history_up_border,
+    );
+    root.style.setProperty(
+      "--nte-history-profit-up-color",
+      palette.history_up_color,
+    );
+    root.style.setProperty(
+      "--nte-history-profit-up-light",
+      palette.history_up_light,
+    );
+    root.style.setProperty(
+      "--nte-history-profit-down-bg",
+      palette.history_down_bg,
+    );
+    root.style.setProperty(
+      "--nte-history-profit-down-border",
+      palette.history_down_border,
+    );
+    root.style.setProperty(
+      "--nte-history-profit-down-color",
+      palette.history_down_color,
+    );
+    root.style.setProperty(
+      "--nte-history-profit-down-light",
+      palette.history_down_light,
+    );
   }
   async function sync_trade_profit_mode() {
     try {
@@ -1761,7 +2181,10 @@
       if (offers[0] && offers[1]) {
         let left = get_trade_offer_rendered_totals(offers[0]),
           right = get_trade_offer_rendered_totals(offers[1]);
-        if (Number.isFinite(left?.rap_total) && Number.isFinite(right?.rap_total)) {
+        if (
+          Number.isFinite(left?.rap_total) &&
+          Number.isFinite(right?.rap_total)
+        ) {
           let diff = right.rap_total - left.rap_total,
             pct = get_trade_percent(diff, left.rap_total);
           return [pct, diff];
@@ -1782,7 +2205,10 @@
     if (offers?.[0] && offers?.[1]) {
       let left = get_trade_offer_rendered_totals(offers[0]),
         right = get_trade_offer_rendered_totals(offers[1]);
-      if (Number.isFinite(left?.rap_total) && Number.isFinite(right?.rap_total)) {
+      if (
+        Number.isFinite(left?.rap_total) &&
+        Number.isFinite(right?.rap_total)
+      ) {
         let diff = right.rap_total - left.rap_total,
           pct = get_trade_percent(diff, left.rap_total);
         return [pct, diff];
@@ -1792,11 +2218,13 @@
   }
   async function get_trade_offer_elements() {
     if ("details" === c.getPageType()) {
-      document.querySelector(".trade-list-detail-offer") || (await c.waitForElm(".trade-list-detail-offer"));
+      document.querySelector(".trade-list-detail-offer") ||
+        (await c.waitForElm(".trade-list-detail-offer"));
       let e = document.getElementsByClassName("trade-list-detail-offer");
       if (e[0] && e[1]) return e;
     }
-    document.querySelector(".trade-request-window-offer") || (await c.waitForElm(".trade-request-window-offer"));
+    document.querySelector(".trade-request-window-offer") ||
+      (await c.waitForElm(".trade-request-window-offer"));
     let t = document.getElementsByClassName("trade-request-window-offer");
     return t[0] && t[1] ? t : null;
   }
@@ -1809,21 +2237,32 @@
     let input = offer.querySelector('[name="robux"]');
     if (input) return parseInt(input.value, 10) || 0;
     let details_value_el = offer.querySelector(".text-label.robux-line-value"),
-      details_value = parse_trade_summary_number(details_value_el?.textContent || "");
+      details_value = parse_trade_summary_number(
+        details_value_el?.textContent || "",
+      );
     return Number.isFinite(details_value) ? Math.round(details_value / 0.7) : 0;
   }
   function get_trade_offer_rendered_totals(offer, use_post_tax = !1) {
     let total_line =
-      offer?.querySelector(".robux-line:not(.ng-hide) .robux-line-amount .text-robux-lg")?.parentElement ||
-      offer?.querySelector(".robux-line .robux-line-amount .text-robux-lg")?.parentElement ||
+      offer?.querySelector(
+        ".robux-line:not(.ng-hide) .robux-line-amount .text-robux-lg",
+      )?.parentElement ||
+      offer?.querySelector(".robux-line .robux-line-amount .text-robux-lg")
+        ?.parentElement ||
       offer?.querySelector(".robux-line-amount");
     if (!(total_line instanceof Element)) return null;
-    let value_total = parse_trade_summary_number(total_line.querySelector(".valueSpan")?.textContent || ""),
+    let value_total = parse_trade_summary_number(
+        total_line.querySelector(".valueSpan")?.textContent || "",
+      ),
       clone = total_line.cloneNode(!0),
       robux_total = get_trade_offer_robux_total(offer);
-    for (let el of clone.querySelectorAll(".valueSpan, .icon-rolimons, .nte-routility-usd-row, .nte-routility-usd-inline, img, br")) el.remove();
+    for (let el of clone.querySelectorAll(
+      ".valueSpan, .icon-rolimons, .nte-routility-usd-row, .nte-routility-usd-inline, img, br",
+    ))
+      el.remove();
     let rap_total = parse_trade_summary_number(clone.textContent || "");
-    if (Number.isFinite(value_total) && use_post_tax) value_total = value_total - robux_total + Math.round(0.7 * robux_total);
+    if (Number.isFinite(value_total) && use_post_tax)
+      value_total = value_total - robux_total + Math.round(0.7 * robux_total);
     return {
       rap_total,
       value_total,
@@ -1833,7 +2272,9 @@
   async function get_post_tax_trade_values_enabled() {
     let value = await c.getOption(post_tax_trade_values_option_name);
     if (value !== undefined) return !!value;
-    let legacy_value = await c.getOption(legacy_post_tax_trade_value_option_name);
+    let legacy_value = await c.getOption(
+      legacy_post_tax_trade_value_option_name,
+    );
     return legacy_value !== undefined ? !!legacy_value : true;
   }
   async function g() {
@@ -1841,9 +2282,18 @@
     if ("sendOrCounter" === c.getPageType()) {
       let offers = document.querySelectorAll(".trade-request-window-offer");
       if (offers[0] && offers[1]) {
-        let left_rendered = get_trade_offer_rendered_totals(offers[0], use_post_tax),
-          right_rendered = get_trade_offer_rendered_totals(offers[1], use_post_tax);
-        if (Number.isFinite(left_rendered?.value_total) && Number.isFinite(right_rendered?.value_total)) {
+        let left_rendered = get_trade_offer_rendered_totals(
+            offers[0],
+            use_post_tax,
+          ),
+          right_rendered = get_trade_offer_rendered_totals(
+            offers[1],
+            use_post_tax,
+          );
+        if (
+          Number.isFinite(left_rendered?.value_total) &&
+          Number.isFinite(right_rendered?.value_total)
+        ) {
           let diff = right_rendered.value_total - left_rendered.value_total,
             pct = get_trade_percent(diff, left_rendered.value_total);
           return [pct, diff];
@@ -1854,13 +2304,15 @@
     if (!e?.[0] || !e?.[1]) return [!1, NaN];
     let left_rendered = get_trade_offer_rendered_totals(e[0], use_post_tax),
       right_rendered = get_trade_offer_rendered_totals(e[1], use_post_tax);
-    if (Number.isFinite(left_rendered?.value_total) && Number.isFinite(right_rendered?.value_total)) {
+    if (
+      Number.isFinite(left_rendered?.value_total) &&
+      Number.isFinite(right_rendered?.value_total)
+    ) {
       let n = right_rendered.value_total - left_rendered.value_total,
         a = get_trade_percent(n, left_rendered.value_total);
       return [a, n];
     }
-    let
-      t = await v(e[0], use_post_tax),
+    let t = await v(e[0], use_post_tax),
       r = await v(e[1], use_post_tax);
     if (!Number.isFinite(t) || !Number.isFinite(r)) return [!1, NaN];
     let n = r - t,
@@ -1873,20 +2325,36 @@
       rap = 0;
     if (price_el instanceof Element) {
       let copy = price_el.cloneNode(!0);
-      for (let el of copy.querySelectorAll(".valueSpan, .icon-rolimons, .icon-link, .nte-routility-usd-row, .nte-routility-usd-inline, br")) el.remove();
+      for (let el of copy.querySelectorAll(
+        ".valueSpan, .icon-rolimons, .icon-link, .nte-routility-usd-row, .nte-routility-usd-inline, br",
+      ))
+        el.remove();
       let match = (copy.textContent || "").match(/\d[\d,]*/);
       rap = match ? parseInt(match[0].replace(/,/g, ""), 10) || 0 : 0;
     }
     let ctx = get_trade_el_value_ctx(item_el, item_id, item_name, rap),
-      resolved_id = c.resolveRolimonsItemId(ctx.targetId, ctx.name, "Bundle" === ctx.itemType);
+      resolved_id = c.resolveRolimonsItemId(
+        ctx.targetId,
+        ctx.name,
+        "Bundle" === ctx.itemType,
+      );
     return Number(c.getUSD(ctx.targetId) || c.getUSD(resolved_id) || 0);
   }
   function get_trade_sales_hover_routility_usd(ctx) {
     let target_id = Number(ctx?.target_id || 0),
       target_name = String(ctx?.name || ""),
       item_type = String(ctx?.item_type || "Asset"),
-      resolved_id = c.resolveRolimonsItemId(target_id, target_name, "Bundle" === item_type);
-    return Number(c.getUSD(target_id) || c.getUSD(ctx?.rolimons_id) || c.getUSD(resolved_id) || 0);
+      resolved_id = c.resolveRolimonsItemId(
+        target_id,
+        target_name,
+        "Bundle" === item_type,
+      );
+    return Number(
+      c.getUSD(target_id) ||
+        c.getUSD(ctx?.rolimons_id) ||
+        c.getUSD(resolved_id) ||
+        0,
+    );
   }
   async function usd_side(offer) {
     let pt = c.getPageType();
@@ -1895,13 +2363,21 @@
       let containers = offer.querySelectorAll(".item-card-container");
       await c.waitForElm(".item-card-price");
       let total = 0;
-      for (let item of containers) total += get_trade_context_usd_value(item, item.querySelector(".item-card-price"));
+      for (let item of containers)
+        total += get_trade_context_usd_value(
+          item,
+          item.querySelector(".item-card-price"),
+        );
       return total;
     }
     await c.waitForElm('[ng-repeat="slot in offer.slots"]', offer);
     let slots = offer.querySelectorAll('[ng-repeat="slot in offer.slots"]');
     let total = 0;
-    for (let item of slots) total += get_trade_context_usd_value(item, item.querySelector(".item-card-price, .item-value"));
+    for (let item of slots)
+      total += get_trade_context_usd_value(
+        item,
+        item.querySelector(".item-card-price, .item-value"),
+      );
     return total;
   }
   async function usd_totals() {
@@ -1914,11 +2390,29 @@
     let pct = get_trade_percent(diff, left);
     return [pct, diff];
   }
-  function y(show_rap, rap_amount, rap_percent, show_rap_percent, value_amount, value_percent, show_value_percent, show_usd, usd_amount, usd_percent, show_usd_percent) {
+  function y(
+    show_rap,
+    rap_amount,
+    rap_percent,
+    show_rap_percent,
+    value_amount,
+    value_percent,
+    show_value_percent,
+    show_usd,
+    usd_amount,
+    usd_percent,
+    show_usd_percent,
+  ) {
     let dark = "dark" === c.getColorMode(),
-      neutral_bg = dark ? "rgba(255, 255, 255, 0.12)" : "rgba(37, 45, 55, 0.09)",
-      neutral_border = dark ? "rgba(255, 255, 255, 0.16)" : "rgba(37, 45, 55, 0.12)",
-      neutral_color = dark ? "rgba(248, 250, 252, 0.88)" : "rgba(35, 43, 52, 0.82)";
+      neutral_bg = dark
+        ? "rgba(255, 255, 255, 0.12)"
+        : "rgba(37, 45, 55, 0.09)",
+      neutral_border = dark
+        ? "rgba(255, 255, 255, 0.16)"
+        : "rgba(37, 45, 55, 0.12)",
+      neutral_color = dark
+        ? "rgba(248, 250, 252, 0.88)"
+        : "rgba(35, 43, 52, 0.82)";
     let palette = get_trade_profit_palette();
     let pack_asset_url = (path) => chrome.runtime.getURL(path),
       rap_icon_url = pack_asset_url("elements/robux.png"),
@@ -1929,20 +2423,39 @@
       rap_icon = `<img src="${rap_icon_url}" alt="" aria-hidden="true" decoding="async" style="${chip_icon_style}">`,
       value_icon = `<img src="${value_icon_url}" alt="" aria-hidden="true" decoding="async" style="${chip_icon_style}">`,
       usd_icon = `<img src="${usd_icon_url}" alt="" aria-hidden="true" decoding="async" style="display:block;width:16px;height:16px;object-fit:contain;object-position:center;flex:0 0 auto;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.22));">`;
-    function chip(label, amount, percent, show_percent, icon_html, prefix, source_label) {
+    function chip(
+      label,
+      amount,
+      percent,
+      show_percent,
+      icon_html,
+      prefix,
+      source_label,
+    ) {
       prefix = prefix || "";
       let state = get_trade_profit_state_meta(amount),
         equal = state.equal,
         win = state.win,
-        background = equal ? neutral_bg : win ? palette.chip_gain_bg : palette.chip_loss_bg,
-        border = equal ? neutral_border : win ? palette.chip_gain_border : palette.chip_loss_border,
+        background = equal
+          ? neutral_bg
+          : win
+            ? palette.chip_gain_bg
+            : palette.chip_loss_bg,
+        border = equal
+          ? neutral_border
+          : win
+            ? palette.chip_gain_border
+            : palette.chip_loss_border,
         color = equal ? neutral_color : palette.chip_text,
         amount_text = equal
           ? "Even"
           : trade_profit_colorblind_mode
             ? `${win ? "Gain" : "Loss"} ${amount > 0 ? "+" : "-"}${prefix}${c.commafy(Math.abs(amount))}`
             : `${amount > 0 ? "+" : "-"}${prefix}${c.commafy(Math.abs(amount))}`,
-        percent_text = !equal && show_percent ? `(${format_trade_percent(percent, !0)}%)` : "",
+        percent_text =
+          !equal && show_percent
+            ? `(${format_trade_percent(percent, !0)}%)`
+            : "",
         value_row = `<span style="display:inline-flex;align-items:center;justify-content:center;gap:5px;line-height:1;height:16px;min-width:0;"><span style="display:inline-flex;align-items:center;height:16px;font-size:15px;font-weight:800;color:${color};line-height:16px;">${amount_text}</span>${percent_text ? `<span style="display:inline-flex;align-items:center;height:16px;font-size:12px;font-weight:800;color:${color};opacity:0.88;line-height:16px;">${percent_text}</span>` : ""}</span>`,
         source_html = source_label
           ? `<span style="display:inline-flex;align-items:center;height:10px;font-size:10px;font-weight:800;color:${equal ? neutral_color : "rgba(255, 255, 255, 0.84)"};letter-spacing:.55px;line-height:10px;text-transform:uppercase;">${source_label}</span>`
@@ -1985,14 +2498,23 @@
   }
   async function get_trade_offer_value_totals(e) {
     if (!(e instanceof Element)) return null;
-    if (e.classList.contains("trade-list-detail-offer") || e.querySelector(".item-card-container")) return await c.calculateValueTotalDetails(e, !0);
-    if (e.classList.contains("trade-request-window-offer") || e.querySelector('[ng-repeat="slot in offer.slots"], [name="robux"]'))
+    if (
+      e.classList.contains("trade-list-detail-offer") ||
+      e.querySelector(".item-card-container")
+    )
+      return await c.calculateValueTotalDetails(e, !0);
+    if (
+      e.classList.contains("trade-request-window-offer") ||
+      e.querySelector('[ng-repeat="slot in offer.slots"], [name="robux"]')
+    )
       return await c.calculateValueTotalSendOrCounter(e, !0);
     return null;
   }
   async function v(e, use_post_tax = !1) {
     let totals = await get_trade_offer_value_totals(e);
-    return Array.isArray(totals) ? c.apply_trade_difference_total(totals[0], totals[1], use_post_tax) : void 0;
+    return Array.isArray(totals)
+      ? c.apply_trade_difference_total(totals[0], totals[1], use_post_tax)
+      : void 0;
   }
   var c = (s("eFyFE"), s("eFyFE"), s("eFyFE")),
     x = {};
@@ -2099,26 +2621,53 @@
             }
           else if (r && r.keys)
             for (var o = 0; o < t.length; o++) {
-              for (var i = t[o], c = Array(r.keys.length), u = r.keys.length - 1; u >= 0; --u) {
+              for (
+                var i = t[o], c = Array(r.keys.length), u = r.keys.length - 1;
+                u >= 0;
+                --u
+              ) {
                 var l = w(i, r.keys[u]);
                 if (!l) {
                   c[u] = C;
                   continue;
                 }
-                E(l) || (l = s(l)), (l.score = k), (l._indexes.len = 0), (c[u] = l);
+                E(l) || (l = s(l)),
+                  (l.score = k),
+                  (l._indexes.len = 0),
+                  (c[u] = l);
               }
               if (((c.obj = i), (c.score = k), n.push(c), n.length >= a)) break;
             }
           else
             for (var o = 0; o < t.length; o++) {
               var l = t[o];
-              if (l && (E(l) || (l = s(l)), (l.score = k), (l._indexes.len = 0), n.push(l), n.length >= a)) break;
+              if (
+                l &&
+                (E(l) || (l = s(l)),
+                (l.score = k),
+                (l._indexes.len = 0),
+                n.push(l),
+                n.length >= a)
+              )
+                break;
             }
           return n;
         },
         u = (e, t, r = !1) => {
           if (!1 === r && e.containsSpace) return m(e, t);
-          for (var n = e._lower, a = e.lowerCodes, o = a[0], i = t._targetLowerCodes, l = a.length, s = i.length, d = 0, c = 0, u = 0; ; ) {
+          for (
+            var n = e._lower,
+              a = e.lowerCodes,
+              o = a[0],
+              i = t._targetLowerCodes,
+              l = a.length,
+              s = i.length,
+              d = 0,
+              c = 0,
+              u = 0;
+            ;
+
+          ) {
             var p = o === i[c];
             if (p) {
               if (((v[u++] = c), ++d === l)) break;
@@ -2157,19 +2706,33 @@
           else
             var T = v,
               I = u;
-          for (var q = 0, B = 0, S = 1; S < l; ++S) T[S] - T[S - 1] != 1 && ((q -= T[S]), ++B);
-          if (((q -= (12 + (T[l - 1] - T[0] - (l - 1))) * B), 0 !== T[0] && (q -= T[0] * T[0] * 0.2), f)) {
+          for (var q = 0, B = 0, S = 1; S < l; ++S)
+            T[S] - T[S - 1] != 1 && ((q -= T[S]), ++B);
+          if (
+            ((q -= (12 + (T[l - 1] - T[0] - (l - 1))) * B),
+            0 !== T[0] && (q -= T[0] * T[0] * 0.2),
+            f)
+          ) {
             for (var A = 1, S = h[0]; S < s; S = h[S]) ++A;
             A > 24 && (q *= (A - 24) * 10);
           } else q *= 1e3;
-          E && (q /= 1 + l * l * 1), k && (q /= 1 + l * l * 1), (q -= s - l), (t.score = q);
+          E && (q /= 1 + l * l * 1),
+            k && (q /= 1 + l * l * 1),
+            (q -= s - l),
+            (t.score = q);
           for (var S = 0; S < I; ++S) t._indexes[S] = T[S];
           return (t._indexes.len = I), t;
         },
         m = (e, t) => {
-          for (var r = new Set(), n = 0, a = C, o = 0, i = e.spaceSearches, l = 0; l < i.length; ++l) {
+          for (
+            var r = new Set(), n = 0, a = C, o = 0, i = e.spaceSearches, l = 0;
+            l < i.length;
+            ++l
+          ) {
             if ((a = u(i[l], t)) === C) return C;
-            (n += a.score), a._indexes[0] < o && (n -= o - a._indexes[0]), (o = a._indexes[0]);
+            (n += a.score),
+              a._indexes[0] < o && (n -= o - a._indexes[0]),
+              (o = a._indexes[0]);
             for (var s = 0; s < a._indexes.len; ++s) r.add(a._indexes[s]);
           }
           var d = u(e, t, !0);
@@ -2180,18 +2743,34 @@
           return (a._indexes.len = l), a;
         },
         p = (e) => {
-          for (var t = e.length, r = e.toLowerCase(), n = [], a = 0, o = !1, i = 0; i < t; ++i) {
+          for (
+            var t = e.length, r = e.toLowerCase(), n = [], a = 0, o = !1, i = 0;
+            i < t;
+            ++i
+          ) {
             var l = (n[i] = r.charCodeAt(i));
             if (32 === l) {
               o = !0;
               continue;
             }
-            a |= 1 << (l >= 97 && l <= 122 ? l - 97 : l >= 48 && l <= 57 ? 26 : l <= 127 ? 30 : 31);
+            a |=
+              1 <<
+              (l >= 97 && l <= 122
+                ? l - 97
+                : l >= 48 && l <= 57
+                  ? 26
+                  : l <= 127
+                    ? 30
+                    : 31);
           }
           return { lowerCodes: n, bitflags: a, containsSpace: o, _lower: r };
         },
         f = (e) => {
-          for (var t = e.length, r = [], n = 0, a = !1, o = !1, i = 0; i < t; ++i) {
+          for (
+            var t = e.length, r = [], n = 0, a = !1, o = !1, i = 0;
+            i < t;
+            ++i
+          ) {
             var l = e.charCodeAt(i),
               s = l >= 65 && l <= 90,
               d = s || (l >= 97 && l <= 122) || (l >= 48 && l <= 57),
@@ -2201,7 +2780,11 @@
           return r;
         },
         g = (e) => {
-          for (var t = e.length, r = f(e), n = [], a = r[0], o = 0, i = 0; i < t; ++i)
+          for (
+            var t = e.length, r = f(e), n = [], a = r[0], o = 0, i = 0;
+            i < t;
+            ++i
+          )
             a > i ? (n[i] = a) : ((a = r[++o]), (n[i] = void 0 === a ? t : a));
           return n;
         },
@@ -2240,15 +2823,28 @@
           (a = (e) => {
             for (var n = 0, a = t[n], o = 1; o < r; ) {
               var i = o + 1;
-              (n = o), i < r && t[i].score < t[o].score && (n = i), (t[(n - 1) >> 1] = t[n]), (o = 1 + (n << 1));
+              (n = o),
+                i < r && t[i].score < t[o].score && (n = i),
+                (t[(n - 1) >> 1] = t[n]),
+                (o = 1 + (n << 1));
             }
-            for (var l = (n - 1) >> 1; n > 0 && a.score < t[l].score; l = ((n = l) - 1) >> 1) t[n] = t[l];
+            for (
+              var l = (n - 1) >> 1;
+              n > 0 && a.score < t[l].score;
+              l = ((n = l) - 1) >> 1
+            )
+              t[n] = t[l];
             t[n] = a;
           }),
           (n.add = (e) => {
             var n = r;
             t[r++] = e;
-            for (var a = (n - 1) >> 1; n > 0 && e.score < t[a].score; a = ((n = a) - 1) >> 1) t[n] = t[a];
+            for (
+              var a = (n - 1) >> 1;
+              n > 0 && e.score < t[a].score;
+              a = ((n = a) - 1) >> 1
+            )
+              t[n] = t[a];
             t[n] = e;
           }),
           (n.poll = (e) => {
@@ -2315,11 +2911,17 @@
                     _indexes: v._indexes,
                     obj: y,
                   }),
-                  l < i ? (I.add(v), ++l) : (++m, v.score > I.peek().score && I.replaceTop(v)));
+                  l < i
+                    ? (I.add(v), ++l)
+                    : (++m, v.score > I.peek().score && I.replaceTop(v)));
               }
             }
           else if (r && r.keys)
-            for (var x = r.scoreFn || b, q = r.keys, B = q.length, g = 0; g < p; ++g) {
+            for (
+              var x = r.scoreFn || b, q = r.keys, B = q.length, g = 0;
+              g < p;
+              ++g
+            ) {
               for (var y = t[g], A = Array(B), L = 0; L < B; ++L) {
                 var f = q[L],
                   h = w(y, f);
@@ -2327,18 +2929,28 @@
                   A[L] = C;
                   continue;
                 }
-                E(h) || (h = s(h)), (a & h._bitflags) !== a ? (A[L] = C) : (A[L] = u(n, h));
+                E(h) || (h = s(h)),
+                  (a & h._bitflags) !== a ? (A[L] = C) : (A[L] = u(n, h));
               }
               A.obj = y;
               var N = x(A);
-              N !== C && !(N < o) && ((A.score = N), l < i ? (I.add(A), ++l) : (++m, N > I.peek().score && I.replaceTop(A)));
+              N !== C &&
+                !(N < o) &&
+                ((A.score = N),
+                l < i
+                  ? (I.add(A), ++l)
+                  : (++m, N > I.peek().score && I.replaceTop(A)));
             }
           else
             for (var g = 0; g < p; ++g) {
               var h = t[g];
               if (h && (E(h) || (h = s(h)), (a & h._bitflags) === a)) {
                 var v = u(n, h);
-                v !== C && !(v.score < o) && (l < i ? (I.add(v), ++l) : (++m, v.score > I.peek().score && I.replaceTop(v)));
+                v !== C &&
+                  !(v.score < o) &&
+                  (l < i
+                    ? (I.add(v), ++l)
+                    : (++m, v.score > I.peek().score && I.replaceTop(v)));
               }
             }
           if (0 === l) return T;
@@ -2369,13 +2981,18 @@
           return n;
         },
         prepare: i,
-        indexes: (e) => e._indexes.slice(0, e._indexes.len).sort((e, t) => e - t),
+        indexes: (e) =>
+          e._indexes.slice(0, e._indexes.len).sort((e, t) => e - t),
         cleanup: () => {
           y.clear(), h.clear(), (v = []), (x = []);
         },
       };
     }),
-    "function" == typeof define && define.amd ? define([], a) : x ? (x = a()) : (n.fuzzysort = a());
+    "function" == typeof define && define.amd
+      ? define([], a)
+      : x
+        ? (x = a())
+        : (n.fuzzysort = a());
   let b = {};
   let search_inv_cache = {};
   let search_inst_cache = {};
@@ -2469,8 +3086,10 @@
       after = String(tokens?.[idx + 2] ?? "").trim();
     if (!next) return null;
     let combined = next.match(/^(<=|>=|=|:|<|>)(.+)$/);
-    if (combined && combined[2]) return { op: combined[1], value: combined[2], consumed: 1 };
-    if (/^(<=|>=|=|:|<|>)$/.test(next) && after) return { op: next, value: after, consumed: 2 };
+    if (combined && combined[2])
+      return { op: combined[1], value: combined[2], consumed: 1 };
+    if (/^(<=|>=|=|:|<|>)$/.test(next) && after)
+      return { op: next, value: after, consumed: 2 };
     return null;
   }
   function parse_trade_search_spaced_filter_value(tokens, idx) {
@@ -2490,7 +3109,12 @@
   }
   function is_trade_search_number_in_range(value, range) {
     let e = Number(value);
-    return !!range && Number.isFinite(e) && e >= (range.min ?? -Infinity) && e <= (range.max ?? Infinity);
+    return (
+      !!range &&
+      Number.isFinite(e) &&
+      e >= (range.min ?? -Infinity) &&
+      e <= (range.max ?? Infinity)
+    );
   }
   function get_trade_search_demand_label(value) {
     switch (Number(value)) {
@@ -2527,10 +3151,20 @@
     }
   }
   function get_trade_search_item_meta(item) {
-    let tid = item?.targetId ?? item?.itemTarget?.targetId ?? item?.assetId ?? item?.itemId ?? 0;
+    let tid =
+      item?.targetId ??
+      item?.itemTarget?.targetId ??
+      item?.assetId ??
+      item?.itemId ??
+      0;
     let e = `${item?.collectibleItemInstanceId || ""}:${tid}:${item?.name || item?.itemName || ""}:${item?.rap || item?.recentAveragePrice || 0}`;
-    if (item?.__nteSearchMeta && item.__nteSearchMetaKey === e) return item.__nteSearchMeta;
-    let t = c.resolveRolimonsItemId(tid, item?.name || item?.itemName, item?.itemType === "Bundle" || item?.itemTarget?.itemType === "Bundle"),
+    if (item?.__nteSearchMeta && item.__nteSearchMetaKey === e)
+      return item.__nteSearchMeta;
+    let t = c.resolveRolimonsItemId(
+        tid,
+        item?.name || item?.itemName,
+        item?.itemType === "Bundle" || item?.itemTarget?.itemType === "Bundle",
+      ),
       r = null != t ? c.getRolimonsData()?.items?.[t] : null,
       n = normalize_trade_search_text(item?.name),
       a = n.split(" ").filter(Boolean),
@@ -2555,9 +3189,19 @@
         isProjected: 1 === r?.[7],
         isHyped: 1 === r?.[8],
         isRare: 1 === r?.[9],
-        value: c.getValueOrRAP(tid, item?.name || item?.itemName, item?.rap ?? item?.recentAveragePrice),
+        value: c.getValueOrRAP(
+          tid,
+          item?.name || item?.itemName,
+          item?.rap ?? item?.recentAveragePrice,
+        ),
       };
-    return item && ((item.__nteSearchMetaKey = e), (item.__nteSearchMeta = m), (item.rolimonsId = t)), m;
+    return (
+      item &&
+        ((item.__nteSearchMetaKey = e),
+        (item.__nteSearchMeta = m),
+        (item.rolimonsId = t)),
+      m
+    );
   }
   const trade_rap_signal_value_ladder = (() => {
     let steps = [4e3, 4500];
@@ -2581,23 +3225,41 @@
       steps = trade_rap_signal_value_ladder.steps;
     if (!Number.isFinite(value) || value < 1 || !steps.length) return 0;
     if (value < steps[0]) return steps[0];
-    for (let i = steps.length - 1; i >= 0; i--) if (value >= steps[i]) return trade_rap_signal_value_ladder.next[steps[i]] || steps[i];
+    for (let i = steps.length - 1; i >= 0; i--)
+      if (value >= steps[i])
+        return trade_rap_signal_value_ladder.next[steps[i]] || steps[i];
     return steps[0];
   }
   function get_trade_rap_signal_info(ctx) {
     let rap = parseInt(ctx?.rap ?? 0, 10),
       value = parseInt(ctx?.value ?? 0, 10),
-      demand_label = String(ctx?.demand_label || ctx?.demandLabel || "").trim().toLowerCase(),
+      demand_label = String(ctx?.demand_label || ctx?.demandLabel || "")
+        .trim()
+        .toLowerCase(),
       hold_floor = trade_rap_signal_value_ladder.prev[value] || 0;
-    if (!ctx?.has_value || !Number.isFinite(rap) || rap < 1 || !Number.isFinite(value) || value < 4e3 || value >= 1e5 || (!trade_rap_signal_value_ladder.next[value] && !hold_floor)) return null;
+    if (
+      !ctx?.has_value ||
+      !Number.isFinite(rap) ||
+      rap < 1 ||
+      !Number.isFinite(value) ||
+      value < 4e3 ||
+      value >= 1e5 ||
+      (!trade_rap_signal_value_ladder.next[value] && !hold_floor)
+    )
+      return null;
     if (ctx?.is_projected || ctx?.isProjected) return null;
     if ("terrible" === demand_label) return null;
     let target_value = get_trade_rap_signal_supported_value(rap),
       value_tier = trade_rap_signal_value_ladder.index[value],
       target_tier = trade_rap_signal_value_ladder.index[target_value];
-    if (!Number.isFinite(value_tier) || !Number.isFinite(target_tier) || value_tier === target_tier) return null;
+    if (
+      !Number.isFinite(value_tier) ||
+      !Number.isFinite(target_tier) ||
+      value_tier === target_tier
+    )
+      return null;
     let tier_delta = target_tier - value_tier;
-    if (tier_delta >= 2 || tier_delta <= -3) return null;
+    if (Math.abs(tier_delta) > 4) return null;
     if (target_value > value)
       return {
         is_over: !0,
@@ -2608,7 +3270,8 @@
         over_by: Math.max(rap - value, 0),
         tier_delta,
       };
-    if (target_value < value && hold_floor && rap >= hold_floor * 0.98) return null;
+    if (target_value < value && hold_floor && rap >= hold_floor * 0.98)
+      return null;
     if (target_value < value && hold_floor)
       return {
         is_over: !1,
@@ -2700,10 +3363,12 @@
       }
       if (l) {
         let m = parse_trade_search_number_value(l[1]);
-        Number.isFinite(m) && ((e.filters.serial = !0), (e.filters.serialNumber = m), (o = !0));
+        Number.isFinite(m) &&
+          ((e.filters.serial = !0), (e.filters.serialNumber = m), (o = !0));
       } else if (i) {
         let t = parse_trade_search_number_value(i[1]);
-        Number.isFinite(t) && ((e.filters.serial = !0), (e.filters.serialNumber = t), (o = !0));
+        Number.isFinite(t) &&
+          ((e.filters.serial = !0), (e.filters.serialNumber = t), (o = !0));
       } else if (s) {
         let r = parse_trade_search_numeric_range(s[1], s[2]);
         r && ((e.filters.valueRange = r), (o = !0));
@@ -2714,7 +3379,8 @@
         let a = parse_trade_search_number_value(u[1]);
         Number.isFinite(a) && ((e.filters.targetId = a), (o = !0));
       } else if (a) {
-        (e.filters.demand = parse_trade_search_demand_filter(a[1])), (o = !!e.filters.demand);
+        (e.filters.demand = parse_trade_search_demand_filter(a[1])),
+          (o = !!e.filters.demand);
       } else
         ["rare", "rares"].includes(n)
           ? ((e.filters.rare = !0), (o = !0))
@@ -2722,17 +3388,26 @@
             ? ((e.filters.projected = !0), (o = !0))
             : ["rap", "raps", "raponly", "raponlyitems", "rapitems"].includes(n)
               ? ((e.filters.rapOnly = !0), (o = !0))
-              : ["value", "values", "valued", "valueonly", "valuedonly"].includes(n)
+              : [
+                    "value",
+                    "values",
+                    "valued",
+                    "valueonly",
+                    "valuedonly",
+                  ].includes(n)
                 ? ((e.filters.valued = !0), (o = !0))
                 : ["hold", "holds", "onhold", "onholds"].includes(n)
                   ? ((e.filters.onHold = !0), (o = !0))
-                  : ["serial", "serials", "numbered", "numberedonly"].includes(n)
+                  : ["serial", "serials", "numbered", "numberedonly"].includes(
+                        n,
+                      )
                     ? ((e.filters.serial = !0), (o = !0))
                     : ["hyped", "hype"].includes(n)
                       ? ((e.filters.hyped = !0), (o = !0))
                       : ["bundle", "bundles"].includes(n)
                         ? ((e.filters.itemType = "Bundle"), (o = !0))
-                        : ["asset", "assets"].includes(n) && ((e.filters.itemType = "Asset"), (o = !0));
+                        : ["asset", "assets"].includes(n) &&
+                          ((e.filters.itemType = "Asset"), (o = !0));
       o || (n && e.textTerms.push(n));
     }
     return e;
@@ -2740,7 +3415,9 @@
   function get_trade_search_term_score(meta, term) {
     return !term
       ? 0
-      : meta.acronym === term || meta.initials === term || meta.compactName === term
+      : meta.acronym === term ||
+          meta.initials === term ||
+          meta.compactName === term
         ? 0
         : meta.acronym && meta.acronym.startsWith(term)
           ? 1
@@ -2762,7 +3439,13 @@
   function does_trade_search_item_match(item, parsed) {
     let e = get_trade_search_item_meta(item),
       t = parsed?.filters || {},
-      r = Number(item?.targetId ?? item?.itemTarget?.targetId ?? item?.assetId ?? item?.itemId ?? 0),
+      r = Number(
+        item?.targetId ??
+          item?.itemTarget?.targetId ??
+          item?.assetId ??
+          item?.itemId ??
+          0,
+      ),
       n = Number(item?.rap ?? item?.recentAveragePrice ?? 0),
       a = e.hasValue ? e.value : NaN,
       o = Number(item?.serialNumber);
@@ -2775,15 +3458,37 @@
     if (null != t.serialNumber && o !== t.serialNumber) return !1;
     if (t.hyped && !e.isHyped) return !1;
     if (t.itemType && item.itemType !== t.itemType) return !1;
-    if (t.demand && !(Number.isFinite(e.demand) && e.demand >= t.demand.min && e.demand <= t.demand.max)) return !1;
-    if (t.valueRange && !is_trade_search_number_in_range(a, t.valueRange)) return !1;
-    if (t.rapRange && !is_trade_search_number_in_range(n, t.rapRange)) return !1;
-    if (null != t.targetId && r !== t.targetId && Number(e.rolimonsId) !== t.targetId) return !1;
-    return parsed.textTerms.every((t) => get_trade_search_term_score(e, t) < 99);
+    if (
+      t.demand &&
+      !(
+        Number.isFinite(e.demand) &&
+        e.demand >= t.demand.min &&
+        e.demand <= t.demand.max
+      )
+    )
+      return !1;
+    if (t.valueRange && !is_trade_search_number_in_range(a, t.valueRange))
+      return !1;
+    if (t.rapRange && !is_trade_search_number_in_range(n, t.rapRange))
+      return !1;
+    if (
+      null != t.targetId &&
+      r !== t.targetId &&
+      Number(e.rolimonsId) !== t.targetId
+    )
+      return !1;
+    return parsed.textTerms.every(
+      (t) => get_trade_search_term_score(e, t) < 99,
+    );
   }
   function get_trade_search_rank(item, parsed) {
     let e = get_trade_search_item_meta(item);
-    return parsed.textTerms.length ? parsed.textTerms.reduce((t, r) => t + get_trade_search_term_score(e, r), 0) : 50;
+    return parsed.textTerms.length
+      ? parsed.textTerms.reduce(
+          (t, r) => t + get_trade_search_term_score(e, r),
+          0,
+        )
+      : 50;
   }
   function cache_search_item(item) {
     let inst_id = item?.collectibleItemInstanceId;
@@ -2794,10 +3499,21 @@
     return inst_id ? search_inst_cache[String(inst_id)] || null : null;
   }
   function get_cached_search_item_from_el(element) {
-    if (!(element instanceof Element) || "function" != typeof find_collectible_item_instance_id) return null;
-    return get_cached_search_item_by_inst(find_collectible_item_instance_id(element));
+    if (
+      !(element instanceof Element) ||
+      "function" != typeof find_collectible_item_instance_id
+    )
+      return null;
+    return get_cached_search_item_by_inst(
+      find_collectible_item_instance_id(element),
+    );
   }
-  function get_trade_el_value_ctx(element, fallback_target_id = null, fallback_name = null, fallback_rap = 0) {
+  function get_trade_el_value_ctx(
+    element,
+    fallback_target_id = null,
+    fallback_name = null,
+    fallback_rap = 0,
+  ) {
     let cached = get_cached_search_item_from_el(element);
     return {
       targetId: fallback_target_id || cached?.targetId || null,
@@ -2810,40 +3526,106 @@
   }
   async function fetch_tradable_items(user_id) {
     if (search_inv_cache[user_id]) return search_inv_cache[user_id];
-    if (search_inv_cache[user_id + "_loading"]) return search_inv_cache[user_id + "_loading"];
+    if (search_inv_cache[user_id + "_loading"])
+      return search_inv_cache[user_id + "_loading"];
     search_inv_cache[user_id + "_loading"] = (async () => {
       let all = [],
         cursor = "";
       try {
         do {
-          let params = new URLSearchParams({ sortBy: "CreationTime", cursor, limit: "50", sortOrder: "Desc" });
-          let resp = await fetch(`https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`, { credentials: "include" });
+          let params = new URLSearchParams({
+            sortBy: "CreationTime",
+            cursor,
+            limit: "50",
+            sortOrder: "Desc",
+          });
+          let resp = await fetch(
+            `https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`,
+            { credentials: "include" },
+          );
           if (429 === resp.status || resp.status >= 500) break;
           if (!resp.ok) break;
           let data = await resp.json();
-          let page_items = Array.isArray(data?.items) ? data.items : Array.isArray(data?.data) ? data.data : [];
+          let page_items = Array.isArray(data?.items)
+            ? data.items
+            : Array.isArray(data?.data)
+              ? data.data
+              : [];
           for (let item of page_items) {
             let { instances: _ignored_instances, ...item_base } = item || {};
-            let instances = Array.isArray(item.instances) && item.instances.length ? item.instances : [item];
+            let instances =
+              Array.isArray(item.instances) && item.instances.length
+                ? item.instances
+                : [item];
             for (let inst of instances) {
               let target = inst?.itemTarget || item_base.itemTarget || {};
               let norm_item = {
                 ...item_base,
                 ...(inst || {}),
-                itemTarget: { ...(item_base.itemTarget || {}), ...(inst?.itemTarget || {}) },
-                name: inst?.name || inst?.itemName || item_base.name || item_base.itemName || "Unknown",
-                itemName: inst?.itemName || inst?.name || item_base.itemName || item_base.name || "Unknown",
+                itemTarget: {
+                  ...(item_base.itemTarget || {}),
+                  ...(inst?.itemTarget || {}),
+                },
+                name:
+                  inst?.name ||
+                  inst?.itemName ||
+                  item_base.name ||
+                  item_base.itemName ||
+                  "Unknown",
+                itemName:
+                  inst?.itemName ||
+                  inst?.name ||
+                  item_base.itemName ||
+                  item_base.name ||
+                  "Unknown",
                 targetId:
-                  parseInt(target.targetId ?? inst?.targetId ?? item_base.targetId ?? inst?.assetId ?? item_base.assetId ?? 0, 10) || 0,
-                itemType: target.itemType || inst?.itemType || item_base.itemType || "Asset",
-                rap: parseInt(inst?.rap ?? inst?.recentAveragePrice ?? item_base.rap ?? item_base.recentAveragePrice ?? 0, 10) || 0,
+                  parseInt(
+                    target.targetId ??
+                      inst?.targetId ??
+                      item_base.targetId ??
+                      inst?.assetId ??
+                      item_base.assetId ??
+                      0,
+                    10,
+                  ) || 0,
+                itemType:
+                  target.itemType ||
+                  inst?.itemType ||
+                  item_base.itemType ||
+                  "Asset",
+                rap:
+                  parseInt(
+                    inst?.rap ??
+                      inst?.recentAveragePrice ??
+                      item_base.rap ??
+                      item_base.recentAveragePrice ??
+                      0,
+                    10,
+                  ) || 0,
                 recentAveragePrice:
-                  parseInt(inst?.recentAveragePrice ?? inst?.rap ?? item_base.recentAveragePrice ?? item_base.rap ?? 0, 10) || 0,
-                collectibleItemId: item_base.collectibleItemId || inst?.collectibleItemId || null,
-                collectibleItemInstanceId: inst?.collectibleItemInstanceId || item_base.collectibleItemInstanceId || null,
-                serialNumber: inst?.serialNumber ?? item_base.serialNumber ?? null,
-                originalPrice: inst?.originalPrice ?? item_base.originalPrice ?? null,
-                assetStock: parseInt(inst?.assetStock ?? item_base.assetStock ?? 0, 10) || 0,
+                  parseInt(
+                    inst?.recentAveragePrice ??
+                      inst?.rap ??
+                      item_base.recentAveragePrice ??
+                      item_base.rap ??
+                      0,
+                    10,
+                  ) || 0,
+                collectibleItemId:
+                  item_base.collectibleItemId ||
+                  inst?.collectibleItemId ||
+                  null,
+                collectibleItemInstanceId:
+                  inst?.collectibleItemInstanceId ||
+                  item_base.collectibleItemInstanceId ||
+                  null,
+                serialNumber:
+                  inst?.serialNumber ?? item_base.serialNumber ?? null,
+                originalPrice:
+                  inst?.originalPrice ?? item_base.originalPrice ?? null,
+                assetStock:
+                  parseInt(inst?.assetStock ?? item_base.assetStock ?? 0, 10) ||
+                  0,
                 isOnHold: !!(inst?.isOnHold ?? item_base.isOnHold),
                 userAssetId:
                   parseInt(
@@ -2882,30 +3664,44 @@
     return search_inv_cache[user_id + "_loading"];
   }
   async function fetch_search_thumbs(items) {
-    let needed = items.filter((i) => !search_thumb_cache[i.itemType + ":" + i.targetId]).slice(0, 50);
+    let needed = items
+      .filter((i) => !search_thumb_cache[i.itemType + ":" + i.targetId])
+      .slice(0, 50);
     if (!needed.length) return !1;
-    let asset_ids = needed.filter((i) => i.itemType === "Asset").map((i) => i.targetId);
-    let bundle_ids = needed.filter((i) => i.itemType === "Bundle").map((i) => i.targetId);
+    let asset_ids = needed
+      .filter((i) => i.itemType === "Asset")
+      .map((i) => i.targetId);
+    let bundle_ids = needed
+      .filter((i) => i.itemType === "Bundle")
+      .map((i) => i.targetId);
     let fetches = [];
     if (asset_ids.length) {
       fetches.push(
-        fetch(`https://thumbnails.roblox.com/v1/assets?assetIds=${asset_ids.join(",")}&size=110x110&format=Png&isCircular=false`, {
-          credentials: "include",
-        })
+        fetch(
+          `https://thumbnails.roblox.com/v1/assets?assetIds=${asset_ids.join(",")}&size=110x110&format=Png&isCircular=false`,
+          {
+            credentials: "include",
+          },
+        )
           .then((r) => (r.ok ? r.json() : { data: [] }))
           .then((j) => {
-            for (let d of j.data || []) search_thumb_cache["Asset:" + d.targetId] = d.imageUrl || "";
+            for (let d of j.data || [])
+              search_thumb_cache["Asset:" + d.targetId] = d.imageUrl || "";
           }),
       );
     }
     if (bundle_ids.length) {
       fetches.push(
-        fetch(`https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=${bundle_ids.join(",")}&size=150x150&format=Png&isCircular=false`, {
-          credentials: "include",
-        })
+        fetch(
+          `https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=${bundle_ids.join(",")}&size=150x150&format=Png&isCircular=false`,
+          {
+            credentials: "include",
+          },
+        )
           .then((r) => (r.ok ? r.json() : { data: [] }))
           .then((j) => {
-            for (let d of j.data || []) search_thumb_cache["Bundle:" + d.targetId] = d.imageUrl || "";
+            for (let d of j.data || [])
+              search_thumb_cache["Bundle:" + d.targetId] = d.imageUrl || "";
           }),
       );
     }
@@ -3006,22 +3802,38 @@
     document.head.appendChild(style);
   }
   async function w() {
-    let r = document.querySelector(".trade-row.selected")?.querySelector(".avatar-card-link")?.pathname;
+    let r = document
+      .querySelector(".trade-row.selected")
+      ?.querySelector(".avatar-card-link")?.pathname;
     if (r) {
-      let t = parseInt((r = c.removeTwoLetterPath(r)).substring(c.nthIndex(r, "/", 2) + 1, c.nthIndex(r, "/", 3)));
+      let t = parseInt(
+        (r = c.removeTwoLetterPath(r)).substring(
+          c.nthIndex(r, "/", 2) + 1,
+          c.nthIndex(r, "/", 3),
+        ),
+      );
       t && (e = t);
     }
     if (!(await c.getOption("Trade Window Search")))
       return (
-        Array.from(document.getElementsByClassName("rolimons-search")).forEach((e) => {
-          (e.closest(".nte-trade-search-wrap") || e.parentElement)?.remove();
-        }),
-        Array.from(document.querySelectorAll(".inventory-type-dropdown")).forEach((e) => {
-          delete e.dataset.nteTradeSearchMounted, delete e.dataset.nteTradeSearchMounting;
-        }),
-        Array.from(document.getElementsByClassName("nte-search-overlay")).forEach((e) => e.remove()),
+        Array.from(document.getElementsByClassName("rolimons-search")).forEach(
+          (e) => {
+            (e.closest(".nte-trade-search-wrap") || e.parentElement)?.remove();
+          },
+        ),
         Array.from(
-          document.querySelectorAll(".trade-inventory-panel .item-cards, .trade-inventory-panel .pager-holder, .trade-inventory-panel .pager"),
+          document.querySelectorAll(".inventory-type-dropdown"),
+        ).forEach((e) => {
+          delete e.dataset.nteTradeSearchMounted,
+            delete e.dataset.nteTradeSearchMounting;
+        }),
+        Array.from(
+          document.getElementsByClassName("nte-search-overlay"),
+        ).forEach((e) => e.remove()),
+        Array.from(
+          document.querySelectorAll(
+            ".trade-inventory-panel .item-cards, .trade-inventory-panel .pager-holder, .trade-inventory-panel .pager",
+          ),
         ).forEach((e) => {
           e.style.removeProperty("display");
         }),
@@ -3033,7 +3845,12 @@
         u = document.querySelectorAll(".inventory-type-dropdown")[a];
       if (!u) return;
       let m = u.getElementsByClassName("rolimons-search")[0];
-      if (m || "true" === u.dataset.nteTradeSearchMounted || "true" === u.dataset.nteTradeSearchMounting) return;
+      if (
+        m ||
+        "true" === u.dataset.nteTradeSearchMounted ||
+        "true" === u.dataset.nteTradeSearchMounting
+      )
+        return;
       u.dataset.nteTradeSearchMounting = "true";
       let d = E();
       m = u.getElementsByClassName("rolimons-search")[0];
@@ -3065,7 +3882,12 @@
       function get_item_list() {
         let panel = get_panel();
         if (!panel) return null;
-        return panel.querySelector(".item-cards") || panel.querySelector(".item-cards-stackable") || panel.querySelector(".item-list") || null;
+        return (
+          panel.querySelector(".item-cards") ||
+          panel.querySelector(".item-cards-stackable") ||
+          panel.querySelector(".item-list") ||
+          null
+        );
       }
       function get_overlay_host() {
         let panel = get_panel(),
@@ -3074,8 +3896,23 @@
         return list_el?.parentElement || panel;
       }
       function get_side_user_id() {
-        if (1 === r) return t || ((t = parseInt(document.querySelector('meta[name="user-data"]')?.getAttribute("data-userid"))), t);
-        return e || ((e = parseInt(window.location.href.split("/").find((v) => !isNaN(parseInt(v))))), e);
+        if (1 === r)
+          return (
+            t ||
+            ((t = parseInt(
+              document
+                .querySelector('meta[name="user-data"]')
+                ?.getAttribute("data-userid"),
+            )),
+            t)
+          );
+        return (
+          e ||
+          ((e = parseInt(
+            window.location.href.split("/").find((v) => !isNaN(parseInt(v))),
+          )),
+          e)
+        );
       }
       function show_overlay(html) {
         ensure_search_styles();
@@ -3090,7 +3927,9 @@
         }
         if (overlay_el.parentElement !== overlay_host) {
           overlay_el.remove();
-          list_el ? overlay_host.insertBefore(overlay_el, list_el) : overlay_host.appendChild(overlay_el);
+          list_el
+            ? overlay_host.insertBefore(overlay_el, list_el)
+            : overlay_host.appendChild(overlay_el);
         }
         overlay_el.innerHTML = html;
         if (list_el) list_el.style.display = "none";
@@ -3128,7 +3967,10 @@
         let visible_count = get_visible_cards().length;
         if (12 === visible_count || 10 === visible_count) return visible_count;
         try {
-          return window.innerWidth <= 700 || !!window.matchMedia("(hover:none), (pointer:coarse)").matches ? 12 : 10;
+          return window.innerWidth <= 700 ||
+            !!window.matchMedia("(hover:none), (pointer:coarse)").matches
+            ? 12
+            : 10;
         } catch {
           return window.innerWidth <= 700 ? 12 : 10;
         }
@@ -3151,27 +3993,43 @@
       }
       function get_pager_btn(direction) {
         return get_panel()?.querySelector(
-          "next" === direction ? ".pager-next button, .pager-next .btn-generic-right-sm" : ".pager-prev button, .pager-prev .btn-generic-left-sm",
+          "next" === direction
+            ? ".pager-next button, .pager-next .btn-generic-right-sm"
+            : ".pager-prev button, .pager-prev .btn-generic-left-sm",
         );
       }
       function get_visible_cards() {
-        return Array.from(get_panel()?.querySelectorAll(".item-card-container[data-collectibleiteminstanceid]") || []);
+        return Array.from(
+          get_panel()?.querySelectorAll(
+            ".item-card-container[data-collectibleiteminstanceid]",
+          ) || [],
+        );
       }
       function get_page_sig() {
         let cards = get_visible_cards();
         if (!cards.length) return "";
-        let first = cards[0]?.getAttribute("data-collectibleiteminstanceid") || "",
-          last = cards[cards.length - 1]?.getAttribute("data-collectibleiteminstanceid") || "";
+        let first =
+            cards[0]?.getAttribute("data-collectibleiteminstanceid") || "",
+          last =
+            cards[cards.length - 1]?.getAttribute(
+              "data-collectibleiteminstanceid",
+            ) || "";
         return `${first}|${last}|${cards.length}`;
       }
       function get_page_est() {
         let user_id = get_side_user_id(),
-          items = Array.isArray(search_inv_cache[user_id]) ? search_inv_cache[user_id] : [],
+          items = Array.isArray(search_inv_cache[user_id])
+            ? search_inv_cache[user_id]
+            : [],
           cards = get_visible_cards(),
           per_page = get_search_per_page();
         for (let card of cards) {
           let inst_id = card.getAttribute("data-collectibleiteminstanceid"),
-            item_i = items.findIndex((e) => e.collectibleItemInstanceId && e.collectibleItemInstanceId === inst_id);
+            item_i = items.findIndex(
+              (e) =>
+                e.collectibleItemInstanceId &&
+                e.collectibleItemInstanceId === inst_id,
+            );
           if (item_i >= 0) return Math.floor(item_i / per_page) + 1;
         }
         let text = get_panel()?.querySelector(".pager span")?.textContent || "",
@@ -3180,12 +4038,27 @@
       }
       function get_search_page_data(item) {
         let user_id = get_side_user_id(),
-          items = Array.isArray(search_inv_cache[user_id]) ? search_inv_cache[user_id] : [],
-          item_i = items.findIndex((e) => e.collectibleItemInstanceId && e.collectibleItemInstanceId === item.collectibleItemInstanceId),
+          items = Array.isArray(search_inv_cache[user_id])
+            ? search_inv_cache[user_id]
+            : [],
+          item_i = items.findIndex(
+            (e) =>
+              e.collectibleItemInstanceId &&
+              e.collectibleItemInstanceId === item.collectibleItemInstanceId,
+          ),
           per_page = get_search_per_page();
         if (item_i < 0) return null;
-        let dup_group = items.filter((e) => e.itemType === item.itemType && e.targetId === item.targetId && e.name === item.name),
-          dup_ord = dup_group.findIndex((e) => e.collectibleItemInstanceId === item.collectibleItemInstanceId) + 1;
+        let dup_group = items.filter(
+            (e) =>
+              e.itemType === item.itemType &&
+              e.targetId === item.targetId &&
+              e.name === item.name,
+          ),
+          dup_ord =
+            dup_group.findIndex(
+              (e) =>
+                e.collectibleItemInstanceId === item.collectibleItemInstanceId,
+            ) + 1;
         return {
           index: item_i,
           targetPage: Math.floor(item_i / per_page) + 1,
@@ -3214,14 +4087,45 @@
         return {
           ...item,
           ...direct_item,
-          id: item.id || item.collectibleItemInstanceId || direct_item.collectibleItemInstanceId,
+          id:
+            item.id ||
+            item.collectibleItemInstanceId ||
+            direct_item.collectibleItemInstanceId,
           userId: user_id,
-          itemName: item.itemName || item.name || direct_item.itemName || "Unknown",
-          name: item.name || item.itemName || direct_item.name || direct_item.itemName || "Unknown",
-          itemType: item.itemType || item.itemTarget?.itemType || direct_item.itemType || "Asset",
-          targetId: parseInt(item.targetId ?? item.itemTarget?.targetId ?? direct_item.targetId ?? 0, 10) || 0,
-          recentAveragePrice: parseInt(item.recentAveragePrice ?? item.rap ?? direct_item.recentAveragePrice ?? 0, 10) || 0,
-          rap: parseInt(item.rap ?? item.recentAveragePrice ?? direct_item.rap ?? 0, 10) || 0,
+          itemName:
+            item.itemName || item.name || direct_item.itemName || "Unknown",
+          name:
+            item.name ||
+            item.itemName ||
+            direct_item.name ||
+            direct_item.itemName ||
+            "Unknown",
+          itemType:
+            item.itemType ||
+            item.itemTarget?.itemType ||
+            direct_item.itemType ||
+            "Asset",
+          targetId:
+            parseInt(
+              item.targetId ??
+                item.itemTarget?.targetId ??
+                direct_item.targetId ??
+                0,
+              10,
+            ) || 0,
+          recentAveragePrice:
+            parseInt(
+              item.recentAveragePrice ??
+                item.rap ??
+                direct_item.recentAveragePrice ??
+                0,
+              10,
+            ) || 0,
+          rap:
+            parseInt(
+              item.rap ?? item.recentAveragePrice ?? direct_item.rap ?? 0,
+              10,
+            ) || 0,
           isOnHold: !!item.isOnHold,
           userAssetId:
             parseInt(
@@ -3242,7 +4146,10 @@
         active_result_idx = -1;
       function get_selectable_indices() {
         let indices = [];
-        for (let idx = 0; idx < rendered_results.length; idx++) rendered_results[idx] && !rendered_results[idx].isOnHold && indices.push(idx);
+        for (let idx = 0; idx < rendered_results.length; idx++)
+          rendered_results[idx] &&
+            !rendered_results[idx].isOnHold &&
+            indices.push(idx);
         return indices;
       }
       function set_active_result(idx, scroll_into_view = true) {
@@ -3265,8 +4172,12 @@
       }
       function get_thumb_by_inst(inst_id) {
         if (!inst_id) return null;
-        let safe_inst_id = String(inst_id).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        return get_panel()?.querySelector(`[data-collectibleiteminstanceid="${safe_inst_id}"] .item-card-thumb-container`);
+        let safe_inst_id = String(inst_id)
+          .replace(/\\/g, "\\\\")
+          .replace(/"/g, '\\"');
+        return get_panel()?.querySelector(
+          `[data-collectibleiteminstanceid="${safe_inst_id}"] .item-card-thumb-container`,
+        );
       }
       function wait_inventory_change(current_sig, timeout = 1600) {
         let container = get_item_list() || get_panel();
@@ -3277,7 +4188,11 @@
             timer = null,
             finish = (changed) => {
               finished ||
-                ((finished = !0), observer?.disconnect(), interval && clearInterval(interval), timer && clearTimeout(timer), resolve(changed));
+                ((finished = !0),
+                observer?.disconnect(),
+                interval && clearInterval(interval),
+                timer && clearTimeout(timer),
+                resolve(changed));
             },
             check = () => {
               get_page_sig() !== current_sig && finish(!0);
@@ -3295,7 +4210,11 @@
           check();
         });
       }
-      async function wait_visible_item(inst_id, timeout = 1200, action_token = null) {
+      async function wait_visible_item(
+        inst_id,
+        timeout = 1200,
+        action_token = null,
+      ) {
         let started = Date.now();
         for (; Date.now() - started < timeout; ) {
           null != action_token && ensure_search_active(action_token);
@@ -3305,7 +4224,11 @@
         }
         return null;
       }
-      async function wait_pager_btn(direction, timeout = 1800, action_token = null) {
+      async function wait_pager_btn(
+        direction,
+        timeout = 1800,
+        action_token = null,
+      ) {
         let started = Date.now();
         for (; Date.now() - started < timeout; ) {
           null != action_token && ensure_search_active(action_token);
@@ -3324,8 +4247,16 @@
         null != action_token && ensure_search_active(action_token);
         return await wait_inventory_change(current_sig);
       }
-      async function click_visible_item(item, before_sig = null, action_token = null) {
-        let visible_thumb = await wait_visible_item(item.collectibleItemInstanceId, 1200, action_token);
+      async function click_visible_item(
+        item,
+        before_sig = null,
+        action_token = null,
+      ) {
+        let visible_thumb = await wait_visible_item(
+          item.collectibleItemInstanceId,
+          1200,
+          action_token,
+        );
         if (!visible_thumb) return !1;
         try {
           visible_thumb.scrollIntoView({
@@ -3339,14 +4270,22 @@
         visible_thumb.click();
         return await U(120), !0;
       }
-      async function go_to_search_page(item, page_data, before_sig = null, action_token = null) {
+      async function go_to_search_page(
+        item,
+        page_data,
+        before_sig = null,
+        action_token = null,
+      ) {
         null != action_token && ensure_search_active(action_token);
         if (await click_visible_item(item, before_sig, action_token)) return !0;
         let page_i = get_page_est(),
           target_page = page_data.targetPage,
           main_dir = page_i < target_page ? "next" : "prev",
           status_label = esc_search(item.name),
-          dup_label = page_data.duplicateCount > 1 ? ` copy ${page_data.duplicateOrdinal}/${page_data.duplicateCount}` : "";
+          dup_label =
+            page_data.duplicateCount > 1
+              ? ` copy ${page_data.duplicateOrdinal}/${page_data.duplicateCount}`
+              : "";
         if (page_i !== target_page)
           for (let e = 0; e < Math.abs(target_page - page_i); e++) {
             null != action_token && ensure_search_active(action_token);
@@ -3358,7 +4297,9 @@
           }
         await U(180);
         null != action_token && ensure_search_active(action_token);
-        show_search_status(`Clicking <strong>${status_label}</strong> on page <strong>${target_page}/${page_data.totalPages}</strong>${dup_label}.`);
+        show_search_status(
+          `Clicking <strong>${status_label}</strong> on page <strong>${target_page}/${page_data.totalPages}</strong>${dup_label}.`,
+        );
         if (await click_visible_item(item, before_sig, action_token)) return !0;
         for (let direction of ["next", "prev"])
           for (let e = 1; e <= 1; e++) {
@@ -3370,7 +4311,8 @@
             );
             if (!(await step_trade_page(direction, action_token))) break;
             await U(180);
-            if (await click_visible_item(item, before_sig, action_token)) return !0;
+            if (await click_visible_item(item, before_sig, action_token))
+              return !0;
           }
         return !1;
       }
@@ -3383,9 +4325,15 @@
         }
         let q = query.trim().toLowerCase(),
           parsed_query = parse_trade_search_query(query);
-        let matches = items.filter((i) => does_trade_search_item_match(i, parsed_query));
+        let matches = items.filter((i) =>
+          does_trade_search_item_match(i, parsed_query),
+        );
         if (!matches.length) {
-          show_overlay('<div class="nte-sr-empty">No items matching "' + q.replace(/[<>"'&]/g, "") + '"</div>');
+          show_overlay(
+            '<div class="nte-sr-empty">No items matching "' +
+              q.replace(/[<>"'&]/g, "") +
+              '"</div>',
+          );
           return;
         }
         matches.sort((a, b) => {
@@ -3415,22 +4363,32 @@
           <div class="nte-sr-hint">Hover shows sales - Enter adds - Try value&gt;50k rap&lt;10k #1234</div>
         </div>${visible_results
           .map((item, idx) => {
-            let thumb = search_thumb_cache[item.itemType + ":" + item.targetId] || "";
+            let thumb =
+              search_thumb_cache[item.itemType + ":" + item.targetId] || "";
             let meta = get_trade_search_item_meta(item),
               val = meta.value;
             let hold_class = item.isOnHold ? " is-hold" : "";
             let badges = "";
-            if (item.isOnHold) badges += '<span class="nte-sr-badge hold">Hold</span>';
+            if (item.isOnHold)
+              badges += '<span class="nte-sr-badge hold">Hold</span>';
             let dup_key = `${item.itemType}:${item.targetId}:${item.name}`,
               dup_count = dup_counts.get(dup_key) || 1,
               dup_ord = (dup_seen.get(dup_key) || 0) + 1;
             dup_seen.set(dup_key, dup_ord);
-            (show_rare || parsed_query.filters.rare || meta.isRare) && meta.isRare && (badges += '<span class="nte-sr-badge rare">Rare</span>');
-            (show_projected || parsed_query.filters.projected || meta.isProjected) &&
+            (show_rare || parsed_query.filters.rare || meta.isRare) &&
+              meta.isRare &&
+              (badges += '<span class="nte-sr-badge rare">Rare</span>');
+            (show_projected ||
+              parsed_query.filters.projected ||
+              meta.isProjected) &&
               meta.isProjected &&
-              (badges += '<span class="nte-sr-badge projected">Projected</span>');
-            parsed_query.filters.rapOnly && !meta.hasValue && (badges += '<span class="nte-sr-badge rap">RAP</span>');
-            if (dup_count > 1 && null == item.serialNumber) badges += `<span class="nte-sr-badge">${dup_ord}/${dup_count}</span>`;
+              (badges +=
+                '<span class="nte-sr-badge projected">Projected</span>');
+            parsed_query.filters.rapOnly &&
+              !meta.hasValue &&
+              (badges += '<span class="nte-sr-badge rap">RAP</span>');
+            if (dup_count > 1 && null == item.serialNumber)
+              badges += `<span class="nte-sr-badge">${dup_ord}/${dup_count}</span>`;
             return `<div class="nte-sr-card${hold_class}" data-sr-idx="${idx}">
             <div class="nte-sr-thumb">${thumb ? `<img src="${thumb.replace(/"/g, "&quot;")}" alt="">` : ""}</div>
             <div class="nte-sr-info">
@@ -3455,8 +4413,10 @@
           });
         }
         let selectable_indices = get_selectable_indices();
-        if (selectable_indices.length) set_active_result(selectable_indices[0], false);
-        if (typeof mount_trade_sales_hover_targets === "function") mount_trade_sales_hover_targets(overlay_el);
+        if (selectable_indices.length)
+          set_active_result(selectable_indices[0], false);
+        if (typeof mount_trade_sales_hover_targets === "function")
+          mount_trade_sales_hover_targets(overlay_el);
         overlay_el.onclick = (ev) => {
           let card = ev.target.closest("[data-sr-idx]");
           if (!card) return;
@@ -3465,7 +4425,8 @@
           add_search_item_to_trade(item, a);
         };
         fetch_search_thumbs(visible_results).then((did_fetch) => {
-          if (did_fetch && overlay_el && m.value.trim().toLowerCase() === q) render_results(items, query);
+          if (did_fetch && overlay_el && m.value.trim().toLowerCase() === q)
+            render_results(items, query);
         });
       }
       async function add_search_item_to_trade(item, side_idx) {
@@ -3482,18 +4443,29 @@
         try {
           ensure_search_active(action_token);
           let page_data = get_search_page_data(item);
-          if (!page_data) return void console.warn("[NRU] Could not resolve a page for the searched trade item.", item);
+          if (!page_data)
+            return void console.warn(
+              "[NRU] Could not resolve a page for the searched trade item.",
+              item,
+            );
           let status_label = esc_search(item.name),
-            dup_label = page_data.duplicateCount > 1 ? ` copy ${page_data.duplicateOrdinal}/${page_data.duplicateCount}` : "",
+            dup_label =
+              page_data.duplicateCount > 1
+                ? ` copy ${page_data.duplicateOrdinal}/${page_data.duplicateCount}`
+                : "",
             status_state = {
               phase: "seeking",
               currentPage: get_page_est(),
               startedAt: Date.now(),
             },
             render_bridge_status = () => {
-              let elapsed = ((Date.now() - status_state.startedAt) / 1e3).toFixed(1),
+              let elapsed = (
+                  (Date.now() - status_state.startedAt) /
+                  1e3
+                ).toFixed(1),
                 page_i =
-                  Number.isFinite(Number(status_state.currentPage)) && Number(status_state.currentPage) > 0
+                  Number.isFinite(Number(status_state.currentPage)) &&
+                  Number(status_state.currentPage) > 0
                     ? Number(status_state.currentPage)
                     : "?";
               show_search_status(
@@ -3511,9 +4483,14 @@
             }, 250));
           try {
             let before_snap = get_native_offer_snapshot(),
-              before_sig = before_snap ? get_offer_signature(before_snap) : null,
+              before_sig = before_snap
+                ? get_offer_signature(before_snap)
+                : null,
               before_offer_sig = get_native_offer_dom_fingerprint(),
-              before_membership = is_native_offer_item_present(item.collectibleItemInstanceId, before_snap);
+              before_membership = is_native_offer_item_present(
+                item.collectibleItemInstanceId,
+                before_snap,
+              );
             ensure_search_active(action_token);
             status_state.phase = "direct";
             render_bridge_status();
@@ -3521,15 +4498,32 @@
               side_index: side_idx,
               collectible_item_instance_id: item.collectibleItemInstanceId,
               tradable_item: build_direct_search_item(item),
-            }).catch((e) => console.warn("[NRU] Direct synthetic add dispatch failed, trying native page selection.", e));
+            }).catch((e) =>
+              console.warn(
+                "[NRU] Direct synthetic add dispatch failed, trying native page selection.",
+                e,
+              ),
+            );
             let direct_wait_ms = 1e4,
               direct_added = await Promise.race([
-                wait_for_native_offer_dom_change(before_offer_sig, direct_wait_ms),
-                wait_for_native_offer_item_membership_change(item.collectibleItemInstanceId, before_membership, direct_wait_ms),
+                wait_for_native_offer_dom_change(
+                  before_offer_sig,
+                  direct_wait_ms,
+                ),
+                wait_for_native_offer_item_membership_change(
+                  item.collectibleItemInstanceId,
+                  before_membership,
+                  direct_wait_ms,
+                ),
                 before_sig
-                  ? wait_for_custom_trade_signature_change(before_sig, direct_wait_ms).then(Boolean)
+                  ? wait_for_custom_trade_signature_change(
+                      before_sig,
+                      direct_wait_ms,
+                    ).then(Boolean)
                   : new Promise((e) => setTimeout(() => e(!1), direct_wait_ms)),
-                new Promise((e) => setTimeout(() => e(!1), direct_wait_ms + 50)),
+                new Promise((e) =>
+                  setTimeout(() => e(!1), direct_wait_ms + 50),
+                ),
               ]);
             ensure_search_active(action_token);
             if (direct_added) {
@@ -3538,7 +4532,10 @@
             }
           } catch (direct_err) {
             if (!is_search_active(action_token)) return;
-            console.warn("[NRU] Direct synthetic add failed, trying native page selection.", direct_err);
+            console.warn(
+              "[NRU] Direct synthetic add failed, trying native page selection.",
+              direct_err,
+            );
           }
           try {
             ensure_search_active(action_token);
@@ -3550,10 +4547,14 @@
               side_index: side_idx,
               collectible_item_instance_id: item.collectibleItemInstanceId,
               target_page: page_data.targetPage,
-              timeout_ms: Math.max(1e4, Math.abs(page_data.targetPage - get_page_est()) * 550 + 5e3),
+              timeout_ms: Math.max(
+                1e4,
+                Math.abs(page_data.targetPage - get_page_est()) * 550 + 5e3,
+              ),
               on_progress: (e) => {
                 if (!is_search_active(action_token)) return;
-                Number.isFinite(Number(e?.current_page)) && (status_state.currentPage = Number(e.current_page)),
+                Number.isFinite(Number(e?.current_page)) &&
+                  (status_state.currentPage = Number(e.current_page)),
                   e?.phase && (status_state.phase = e.phase),
                   render_bridge_status();
               },
@@ -3566,7 +4567,10 @@
             active_bridge_id = "";
             if (!is_search_active(action_token)) return;
             stop_search_status();
-            console.warn("[NRU] Direct trade bridge add failed, falling back to page navigation.", bridge_err);
+            console.warn(
+              "[NRU] Direct trade bridge add failed, falling back to page navigation.",
+              bridge_err,
+            );
           }
           ensure_search_active(action_token);
           show_search_status(
@@ -3574,12 +4578,28 @@
           );
           let before_snap = get_native_offer_snapshot(),
             before_sig = before_snap ? get_offer_signature(before_snap) : null;
-          if (await go_to_search_page(item, page_data, before_sig, action_token)) return void clear_search();
+          if (
+            await go_to_search_page(item, page_data, before_sig, action_token)
+          )
+            return void clear_search();
           ensure_search_active(action_token);
-          console.warn("[NRU] Could not find the searched item on its predicted trade pages.", item);
-          m.value.trim() && render_results(Array.isArray(search_inv_cache[get_side_user_id()]) ? search_inv_cache[get_side_user_id()] : [], m.value);
+          console.warn(
+            "[NRU] Could not find the searched item on its predicted trade pages.",
+            item,
+          );
+          m.value.trim() &&
+            render_results(
+              Array.isArray(search_inv_cache[get_side_user_id()])
+                ? search_inv_cache[get_side_user_id()]
+                : [],
+              m.value,
+            );
         } catch (err) {
-          if (!is_search_active(action_token) && "Search cancelled" === err?.message) return;
+          if (
+            !is_search_active(action_token) &&
+            "Search cancelled" === err?.message
+          )
+            return;
           console.warn("[NRU] Could not add searched trade item", err);
         } finally {
           stop_search_status();
@@ -3591,14 +4611,19 @@
         }
       }
       function clear_search() {
-        cancel_search(!0), hide_overlay(), (u.getElementsByClassName("rolimons-search-x-button")[0].style.display = "none");
+        cancel_search(!0),
+          hide_overlay(),
+          (u.getElementsByClassName(
+            "rolimons-search-x-button",
+          )[0].style.display = "none");
       }
       if (!m) {
         u.innerHTML += d;
         let loading_svg = u.getElementsByTagName("svg")[0];
         if (loading_svg) loading_svg.style.display = "none";
         let x_btn_el = u.getElementsByClassName("rolimons-search-x-button")[0];
-        let x_icon_el = x_btn_el && x_btn_el.querySelector(".nte-search-x-icon");
+        let x_icon_el =
+          x_btn_el && x_btn_el.querySelector(".nte-search-x-icon");
         if (x_icon_el) {
           x_icon_el.style.position = "absolute";
           x_icon_el.style.width = "30px";
@@ -3608,7 +4633,8 @@
           x_icon_el.style.pointerEvents = "none";
           nte_append_trade_search_clear_icon(x_icon_el, "xDark.svg" === s);
         }
-        (m = u.getElementsByClassName("rolimons-search")[0]), x_btn_el.addEventListener("click", clear_search);
+        (m = u.getElementsByClassName("rolimons-search")[0]),
+          x_btn_el.addEventListener("click", clear_search);
         let user_id = get_side_user_id();
         user_id &&
           (fetch_tradable_items(user_id),
@@ -3627,15 +4653,22 @@
           }
           if ("ArrowDown" === ev.key || "ArrowUp" === ev.key) {
             ev.preventDefault();
-            let current_list_index = selectable_indices.indexOf(active_result_idx);
+            let current_list_index =
+              selectable_indices.indexOf(active_result_idx);
             current_list_index < 0 && (current_list_index = 0);
             current_list_index += "ArrowDown" === ev.key ? 1 : -1;
-            current_list_index < 0 && (current_list_index = selectable_indices.length - 1);
-            current_list_index >= selectable_indices.length && (current_list_index = 0);
+            current_list_index < 0 &&
+              (current_list_index = selectable_indices.length - 1);
+            current_list_index >= selectable_indices.length &&
+              (current_list_index = 0);
             set_active_result(selectable_indices[current_list_index]);
           } else if ("Enter" === ev.key) {
             ev.preventDefault();
-            activate_result(active_result_idx >= 0 ? active_result_idx : selectable_indices[0]);
+            activate_result(
+              active_result_idx >= 0
+                ? active_result_idx
+                : selectable_indices[0],
+            );
           } else if ("Escape" === ev.key) {
             ev.preventDefault();
             clear_search();
@@ -3656,16 +4689,20 @@
               if (!user_id) return;
               let items = search_inv_cache[user_id];
               if (!items) {
-                show_overlay('<div class="nte-sr-loading">Loading inventory...</div>');
+                show_overlay(
+                  '<div class="nte-sr-loading">Loading inventory...</div>',
+                );
                 items = await fetch_tradable_items(user_id);
               }
               m.value === q && render_results(items, q);
             }, 150));
         });
-        (u.dataset.nteTradeSearchMounted = "true"), delete u.dataset.nteTradeSearchMounting;
+        (u.dataset.nteTradeSearchMounted = "true"),
+          delete u.dataset.nteTradeSearchMounting;
       } else delete u.dataset.nteTradeSearchMounting;
     }
-    "sendOrCounter" === c.getPageType() && (await c.waitForElm(".trade-inventory-panel"), n(1), n(2));
+    "sendOrCounter" === c.getPageType() &&
+      (await c.waitForElm(".trade-inventory-panel"), n(1), n(2));
   }
   function decode_data_uri_text(data_url) {
     let comma = data_url.indexOf(",");
@@ -3692,12 +4729,17 @@
     path.setAttribute("stroke-linecap", "round");
     path.setAttribute("stroke-linejoin", "round");
     svg.appendChild(path);
-    for (; container_el.firstChild; ) container_el.removeChild(container_el.firstChild);
+    for (; container_el.firstChild; )
+      container_el.removeChild(container_el.firstChild);
     container_el.appendChild(svg);
   }
   function E() {
-    let load_raw = window.__NTE_ICONS && window.__NTE_ICONS["assets/loading.svg"];
-    let t = "string" == typeof load_raw && 0 === load_raw.indexOf("data:") ? decode_data_uri_text(load_raw) : "";
+    let load_raw =
+      window.__NTE_ICONS && window.__NTE_ICONS["assets/loading.svg"];
+    let t =
+      "string" == typeof load_raw && 0 === load_raw.indexOf("data:")
+        ? decode_data_uri_text(load_raw)
+        : "";
     return `
         <div class="nte-trade-search-wrap">
         <div style="display: flex; margin-top: 5px; gap: 5px;">
@@ -3730,20 +4772,28 @@
       return (function () {
         for (let element of document.querySelectorAll(".valueSpan"))
           element.parentElement.getElementsByTagName("br")[0]?.remove(),
-            element.parentElement.getElementsByClassName("icon-rolimons")[0]?.remove(),
+            element.parentElement
+              .getElementsByClassName("icon-rolimons")[0]
+              ?.remove(),
             element.remove();
       })();
     let e = await c.waitForElm(".trades-container");
     if ((k(), "details" === c.getPageType()))
       for (let offer of e.getElementsByClassName("trade-list-detail-offer"))
         T(
-          offer.querySelector(".robux-line:not(.ng-hide):not([ng-show])").querySelector(".robux-line-amount"),
+          offer
+            .querySelector(".robux-line:not(.ng-hide):not([ng-show])")
+            .querySelector(".robux-line-amount"),
           await c.calculateValueTotalDetails(offer),
         );
     if ("sendOrCounter" === c.getPageType())
-      for (let offer of document.getElementsByClassName("trade-request-window-offer"))
+      for (let offer of document.getElementsByClassName(
+        "trade-request-window-offer",
+      ))
         T(
-          offer.querySelector(".robux-line:not(.ng-hide):not([ng-show])").querySelector(".robux-line-amount"),
+          offer
+            .querySelector(".robux-line:not(.ng-hide):not([ng-show])")
+            .querySelector(".robux-line-amount"),
           await c.calculateValueTotalSendOrCounter(offer),
         );
   }
@@ -3804,14 +4854,18 @@
   }
   async function k() {
     let show_routility_usd = !!(await c.getOption("Show Routility USD Values"));
-    for (let item of (await c.waitForElm(".item-card-container"), document.querySelectorAll(".item-card-container"))) {
+    for (let item of (await c.waitForElm(".item-card-container"),
+    document.querySelectorAll(".item-card-container"))) {
       let e = item.querySelector(".item-card-price"),
         t = c.getItemIdFromElement(item),
         r = c.getItemNameFromElement(item),
         n = (function (e) {
           if (!(e instanceof Element)) return 0;
           let t = e.cloneNode(!0);
-          for (let e of t.querySelectorAll(".valueSpan, .icon-rolimons, .icon-link, br")) e.remove();
+          for (let e of t.querySelectorAll(
+            ".valueSpan, .icon-rolimons, .icon-link, br",
+          ))
+            e.remove();
           let r = (t.textContent || "").match(/\d[\d,]*/);
           return r ? parseInt(r[0].replace(/,/g, ""), 10) || 0 : 0;
         })(e),
@@ -3822,7 +4876,17 @@
       set_trade_item_routility_usd(
         e,
         show_routility_usd
-          ? Number(c.getUSD(a.targetId) || c.getUSD(c.resolveRolimonsItemId(a.targetId, a.name, "Bundle" === a.itemType)) || 0)
+          ? Number(
+              c.getUSD(a.targetId) ||
+                c.getUSD(
+                  c.resolveRolimonsItemId(
+                    a.targetId,
+                    a.name,
+                    "Bundle" === a.itemType,
+                  ),
+                ) ||
+                0,
+            )
           : 0,
       );
       item.parentElement.parentElement.style.marginBottom = "0px";
@@ -3835,7 +4899,10 @@
         n = (function (e) {
           if (!(e instanceof Element)) return 0;
           let t = e.cloneNode(!0);
-          for (let e of t.querySelectorAll(".valueSpan, .icon-rolimons, .icon-link, br")) e.remove();
+          for (let e of t.querySelectorAll(
+            ".valueSpan, .icon-rolimons, .icon-link, br",
+          ))
+            e.remove();
           let r = (t.textContent || "").match(/\d[\d,]*/);
           return r ? parseInt(r[0].replace(/,/g, ""), 10) || 0 : 0;
         })(e),
@@ -3846,20 +4913,31 @@
       set_trade_item_routility_usd(
         e,
         show_routility_usd
-          ? Number(c.getUSD(a.targetId) || c.getUSD(c.resolveRolimonsItemId(a.targetId, a.name, "Bundle" === a.itemType)) || 0)
+          ? Number(
+              c.getUSD(a.targetId) ||
+                c.getUSD(
+                  c.resolveRolimonsItemId(
+                    a.targetId,
+                    a.name,
+                    "Bundle" === a.itemType,
+                  ),
+                ) ||
+                0,
+            )
           : 0,
       );
     }
     nte_tag_trade_page_serial_spans();
   }
   function T(e, t) {
-    void 0 === e.getElementsByClassName("valueSpan")[0] && c.createValuesSpans(e, { large: !0 }),
+    void 0 === e.getElementsByClassName("valueSpan")[0] &&
+      c.createValuesSpans(e, { large: !0 }),
       (e.getElementsByClassName("valueSpan")[0].innerText = c.commafy(t));
   }
-    async function C() {
-      if (!(await get_post_tax_trade_values_enabled())) return I();
-      let e = document.querySelector(".trades-container");
-      if (!e) return I();
+  async function C() {
+    if (!(await get_post_tax_trade_values_enabled())) return I();
+    let e = document.querySelector(".trades-container");
+    if (!e) return I();
     function build_info_svg() {
       let svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("class", "infoSVG");
@@ -3881,7 +4959,8 @@
       let inner = document.createElement("div");
       inner.id = "valueWarning";
       inner.style.marginTop = "10px";
-      inner.style.backgroundColor = "dark" === c.getColorMode() ? "#191b1d" : "#dee1e3";
+      inner.style.backgroundColor =
+        "dark" === c.getColorMode() ? "#191b1d" : "#dee1e3";
       inner.style.padding = "3px";
       inner.style.display = "inline-flex";
       inner.style.cursor = "default";
@@ -3901,7 +4980,11 @@
       if (a > 1) {
         let target = document.querySelector(".trade-buttons");
         if (target) target.appendChild(build_value_warning(n, a, "18px"));
-        else r[1].insertAdjacentElement("afterend", build_value_warning(n, a, "18px"));
+        else
+          r[1].insertAdjacentElement(
+            "afterend",
+            build_value_warning(n, a, "18px"),
+          );
       }
     }
     if ("sendOrCounter" === c.getPageType()) {
@@ -4169,7 +5252,9 @@
       document.head.appendChild(e);
   }
   function nte_serial_hide_icon_url() {
-    return document.querySelector(".light-theme") ? c.getURL("assets/serials_on_lightmode.svg") : c.getURL("assets/serials_on.svg");
+    return document.querySelector(".light-theme")
+      ? c.getURL("assets/serials_on_lightmode.svg")
+      : c.getURL("assets/serials_on.svg");
   }
   function nte_serials_currently_blurred() {
     return !!document.querySelector("[data-nte-serial-blurred='1']");
@@ -4181,11 +5266,18 @@
     let b = document.querySelector(".trade-request-window");
     b && !scopes.includes(b) && scopes.push(b);
     for (let scope of scopes) {
-      for (let root of scope.querySelectorAll(".item-card-container, .trade-item-card")) {
+      for (let root of scope.querySelectorAll(
+        ".item-card-container, .trade-item-card",
+      )) {
         if (root.closest(".tradeListValuesBox")) continue;
         for (let el of root.querySelectorAll("span, div, button, a, p")) {
           if (el.closest(".tradeListValuesBox")) continue;
-          if (el.classList.contains("valueSpan") || el.classList.contains("icon-rolimons") || el.classList.contains("icon-link")) continue;
+          if (
+            el.classList.contains("valueSpan") ||
+            el.classList.contains("icon-rolimons") ||
+            el.classList.contains("icon-link")
+          )
+            continue;
           if (el.classList.contains("nte-trade-serial")) continue;
           if (el.childElementCount !== 0) continue;
           let text = (el.textContent || "").replace(/\s/g, "").trim();
@@ -4196,12 +5288,18 @@
     }
   }
   function nte_serial_mask(text) {
-    return String(text || "").trim().startsWith("#") ? "#\u2022\u2022\u2022\u2022" : "\u2022\u2022\u2022\u2022";
+    return String(text || "")
+      .trim()
+      .startsWith("#")
+      ? "#\u2022\u2022\u2022\u2022"
+      : "\u2022\u2022\u2022\u2022";
   }
   function nte_set_serial_target_blur(el, blurred) {
     if (!el) return;
-    let original = el.getAttribute("data-nte-serial-text") || el.textContent || "";
-    if (!el.hasAttribute("data-nte-serial-text")) el.setAttribute("data-nte-serial-text", original);
+    let original =
+      el.getAttribute("data-nte-serial-text") || el.textContent || "";
+    if (!el.hasAttribute("data-nte-serial-text"))
+      el.setAttribute("data-nte-serial-text", original);
     el.textContent = blurred ? nte_serial_mask(original) : original;
     el.classList.toggle("nte-serial-masked", blurred);
     if (blurred) el.setAttribute("data-nte-serial-blurred", "1");
@@ -4216,7 +5314,11 @@
     }
     for (let c of document.getElementsByClassName("limited-number-container")) {
       for (let el of c.querySelectorAll(".limited-number, span")) {
-        let text = (el.getAttribute("data-nte-serial-text") || el.textContent || "").trim();
+        let text = (
+          el.getAttribute("data-nte-serial-text") ||
+          el.textContent ||
+          ""
+        ).trim();
         if (/^\d[\d,]*$/.test(text)) add(el);
       }
     }
@@ -4225,7 +5327,8 @@
   }
   function set_nte_serial_text_blur(blurred) {
     nte_tag_trade_page_serial_spans();
-    for (let el of nte_collect_serial_targets()) nte_set_serial_target_blur(el, blurred);
+    for (let el of nte_collect_serial_targets())
+      nte_set_serial_target_blur(el, blurred);
   }
   function toggle_nte_serial_text_blur() {
     set_nte_serial_text_blur(!nte_serials_currently_blurred());
@@ -4248,15 +5351,24 @@
     return !(t.width < 2 || t.height < 2);
   }
   function nte_insert_serial_hide_button(e) {
-    if (!e || !nte_paired_name_visible(e) || e.classList.contains("hide-button-inserted")) return !1;
+    if (
+      !e ||
+      !nte_paired_name_visible(e) ||
+      e.classList.contains("hide-button-inserted")
+    )
+      return !1;
     if (e.closest(".trade-request-window")) return !1;
     let t = e.parentNode && e.parentNode.parentNode;
     if (!t) return !1;
-    let r = t.querySelector(".text-label.ng-binding") || t.querySelector(".text-label");
+    let r =
+      t.querySelector(".text-label.ng-binding") ||
+      t.querySelector(".text-label");
     if (!r) return !1;
     if (r.querySelector(".nte-serial-hide-host")) return !1;
     let n = document.createElement("div");
-    (n.className = "inactive buttontooltip nte-serial-hide-host"), (n.style.display = "inline-block"), n.setAttribute("data-nevos-serial-hider", "1");
+    (n.className = "inactive buttontooltip nte-serial-hide-host"),
+      (n.style.display = "inline-block"),
+      n.setAttribute("data-nevos-serial-hider", "1");
     let a = document.createElement("img");
     (a.className = "hide-button limited-icon-container tooltip-pastnames"),
       (a.style.width = "25px"),
@@ -4274,9 +5386,16 @@
       n.appendChild(a),
       n.appendChild(o),
       (n.onclick = (e) => {
-        e.preventDefault(), e.stopPropagation(), n.classList.remove("nte-serial-hide-pop"), void n.offsetWidth, n.classList.add("nte-serial-hide-pop"), toggle_nte_serial_text_blur(), update_nte_serial_hide_controls();
+        e.preventDefault(),
+          e.stopPropagation(),
+          n.classList.remove("nte-serial-hide-pop"),
+          void n.offsetWidth,
+          n.classList.add("nte-serial-hide-pop"),
+          toggle_nte_serial_text_blur(),
+          update_nte_serial_hide_controls();
       }),
-      r.classList.contains("ng-hide") && ((r.innerHTML = ""), r.classList.remove("ng-hide")),
+      r.classList.contains("ng-hide") &&
+        ((r.innerHTML = ""), r.classList.remove("ng-hide")),
       r.appendChild(n),
       e.classList.add("hide-button-inserted");
     return !0;
@@ -4284,7 +5403,9 @@
   function ensure_nte_serial_hash_button() {
     inject_nte_serial_blur_styles();
     let e = c.getPageType(),
-      t = !!document.querySelector(".trades-container, .trade-request-window, .trade-row, .trades-list-detail");
+      t = !!document.querySelector(
+        ".trades-container, .trade-request-window, .trade-row, .trades-list-detail",
+      );
     if (!t && "details" !== e && "sendOrCounter" !== e) return;
     let was_blurred = nte_serials_currently_blurred();
     nte_tag_trade_page_serial_spans();
@@ -4293,10 +5414,16 @@
       let e = document.querySelector(".nte-serial-hide-host");
       if (e && e.isConnected) return void update_nte_serial_hide_controls();
     }
-    let r = [...document.getElementsByClassName("trades-header-nowrap")].at(-1)?.querySelector(".paired-name");
-    if (nte_insert_serial_hide_button(r)) return void update_nte_serial_hide_controls();
-    for (let e of document.querySelectorAll(".trades-list-detail .paired-name, .trades-container .paired-name"))
-      if (nte_insert_serial_hide_button(e)) return void update_nte_serial_hide_controls();
+    let r = [...document.getElementsByClassName("trades-header-nowrap")]
+      .at(-1)
+      ?.querySelector(".paired-name");
+    if (nte_insert_serial_hide_button(r))
+      return void update_nte_serial_hide_controls();
+    for (let e of document.querySelectorAll(
+      ".trades-list-detail .paired-name, .trades-container .paired-name",
+    ))
+      if (nte_insert_serial_hide_button(e))
+        return void update_nte_serial_hide_controls();
     update_nte_serial_hide_controls();
   }
   const nte_quick_proof_option_name = "Quick Proof";
@@ -4309,12 +5436,22 @@
 
   async function ensure_nte_quick_proof_button() {
     inject_nte_serial_blur_styles();
-    if (c.getPageType() !== "details" || get_current_trade_tab() !== "completed") return remove_nte_quick_proof_buttons();
-    if (false === (await c.getOption(nte_quick_proof_option_name))) return remove_nte_quick_proof_buttons();
+    if (
+      c.getPageType() !== "details" ||
+      get_current_trade_tab() !== "completed"
+    )
+      return remove_nte_quick_proof_buttons();
+    if (false === (await c.getOption(nte_quick_proof_option_name)))
+      return remove_nte_quick_proof_buttons();
     let serial = document.querySelector(".nte-serial-hide-host");
-    let host = serial?.parentElement || document.querySelector(".trades-list-detail .text-label, .trades-container .text-label");
+    let host =
+      serial?.parentElement ||
+      document.querySelector(
+        ".trades-list-detail .text-label, .trades-container .text-label",
+      );
     if (!host) return remove_nte_quick_proof_buttons();
-    for (let btn of document.querySelectorAll(".nte-proof-btn")) if (btn.parentElement !== host) btn.remove();
+    for (let btn of document.querySelectorAll(".nte-proof-btn"))
+      if (btn.parentElement !== host) btn.remove();
     let btn = host.querySelector(".nte-proof-btn");
     if (!btn) {
       btn = document.createElement("button");
@@ -4328,12 +5465,17 @@
         event.stopPropagation();
         run_nte_quick_proof(btn).catch((err) => {
           console.debug("NTE quick proof failed", err);
-          nte_quick_proof_toast("Proof failed", err?.message || "Could not copy the proof.", true);
+          nte_quick_proof_toast(
+            "Proof failed",
+            err?.message || "Could not copy the proof.",
+            true,
+          );
         });
       };
     }
     if (serial && serial.parentElement === host) {
-      if (serial.nextSibling !== btn) host.insertBefore(btn, serial.nextSibling);
+      if (serial.nextSibling !== btn)
+        host.insertBefore(btn, serial.nextSibling);
     } else if (btn.parentElement !== host) {
       host.appendChild(btn);
     }
@@ -4400,9 +5542,12 @@
 
   function nte_quick_proof_set_copy_state(btn, text, delay = 1200) {
     btn.textContent = text;
-    if (delay > 0) setTimeout(() => {
-      if (btn?.isConnected) btn.textContent = btn.getAttribute("data-nte-label") || btn.textContent;
-    }, delay);
+    if (delay > 0)
+      setTimeout(() => {
+        if (btn?.isConnected)
+          btn.textContent =
+            btn.getAttribute("data-nte-label") || btn.textContent;
+      }, delay);
   }
 
   async function nte_quick_proof_preview_toast(proof_text, blob) {
@@ -4456,7 +5601,17 @@
   }
 
   function nte_quick_proof_esc(value) {
-    return String(value || "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+    return String(value || "").replace(
+      /[&<>"']/g,
+      (ch) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[ch],
+    );
   }
 
   function nte_quick_proof_timeout(promise, ms, message) {
@@ -4479,13 +5634,17 @@
           done = true;
           clearTimeout(timer);
           reject(err);
-        }
+        },
       );
     });
   }
 
   function nte_quick_proof_message(message, ms = 7000) {
-    return nte_quick_proof_timeout(new Promise((resolve) => nte_send_message(message, resolve)), ms, "Proof request timed out.");
+    return nte_quick_proof_timeout(
+      new Promise((resolve) => nte_send_message(message, resolve)),
+      ms,
+      "Proof request timed out.",
+    );
   }
 
   function nte_quick_proof_number(text) {
@@ -4500,14 +5659,18 @@
     function trim(v) {
       return v.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
     }
-    if (abs >= 1000000) return `${sign}${trim((abs / 1000000).toFixed(abs >= 10000000 ? 1 : 2))}m`;
-    if (abs >= 1000) return `${sign}${trim((abs / 1000).toFixed(abs >= 100000 ? 0 : 1))}k`;
+    if (abs >= 1000000)
+      return `${sign}${trim((abs / 1000000).toFixed(abs >= 10000000 ? 1 : 2))}m`;
+    if (abs >= 1000)
+      return `${sign}${trim((abs / 1000).toFixed(abs >= 100000 ? 0 : 1))}k`;
     return `${n}`;
   }
 
   function nte_quick_proof_parse_time(value) {
     if (value === undefined || value === null || value === "") return 0;
-    let numeric = typeof value === "number" || (typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim()));
+    let numeric =
+      typeof value === "number" ||
+      (typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim()));
     let time = numeric ? Number(value) : new Date(value).getTime();
     if (numeric && time > 0 && time < 10000000000) time *= 1000;
     return Number.isFinite(time) && time > 0 ? time : 0;
@@ -4516,19 +5679,30 @@
   function nte_quick_proof_format_date(time) {
     if (!(Number(time) > 0)) return "";
     try {
-      return new Date(time).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "numeric" });
+      return new Date(time).toLocaleDateString("en-US", {
+        month: "numeric",
+        day: "numeric",
+        year: "numeric",
+      });
     } catch {
       return "";
     }
   }
 
   function nte_quick_proof_row_date(row) {
-    let row_time = nte_quick_proof_parse_time(row?.getAttribute("data-nte-trade-time"));
+    let row_time = nte_quick_proof_parse_time(
+      row?.getAttribute("data-nte-trade-time"),
+    );
     if (row_time > 0) return nte_quick_proof_format_date(row_time);
-    let text = row?.querySelector(".text-date-hint, .trade-sent-date")?.textContent || row?.textContent || "";
+    let text =
+      row?.querySelector(".text-date-hint, .trade-sent-date")?.textContent ||
+      row?.textContent ||
+      "";
     let match = text.match(/\b\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\b/);
     if (match) return match[0].replaceAll("-", "/").replaceAll(".", "/");
-    let parsed = nte_quick_proof_parse_time(text.replace(/completed|accepted|declined|inactive/gi, "").trim());
+    let parsed = nte_quick_proof_parse_time(
+      text.replace(/completed|accepted|declined|inactive/gi, "").trim(),
+    );
     return nte_quick_proof_format_date(parsed);
   }
 
@@ -4584,12 +5758,21 @@
 
   async function nte_quick_proof_self_name() {
     let meta = document.querySelector('meta[name="user-data"]');
-    let direct = meta?.getAttribute("data-name") || meta?.getAttribute("data-displayname") || "";
+    let direct =
+      meta?.getAttribute("data-name") ||
+      meta?.getAttribute("data-displayname") ||
+      "";
     if (direct) return direct;
     let id = meta?.getAttribute("data-userid") || "";
     if (/^\d+$/.test(id)) {
       try {
-        let resp = await nte_quick_proof_timeout(fetch(`https://users.roblox.com/v1/users/${id}`, { credentials: "include" }), 5000, "User lookup timed out.");
+        let resp = await nte_quick_proof_timeout(
+          fetch(`https://users.roblox.com/v1/users/${id}`, {
+            credentials: "include",
+          }),
+          5000,
+          "User lookup timed out.",
+        );
         let json = resp.ok ? await resp.json() : null;
         if (json?.name) return json.name;
       } catch {}
@@ -4598,36 +5781,61 @@
   }
 
   function nte_quick_proof_title() {
-    let paired = [...document.getElementsByClassName("trades-header-nowrap")].at(-1)?.querySelector(".paired-name");
+    let paired = [...document.getElementsByClassName("trades-header-nowrap")]
+      .at(-1)
+      ?.querySelector(".paired-name");
     let text = paired?.textContent?.replace(/\s+/g, " ").trim() || "";
     return text || "Completed trade";
   }
 
   function nte_quick_proof_item_value(card) {
-    let value = nte_quick_proof_number(card.querySelector(".valueSpan")?.textContent || "");
+    let value = nte_quick_proof_number(
+      card.querySelector(".valueSpan")?.textContent || "",
+    );
     if (value > 0) return value;
-    return c.getValueOrRAP(c.getItemIdFromElement(card), c.getItemNameFromElement(card), nte_quick_proof_item_rap(card)) || 0;
+    return (
+      c.getValueOrRAP(
+        c.getItemIdFromElement(card),
+        c.getItemNameFromElement(card),
+        nte_quick_proof_item_rap(card),
+      ) || 0
+    );
   }
 
   function nte_quick_proof_item_rap(card) {
-    let price = card.querySelector(".item-card-price, .item-value, .robux-line-amount");
+    let price = card.querySelector(
+      ".item-card-price, .item-value, .robux-line-amount",
+    );
     if (!price) return 0;
     let copy = price.cloneNode(true);
-    for (let el of copy.querySelectorAll(".valueSpan, .icon-rolimons, .icon-link, .nte-routility-usd-row, .nte-routility-usd-inline, img, br")) el.remove();
+    for (let el of copy.querySelectorAll(
+      ".valueSpan, .icon-rolimons, .icon-link, .nte-routility-usd-row, .nte-routility-usd-inline, img, br",
+    ))
+      el.remove();
     return nte_quick_proof_number(copy.textContent || "");
   }
 
   function nte_quick_proof_serial(card) {
     let text =
-      card.querySelector(".limited-number-container:not(.ng-hide) .limited-number")?.textContent ||
+      card.querySelector(
+        ".limited-number-container:not(.ng-hide) .limited-number",
+      )?.textContent ||
       card.querySelector(".nte-trade-serial")?.textContent ||
       "";
-    text = String(text || "").replace(/\s+/g, "").trim();
-    return /^#?\d[\d,]*$/.test(text) ? (text.startsWith("#") ? text : `#${text}`) : "";
+    text = String(text || "")
+      .replace(/\s+/g, "")
+      .trim();
+    return /^#?\d[\d,]*$/.test(text)
+      ? text.startsWith("#")
+        ? text
+        : `#${text}`
+      : "";
   }
 
   function nte_quick_proof_offer_items(offer) {
-    let cards = Array.from(offer?.querySelectorAll(".item-card-container") || []);
+    let cards = Array.from(
+      offer?.querySelectorAll(".item-card-container") || [],
+    );
     return cards.map((card) => {
       let name =
         card.querySelector(".item-card-name span")?.textContent?.trim() ||
@@ -4641,18 +5849,34 @@
         rap: nte_quick_proof_item_rap(card),
         serial: nte_quick_proof_serial(card),
         target_id:
-          card.querySelector("thumbnail-2d")?.getAttribute("thumbnail-target-id") ||
-          card.querySelector(".thumbnail-2d-container")?.getAttribute("thumbnail-target-id") ||
-          card.querySelector('a[href*="/catalog/"]')?.href?.match(/\/catalog\/(\d+)/)?.[1] ||
+          card
+            .querySelector("thumbnail-2d")
+            ?.getAttribute("thumbnail-target-id") ||
+          card
+            .querySelector(".thumbnail-2d-container")
+            ?.getAttribute("thumbnail-target-id") ||
+          card
+            .querySelector('a[href*="/catalog/"]')
+            ?.href?.match(/\/catalog\/(\d+)/)?.[1] ||
           c.getItemIdFromElement(card) ||
           "",
         target_type:
-          card.querySelector(".thumbnail-2d-container")?.getAttribute("thumbnail-type") ||
+          card
+            .querySelector(".thumbnail-2d-container")
+            ?.getAttribute("thumbnail-type") ||
           (card.querySelector('a[href*="/bundles/"]') ? "Bundle" : "") ||
           card.querySelector("thumbnail-2d")?.getAttribute("thumbnail-type") ||
           "",
-        thumb: card.querySelector("thumbnail-2d img, .item-card-thumb img, img")?.src || "",
-        flags: Array.from(card.querySelectorAll(".flagBox img, .rare-flag img, .projected-flag img")).map((img) => img.src).filter(Boolean),
+        thumb:
+          card.querySelector("thumbnail-2d img, .item-card-thumb img, img")
+            ?.src || "",
+        flags: Array.from(
+          card.querySelectorAll(
+            ".flagBox img, .rare-flag img, .projected-flag img",
+          ),
+        )
+          .map((img) => img.src)
+          .filter(Boolean),
       };
     });
   }
@@ -4660,7 +5884,10 @@
   function nte_quick_proof_offer_total(offer, items) {
     let rendered = get_trade_offer_rendered_totals(offer, false);
     if (Number.isFinite(rendered?.value_total)) return rendered.value_total;
-    return items.reduce((sum, item) => sum + (Number(item.value) || Number(item.rap) || 0), 0);
+    return items.reduce(
+      (sum, item) => sum + (Number(item.value) || Number(item.rap) || 0),
+      0,
+    );
   }
 
   function nte_quick_proof_key(text) {
@@ -4673,11 +5900,19 @@
 
   function nte_quick_proof_item_acronym(item) {
     let data = c.getRolimonsData?.(),
-      id = c.resolveRolimonsItemId?.(item?.target_id, item?.name, /bundle/i.test(String(item?.target_type || ""))) || item?.target_id,
-      row = data?.items?.[String(id)] || data?.items?.[String(item?.target_id || "")],
+      id =
+        c.resolveRolimonsItemId?.(
+          item?.target_id,
+          item?.name,
+          /bundle/i.test(String(item?.target_type || "")),
+        ) || item?.target_id,
+      row =
+        data?.items?.[String(id)] ||
+        data?.items?.[String(item?.target_id || "")],
       acronym = Array.isArray(row) ? String(row[1] || "").trim() : "";
     if (!acronym || acronym === "-" || /^n\/?a$/i.test(acronym)) return "";
-    if (nte_quick_proof_key(acronym) === nte_quick_proof_key(item?.name)) return "";
+    if (nte_quick_proof_key(acronym) === nte_quick_proof_key(item?.name))
+      return "";
     return acronym;
   }
 
@@ -4691,10 +5926,19 @@
     if (!trade_id) return null;
     let cached = get_trade_row_raw_cache_entry(trade_id);
     if (cached) return cached;
-    let from_bg = await nte_quick_proof_message({ type: "getCachedTrade", tradeId: trade_id }, 2500).catch(() => null);
+    let from_bg = await nte_quick_proof_message(
+      { type: "getCachedTrade", tradeId: trade_id },
+      2500,
+    ).catch(() => null);
     if (from_bg) return from_bg;
     try {
-      let resp = await nte_quick_proof_timeout(fetch_trade_api(`https://trades.roblox.com/v2/trades/${trade_id}`, { credentials: "include" }), 7000, "Trade lookup timed out.");
+      let resp = await nte_quick_proof_timeout(
+        fetch_trade_api(`https://trades.roblox.com/v2/trades/${trade_id}`, {
+          credentials: "include",
+        }),
+        7000,
+        "Trade lookup timed out.",
+      );
       if (resp.ok) return await resp.json();
     } catch {}
     return null;
@@ -4705,19 +5949,31 @@
     if (!trade_id) return null;
     let cached = get_trade_row_raw_cache_entry(trade_id);
     if (cached && nte_quick_proof_obj_time(cached) > 0) return cached;
-    let from_bg = await nte_quick_proof_message({ type: "getCachedTrade", tradeId: trade_id }, 2500).catch(() => null);
+    let from_bg = await nte_quick_proof_message(
+      { type: "getCachedTrade", tradeId: trade_id },
+      2500,
+    ).catch(() => null);
     if (from_bg && nte_quick_proof_obj_time(from_bg) > 0) return from_bg;
     try {
       let cursor = "";
       for (let page = 0; page < 3; page++) {
         let url = `https://trades.roblox.com/v1/trades/completed?limit=100&sortOrder=Desc`;
         if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
-        let resp = await nte_quick_proof_timeout(fetch_trade_api(url, { credentials: "include" }), 7000, "Trade date lookup timed out.");
+        let resp = await nte_quick_proof_timeout(
+          fetch_trade_api(url, { credentials: "include" }),
+          7000,
+          "Trade date lookup timed out.",
+        );
         if (!resp.ok) break;
         let json = await resp.json();
-        let match = (json?.data || []).find((trade) => String(trade?.id ?? trade?.tradeId ?? "") === trade_id);
+        let match = (json?.data || []).find(
+          (trade) => String(trade?.id ?? trade?.tradeId ?? "") === trade_id,
+        );
         if (match) {
-          nte_send_message({ type: "cacheTrade", tradeId: trade_id, trade: match }, function () {});
+          nte_send_message(
+            { type: "cacheTrade", tradeId: trade_id, trade: match },
+            function () {},
+          );
           return match;
         }
         cursor = json?.nextPageCursor || "";
@@ -4729,7 +5985,10 @@
 
   async function nte_quick_proof_data() {
     let row = document.querySelector(".trade-row.selected");
-    let trade_id = (await get_history_trade_id().catch(() => "")) || get_selected_trade_id_sync(row) || "";
+    let trade_id =
+      (await get_history_trade_id().catch(() => "")) ||
+      get_selected_trade_id_sync(row) ||
+      "";
     let list_raw_promise = nte_quick_proof_list_trade(trade_id),
       raw_promise = nte_quick_proof_raw_trade(trade_id),
       self_name_promise = nte_quick_proof_self_name();
@@ -4737,16 +5996,34 @@
     let received_offer = get_partner_offer_element();
     let gave_items = nte_quick_proof_offer_items(gave_offer);
     let received_items = nte_quick_proof_offer_items(received_offer);
-    if (!gave_items.length && !received_items.length) throw new Error("No trade items found.");
+    if (!gave_items.length && !received_items.length)
+      throw new Error("No trade items found.");
     let gave_total = nte_quick_proof_offer_total(gave_offer, gave_items);
-    let received_total = nte_quick_proof_offer_total(received_offer, received_items);
+    let received_total = nte_quick_proof_offer_total(
+      received_offer,
+      received_items,
+    );
     let partner_name = get_history_trade_partner_name(row);
-    let [list_raw, raw, self_name] = await Promise.all([list_raw_promise, raw_promise, self_name_promise]);
-    let date_text = nte_quick_proof_format_date(nte_quick_proof_trade_time(list_raw, raw, row)) || nte_quick_proof_row_date(row) || "Unknown";
-    let gave_top_item = [...gave_items].sort((a, b) => (b.value || b.rap || 0) - (a.value || a.rap || 0))[0];
-    let received_top_item = [...received_items].sort((a, b) => (b.value || b.rap || 0) - (a.value || a.rap || 0))[0];
+    let [list_raw, raw, self_name] = await Promise.all([
+      list_raw_promise,
+      raw_promise,
+      self_name_promise,
+    ]);
+    let date_text =
+      nte_quick_proof_format_date(
+        nte_quick_proof_trade_time(list_raw, raw, row),
+      ) ||
+      nte_quick_proof_row_date(row) ||
+      "Unknown";
+    let gave_top_item = [...gave_items].sort(
+      (a, b) => (b.value || b.rap || 0) - (a.value || a.rap || 0),
+    )[0];
+    let received_top_item = [...received_items].sort(
+      (a, b) => (b.value || b.rap || 0) - (a.value || a.rap || 0),
+    )[0];
     let gave_top = nte_quick_proof_item_label(gave_top_item) || "No items";
-    let received_top = nte_quick_proof_item_label(received_top_item) || "No items";
+    let received_top =
+      nte_quick_proof_item_label(received_top_item) || "No items";
     let proof_text = `${gave_top} / ${received_top}\n${nte_quick_proof_compact(gave_total)} vs ${nte_quick_proof_compact(received_total)}\nS: ${partner_name}\nR: ${self_name}\nD: ${date_text}`;
     return {
       trade_id,
@@ -4785,7 +6062,8 @@
     return new Promise((resolve, reject) => {
       let reader = new FileReader();
       reader.onload = () => resolve(reader.result || "");
-      reader.onerror = () => reject(reader.error || new Error("Could not read proof asset."));
+      reader.onerror = () =>
+        reject(reader.error || new Error("Could not read proof asset."));
       reader.readAsDataURL(blob);
     });
   }
@@ -4793,31 +6071,47 @@
   async function nte_quick_proof_asset_url(src) {
     src = String(src || "").trim();
     if (!src || src.startsWith("data:")) return src;
-    if (nte_quick_proof_asset_cache[src]) return nte_quick_proof_asset_cache[src];
+    if (nte_quick_proof_asset_cache[src])
+      return nte_quick_proof_asset_cache[src];
     try {
       if (src.startsWith("blob:")) {
         let resp = await fetch(src);
-        if (resp.ok) return (nte_quick_proof_asset_cache[src] = await nte_quick_proof_blob_url(await resp.blob()));
+        if (resp.ok)
+          return (nte_quick_proof_asset_cache[src] =
+            await nte_quick_proof_blob_url(await resp.blob()));
       }
     } catch {}
     try {
-      let result = await nte_quick_proof_message({ type: "quickProofFetchImage", url: src }, 7000);
-      if (result?.ok && result.dataUrl) return (nte_quick_proof_asset_cache[src] = result.dataUrl);
+      let result = await nte_quick_proof_message(
+        { type: "quickProofFetchImage", url: src },
+        7000,
+      );
+      if (result?.ok && result.dataUrl)
+        return (nte_quick_proof_asset_cache[src] = result.dataUrl);
     } catch {}
     return src;
   }
 
   function nte_quick_proof_canvas_blob(canvas) {
     return new Promise((resolve, reject) => {
-      let timer = setTimeout(() => reject(new Error("Proof screenshot export timed out.")), 9000);
+      let timer = setTimeout(
+        () => reject(new Error("Proof screenshot export timed out.")),
+        9000,
+      );
       try {
         canvas.toBlob((blob) => {
           clearTimeout(timer);
-          blob ? resolve(blob) : reject(new Error("Could not create proof screenshot."));
+          blob
+            ? resolve(blob)
+            : reject(new Error("Could not create proof screenshot."));
         }, "image/png");
       } catch (err) {
         clearTimeout(timer);
-        reject(new Error(`Could not create proof screenshot: ${err?.message || err || "canvas export failed"}`));
+        reject(
+          new Error(
+            `Could not create proof screenshot: ${err?.message || err || "canvas export failed"}`,
+          ),
+        );
       }
     });
   }
@@ -4841,17 +6135,17 @@
     }
     if (icon !== "logo") return;
     ctx.save();
-    nte_quick_proof_round(ctx, x, y, size, size, size * .2);
+    nte_quick_proof_round(ctx, x, y, size, size, size * 0.2);
     ctx.fillStyle = "#eef2ff";
     ctx.fill();
     ctx.strokeStyle = "rgba(59,130,246,.45)";
-    ctx.lineWidth = Math.max(1, size * .08);
+    ctx.lineWidth = Math.max(1, size * 0.08);
     ctx.stroke();
     ctx.fillStyle = "#315db8";
-    ctx.font = `900 ${Math.round(size * .58)}px Inter, Segoe UI, Arial, sans-serif`;
+    ctx.font = `900 ${Math.round(size * 0.58)}px Inter, Segoe UI, Arial, sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText("N", x + size / 2, y + size / 2 + size * .03);
+    ctx.fillText("N", x + size / 2, y + size / 2 + size * 0.03);
     ctx.restore();
   }
 
@@ -4871,7 +6165,11 @@
       y = Math.max(pad, canvas.height - size - pad);
     let logo = null;
     if (!no_logo) {
-      if (nte_quick_proof_logo_cache === null) nte_quick_proof_logo_cache = (await nte_quick_proof_safe_image(c.getURL("assets/icons/logo32.png"))) || false;
+      if (nte_quick_proof_logo_cache === null)
+        nte_quick_proof_logo_cache =
+          (await nte_quick_proof_safe_image(
+            c.getURL("assets/icons/logo32.png"),
+          )) || false;
       logo = nte_quick_proof_logo_cache || null;
     }
     ctx.shadowColor = "rgba(0, 0, 0, .65)";
@@ -4886,14 +6184,21 @@
   }
 
   function nte_quick_proof_after_paint() {
-    return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return new Promise((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(resolve)),
+    );
   }
 
   function nte_quick_proof_target() {
     let panels = Array.from(document.querySelectorAll(".trades-list-detail"));
     return panels.find((panel) => {
       let rect = panel.getBoundingClientRect();
-      return rect.width > 80 && rect.height > 80 && getComputedStyle(panel).display !== "none" && !panel.classList.contains("ng-hide");
+      return (
+        rect.width > 80 &&
+        rect.height > 80 &&
+        getComputedStyle(panel).display !== "none" &&
+        !panel.classList.contains("ng-hide")
+      );
     });
   }
 
@@ -4902,17 +6207,26 @@
       toast.__nte_proof_cleanup?.();
       toast.remove();
     });
-    let nodes = Array.from(document.querySelectorAll(".nte-proof-btn, .nte-proof-toast"));
+    let nodes = Array.from(
+      document.querySelectorAll(".nte-proof-btn, .nte-proof-toast"),
+    );
     let old = nodes.map((node) => [node, node.style.visibility]);
     for (let node of nodes) node.style.visibility = "hidden";
     return () => {
-      for (let [node, value] of old) if (node?.isConnected) node.style.visibility = value;
+      for (let [node, value] of old)
+        if (node?.isConnected) node.style.visibility = value;
     };
   }
 
   async function nte_quick_proof_capture_view() {
-    let result = await nte_quick_proof_message({ type: "quickProofCaptureTab" }, 10000);
-    if (!result?.ok || !result.dataUrl) throw new Error(result?.error || "Could not capture the trade screenshot.");
+    let result = await nte_quick_proof_message(
+      { type: "quickProofCaptureTab" },
+      10000,
+    );
+    if (!result?.ok || !result.dataUrl)
+      throw new Error(
+        result?.error || "Could not capture the trade screenshot.",
+      );
     let img = await nte_quick_proof_load_image(result.dataUrl);
     if (!img) throw new Error("Could not load the trade screenshot.");
     return img;
@@ -4932,7 +6246,10 @@
         doc_top = rect.top + window.scrollY,
         width = Math.ceil(rect.width),
         height = Math.ceil(rect.height),
-        max_scroll = Math.max(0, document.documentElement.scrollHeight - window.innerHeight),
+        max_scroll = Math.max(
+          0,
+          document.documentElement.scrollHeight - window.innerHeight,
+        ),
         top_pad = 84,
         bottom_pad = 24,
         y = doc_top,
@@ -4943,11 +6260,18 @@
         output_width = width,
         output_height = height,
         out_y = 0;
-      if (width < 40 || height < 40) throw new Error("The selected trade is too small to capture.");
+      if (width < 40 || height < 40)
+        throw new Error("The selected trade is too small to capture.");
       await nte_quick_proof_after_paint();
       while (y < doc_top + height - 1) {
-        let next_scroll_y = Math.max(0, Math.min(max_scroll, Math.floor(y - top_pad)));
-        if (Math.abs(window.scrollY - next_scroll_y) > 1 || Math.abs(window.scrollX - old_x) > 1) {
+        let next_scroll_y = Math.max(
+          0,
+          Math.min(max_scroll, Math.floor(y - top_pad)),
+        );
+        if (
+          Math.abs(window.scrollY - next_scroll_y) > 1 ||
+          Math.abs(window.scrollX - old_x) > 1
+        ) {
           window.scrollTo(old_x, next_scroll_y);
           await nte_quick_proof_after_paint();
         }
@@ -4957,8 +6281,12 @@
         let source_x = Math.max(0, doc_left - window.scrollX),
           source_y = Math.max(0, y - window.scrollY),
           css_w = Math.min(width, window.innerWidth - source_x),
-          css_h = Math.min(doc_top + height - y, window.innerHeight - source_y - bottom_pad);
-        if (css_w < 20 || css_h < 20) throw new Error("Could not line up the trade screenshot.");
+          css_h = Math.min(
+            doc_top + height - y,
+            window.innerHeight - source_y - bottom_pad,
+          );
+        if (css_w < 20 || css_h < 20)
+          throw new Error("Could not line up the trade screenshot.");
         if (!canvas) {
           output_width = Math.round(css_w * scale_x);
           output_height = Math.round(height * scale_y);
@@ -4967,7 +6295,10 @@
           canvas.height = output_height;
           ctx = canvas.getContext("2d");
         }
-        let draw_h = Math.min(Math.round(css_h * scale_y), output_height - out_y);
+        let draw_h = Math.min(
+          Math.round(css_h * scale_y),
+          output_height - out_y,
+        );
         ctx.drawImage(
           img,
           Math.round(source_x * scale_x),
@@ -4977,7 +6308,7 @@
           0,
           out_y,
           output_width,
-          draw_h
+          draw_h,
         );
         y += draw_h / scale_y;
         out_y += draw_h;
@@ -4993,7 +6324,8 @@
 
   async function nte_quick_proof_safe_image(src) {
     let url = await nte_quick_proof_asset_url(src);
-    if (!/^data:image\/(?:png|jpe?g|webp|gif);/i.test(String(url || ""))) return null;
+    if (!/^data:image\/(?:png|jpe?g|webp|gif);/i.test(String(url || "")))
+      return null;
     try {
       let image = null;
       if (typeof createImageBitmap === "function") {
@@ -5020,7 +6352,9 @@
 
   async function nte_quick_proof_copy_image(blob) {
     if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": blob }),
+      ]);
       return;
     }
     let data_url = await nte_quick_proof_blob_url(blob),
@@ -5029,7 +6363,8 @@
       range = document.createRange(),
       sel = getSelection();
     wrap.contentEditable = "true";
-    wrap.style.cssText = "position:fixed;left:-99999px;top:0;width:1px;height:1px;overflow:hidden;";
+    wrap.style.cssText =
+      "position:fixed;left:-99999px;top:0;width:1px;height:1px;overflow:hidden;";
     img.src = data_url;
     img.alt = "";
     wrap.appendChild(img);
@@ -5039,7 +6374,8 @@
       range.selectNode(img);
       sel?.removeAllRanges();
       sel?.addRange(range);
-      if (!document.execCommand("copy")) throw new Error("Clipboard image copy is not supported here.");
+      if (!document.execCommand("copy"))
+        throw new Error("Clipboard image copy is not supported here.");
     } finally {
       sel?.removeAllRanges();
       wrap.remove();
@@ -5053,13 +6389,24 @@
     btn.classList.add("is-copying");
     btn.textContent = "Preparing...";
     try {
-      let data = await nte_quick_proof_timeout(nte_quick_proof_data(), 15000, "Proof data timed out.");
+      let data = await nte_quick_proof_timeout(
+        nte_quick_proof_data(),
+        15000,
+        "Proof data timed out.",
+      );
       if (/firefox/i.test(navigator.userAgent || "")) {
-        nte_quick_proof_text_toast(data.proof_text, "Image proof is not supported on Firefox");
+        nte_quick_proof_text_toast(
+          data.proof_text,
+          "Image proof is not supported on Firefox",
+        );
         return;
       }
       btn.textContent = "Capturing...";
-      let blob = await nte_quick_proof_timeout(nte_quick_proof_trade_screenshot_blob(), 30000, "Proof screenshot timed out.");
+      let blob = await nte_quick_proof_timeout(
+        nte_quick_proof_trade_screenshot_blob(),
+        30000,
+        "Proof screenshot timed out.",
+      );
       await nte_quick_proof_preview_toast(data.proof_text, blob);
     } finally {
       btn.disabled = false;
@@ -5073,11 +6420,14 @@
   let row_trade_cache = {},
     row_trade_pending = {},
     row_trade_raw_cache =
-      window.__nte_trade_row_raw_cache && "object" == typeof window.__nte_trade_row_raw_cache
+      window.__nte_trade_row_raw_cache &&
+      "object" == typeof window.__nte_trade_row_raw_cache
         ? window.__nte_trade_row_raw_cache
-        : ((window.__nte_trade_row_raw_cache = {}), window.__nte_trade_row_raw_cache),
+        : ((window.__nte_trade_row_raw_cache = {}),
+          window.__nte_trade_row_raw_cache),
     row_script_promise,
     row_fetch_q = [],
+    row_fetch_fast_q = [],
     row_active_requests = 0,
     row_next_request_at = 0;
   let TRADE_LIST_FILTER_OPTIONS = [
@@ -5136,7 +6486,8 @@
       let end = names.indexOf("|", start);
       if (end === -1) end = len;
       let item_name = names.substring(start, end);
-      if (item_name && does_item_name_match_search_fast(item_name, sc)) return true;
+      if (item_name && does_item_name_match_search_fast(item_name, sc))
+        return true;
       start = end + 1;
     }
     return false;
@@ -5172,14 +6523,34 @@
     return null;
   }
   function X(e) {
-    let t = e?.userAssets || e?.assets || e?.userItems || e?.items || e?.userCollectibles || e?.collectibles || [];
+    let t =
+      e?.userAssets ||
+      e?.assets ||
+      e?.userItems ||
+      e?.items ||
+      e?.userCollectibles ||
+      e?.collectibles ||
+      [];
     return Array.isArray(t) ? t : [];
   }
   function Z(e) {
-    return e.querySelector(".trade-row-details") || e.querySelector(".trade-row-info") || e.querySelector(".trade-row-summary") || e;
+    return (
+      e.querySelector(".trade-row-details") ||
+      e.querySelector(".trade-row-info") ||
+      e.querySelector(".trade-row-summary") ||
+      e
+    );
   }
   function get_trade_row_item_id(e) {
-    let t = e?.assetId ?? e?.itemTarget?.targetId ?? e?.targetId ?? e?.itemId ?? e?.asset?.id ?? e?.item?.id ?? e?.collectibleItemId ?? e?.id;
+    let t =
+      e?.assetId ??
+      e?.itemTarget?.targetId ??
+      e?.targetId ??
+      e?.itemId ??
+      e?.asset?.id ??
+      e?.item?.id ??
+      e?.collectibleItemId ??
+      e?.id;
     if (null == t) return void 0;
     let r = parseInt(t, 10);
     return isNaN(r) ? void 0 : r;
@@ -5198,11 +6569,15 @@
         offers: [
           {
             robux: e.participantAOffer?.robux || 0,
-            items: Array.isArray(e.participantAOffer?.items) ? e.participantAOffer.items : [],
+            items: Array.isArray(e.participantAOffer?.items)
+              ? e.participantAOffer.items
+              : [],
           },
           {
             robux: e.participantBOffer?.robux || 0,
-            items: Array.isArray(e.participantBOffer?.items) ? e.participantBOffer.items : [],
+            items: Array.isArray(e.participantBOffer?.items)
+              ? e.participantBOffer.items
+              : [],
           },
         ],
       };
@@ -5222,7 +6597,8 @@
   function set_trade_row_cached_trade(e, t) {
     let r = String(e || "");
     if (!r) return null;
-    let n = t && "object" == typeof t ? set_trade_row_raw_cache_entry(r, t) : null,
+    let n =
+        t && "object" == typeof t ? set_trade_row_raw_cache_entry(r, t) : null,
       a = normalize_trade_row(n || t);
     return a ? (row_trade_cache[r] = a) : null;
   }
@@ -5249,9 +6625,13 @@
     for (let r of Array.isArray(e) ? e : []) {
       let e = parseInt(r?.targetId ?? r, 10);
       if (!(e > 0)) continue;
-      let n = "BundleThumbnail" === String(r?.type || "").trim() ? "BundleThumbnail" : "Asset",
+      let n =
+          "BundleThumbnail" === String(r?.type || "").trim()
+            ? "BundleThumbnail"
+            : "Asset",
         a = `${n}:${e}`;
-      t.some((e) => `${e.type}:${e.targetId}` === a) || t.push({ type: n, targetId: String(e) });
+      t.some((e) => `${e.type}:${e.targetId}` === a) ||
+        t.push({ type: n, targetId: String(e) });
     }
     if (!t.length) return;
     try {
@@ -5267,42 +6647,71 @@
     t.length && dispatch_trade_row_thumb_prewarm(t);
   }
   function process_row_fetch_q() {
-    if (row_active_requests >= 2 || 0 === row_fetch_q.length) return;
-    let { tradeId: e, resolve: t } = row_fetch_q.shift(),
+    if (row_active_requests >= 3) return;
+    let q = row_fetch_fast_q.length ? row_fetch_fast_q : row_fetch_q;
+    if (0 === q.length) return;
+    let { tradeId: e, resolve: t } = q.shift(),
       r = Math.max(0, row_next_request_at - Date.now());
     row_active_requests++,
       (row_next_request_at = Date.now() + r + 100),
       setTimeout(async () => {
         let r = null;
         try {
-          let t = await fetch_trade_api(`https://trades.roblox.com/v2/trades/${e}`, {
-            credentials: "include",
-          });
+          let t = await fetch_trade_api(
+            `https://trades.roblox.com/v2/trades/${e}`,
+            {
+              credentials: "include",
+            },
+          );
           200 === t.status
             ? (r = await t.json())
             : 429 === t.status
-              ? (row_next_request_at = Math.max(row_next_request_at, Date.now() + 10000))
+              ? (row_next_request_at = Math.max(
+                  row_next_request_at,
+                  Date.now() + 10000,
+                ))
               : 404 !== t.status &&
-                ((t = await fetch_trade_api(`https://trades.roblox.com/v1/trades/${e}`, {
-                  credentials: "include",
-                })),
+                ((t = await fetch_trade_api(
+                  `https://trades.roblox.com/v1/trades/${e}`,
+                  {
+                    credentials: "include",
+                  },
+                )),
                 200 === t.status && (r = await t.json()));
         } catch {}
         if (r) {
-          let _tab = new URLSearchParams(window.location.search).get("tab") || "inbound";
-          let _type = { inbound: "inbound", outbound: "outbound", completed: "completed", inactive: "inactive" }[_tab.toLowerCase()] || "inbound";
-          if (!r.status) r.status = { inbound: "Open", outbound: "Open", completed: "Completed", inactive: "Inactive" }[_type] || "Open";
+          let _tab =
+            new URLSearchParams(window.location.search).get("tab") || "inbound";
+          let _type =
+            {
+              inbound: "inbound",
+              outbound: "outbound",
+              completed: "completed",
+              inactive: "inactive",
+            }[_tab.toLowerCase()] || "inbound";
+          if (!r.status)
+            r.status =
+              {
+                inbound: "Open",
+                outbound: "Open",
+                completed: "Completed",
+                inactive: "Inactive",
+              }[_type] || "Open";
           if (!r.tradeType) r.tradeType = _type;
-          nte_send_message({ type: "cacheTrade", tradeId: e, trade: r }, function () {});
+          nte_send_message(
+            { type: "cacheTrade", tradeId: e, trade: r },
+            function () {},
+          );
         }
         let n = set_trade_row_cached_trade(e, r);
         n && prewarm_trade_row_thumbnails(n).catch(() => {});
         t(n), row_active_requests--, process_row_fetch_q();
       }, r);
   }
-  function queue_row_fetch(e) {
+  function queue_row_fetch(e, fast = !1) {
     return new Promise((t) => {
-      row_fetch_q.push({ tradeId: e, resolve: t }), process_row_fetch_q();
+      (fast ? row_fetch_fast_q : row_fetch_q).push({ tradeId: e, resolve: t }),
+        process_row_fetch_q();
     });
   }
   async function Y() {
@@ -5340,13 +6749,13 @@
     }
     return null;
   }
-  async function K(e, t) {
+  async function K(e, t, fast = !1) {
     if (!(e = String(e || ""))) return null;
     if (row_trade_cache[e]) return row_trade_cache[e];
     let r = t?.[e] || t?.[Number(e)];
     if (r) return set_trade_row_cached_trade(e, r);
     if (row_trade_pending[e]) return row_trade_pending[e];
-    return (row_trade_pending[e] = queue_row_fetch(e)
+    return (row_trade_pending[e] = queue_row_fetch(e, fast)
       .then((t) => {
         return t || row_trade_cache[e] || null;
       })
@@ -5355,15 +6764,27 @@
       }));
   }
   function get_trade_list_filter_option(e) {
-    return TRADE_LIST_FILTER_OPTIONS.find((t) => t.value === e) || TRADE_LIST_FILTER_OPTIONS[0];
+    return (
+      TRADE_LIST_FILTER_OPTIONS.find((t) => t.value === e) ||
+      TRADE_LIST_FILTER_OPTIONS[0]
+    );
   }
   function get_trade_list_filter_anchor() {
     let e = document.querySelector(".trade-row-list");
     if (!e) return null;
-    return e.querySelector(".trade-quality") || e.querySelector(".trades-header") || e.firstElementChild || e;
+    return (
+      e.querySelector(".trade-quality") ||
+      e.querySelector(".trades-header") ||
+      e.firstElementChild ||
+      e
+    );
   }
   function get_trade_list_scroll_element() {
-    return document.querySelector("#trade-row-scroll-container .simplebar-content-wrapper") || document.getElementById("trade-row-scroll-container");
+    return (
+      document.querySelector(
+        "#trade-row-scroll-container .simplebar-content-wrapper",
+      ) || document.getElementById("trade-row-scroll-container")
+    );
   }
   function get_trade_rows_for_processing() {
     let e = [...document.querySelectorAll(".trade-row-list .trade-row")];
@@ -5376,15 +6797,45 @@
     if ("all" !== fv) return e;
     let t = get_trade_list_scroll_element();
     if (!t) return e.slice(0, 14);
-    let r = t.getBoundingClientRect(),
-      n = r.top - 140,
-      a = r.bottom + 220,
-      o = e.filter((e) => {
-        if (e.classList?.contains("selected")) return !0;
-        let t = e.getBoundingClientRect();
-        return t.bottom >= n && t.top <= a;
-      });
+    let scrollTop = t.scrollTop,
+      scrollBottom = scrollTop + t.clientHeight,
+      n = scrollTop - 140,
+      a = scrollBottom + 220,
+      rowList = t.querySelector(".trade-row-list"),
+      listOffset = 0;
+    if (rowList) {
+      let el = rowList;
+      while (el && el !== t) {
+        listOffset += el.offsetTop;
+        el = el.offsetParent;
+      }
+    }
+    let o = e.filter((e) => {
+      if (e.classList?.contains("selected")) return !0;
+      let rowTop = listOffset + e.offsetTop;
+      let rowBottom = rowTop + e.offsetHeight;
+      return rowBottom >= n && rowTop <= a;
+    });
     return o.length ? o : e.slice(0, 14);
+  }
+  function sort_trade_rows_by_viewport_priority(rows) {
+    let scroll = get_trade_list_scroll_element();
+    if (!scroll) return rows;
+    let list = document.querySelector(".trade-row-list");
+    let listOffset = 0;
+    if (list) {
+      let el = list;
+      while (el && el !== scroll) {
+        listOffset += el.offsetTop;
+        el = el.offsetParent;
+      }
+    }
+    let viewCenter = scroll.scrollTop + scroll.clientHeight / 2;
+    return [...rows].sort((a, b) => {
+      let ca = listOffset + a.offsetTop + a.offsetHeight / 2;
+      let cb = listOffset + b.offsetTop + b.offsetHeight / 2;
+      return Math.abs(ca - viewCenter) - Math.abs(cb - viewCenter);
+    });
   }
   function bind_trade_list_scroll_refresh() {
     let e = get_trade_list_scroll_element();
@@ -5403,8 +6854,11 @@
     );
   }
   function clear_trade_list_filter_ui() {
-    document.getElementById("nteTradeListFilter")?.remove(), document.getElementById("nteTradeFocusSelectedBar")?.remove(), document.getElementById("nteTradeListFilterEmpty")?.remove();
-    for (let e of document.querySelectorAll(".trade-row-list .trade-row")) e.style.display = "";
+    document.getElementById("nteTradeListFilter")?.remove(),
+      document.getElementById("nteTradeFocusSelectedBar")?.remove(),
+      document.getElementById("nteTradeListFilterEmpty")?.remove();
+    for (let e of document.querySelectorAll(".trade-row-list .trade-row"))
+      e.style.display = "";
     trade_focus_selected_only = !1;
     trade_search_q = "";
   }
@@ -5418,14 +6872,19 @@
       t = document.getElementById("nteTradeListFilterLabel");
     t && (t.textContent = e.label);
     for (let t of document.querySelectorAll("#nteTradeListFilterMenu li"))
-      t.classList.toggle("active", t.getAttribute("data-value") === trade_filter_state.value);
+      t.classList.toggle(
+        "active",
+        t.getAttribute("data-value") === trade_filter_state.value,
+      );
     sync_trade_focus_button();
   }
   function has_selected_trade_row() {
     return !!document.querySelector(".trade-row-list .trade-row.selected");
   }
   function should_show_trade_row(row, base_match) {
-    return trade_focus_selected_only ? row.classList.contains("selected") : base_match;
+    return trade_focus_selected_only
+      ? row.classList.contains("selected")
+      : base_match;
   }
   function sync_trade_focus_button() {
     let btn = document.getElementById("nteTradeFocusSelectedBtn");
@@ -5433,8 +6892,15 @@
     let has_selected = has_selected_trade_row();
     btn.textContent = trade_focus_selected_only ? "Show all" : "Hide others";
     btn.disabled = !has_selected;
-    btn.setAttribute("aria-pressed", trade_focus_selected_only ? "true" : "false");
-    btn.style.opacity = has_selected ? (trade_focus_selected_only ? "1" : "0.88") : "0.45";
+    btn.setAttribute(
+      "aria-pressed",
+      trade_focus_selected_only ? "true" : "false",
+    );
+    btn.style.opacity = has_selected
+      ? trade_focus_selected_only
+        ? "1"
+        : "0.88"
+      : "0.45";
     btn.style.cursor = has_selected ? "pointer" : "default";
   }
   function bind_trade_focus_selected_observer() {
@@ -5443,7 +6909,10 @@
     if (!list) return;
     let timer = 0;
     trade_focus_selected_observer = new MutationObserver((mutations) => {
-      let needs_sync = mutations.some((mutation) => mutation.type === "childList" || mutation.attributeName === "class");
+      let needs_sync = mutations.some(
+        (mutation) =>
+          mutation.type === "childList" || mutation.attributeName === "class",
+      );
       if (!needs_sync) return;
       clearTimeout(timer);
       timer = setTimeout(() => {
@@ -5451,7 +6920,12 @@
         trade_focus_selected_only && apply_trade_list_filter();
       }, 30);
     });
-    trade_focus_selected_observer.observe(list, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
+    trade_focus_selected_observer.observe(list, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
   }
   function show_trade_list_search_input() {
     let dd = document.querySelector("#nteTradeListFilter .input-group-btn");
@@ -5469,7 +6943,8 @@
     let icon = document.createElement("span");
     icon.innerHTML =
       '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:0.35"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>';
-    icon.style.cssText = "position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;display:flex;align-items:center;";
+    icon.style.cssText =
+      "position:absolute;left:10px;top:50%;transform:translateY(-50%);pointer-events:none;display:flex;align-items:center;";
     let input = document.createElement("input");
     input.type = "text";
     input.placeholder = "Item name or acronym...";
@@ -5665,10 +7140,15 @@
           e.preventDefault(),
             e.stopPropagation(),
             (a.style.display = "none" === a.style.display ? "block" : "none"),
-            n.setAttribute("aria-expanded", "block" === a.style.display ? "true" : "false");
+            n.setAttribute(
+              "aria-expanded",
+              "block" === a.style.display ? "true" : "false",
+            );
         }),
         a.addEventListener("click", (e) => {
-          let t = e.target?.closest?.("[data-value]")?.getAttribute("data-value");
+          let t = e.target
+            ?.closest?.("[data-value]")
+            ?.getAttribute("data-value");
           if (!t) return;
           e.preventDefault();
           close_trade_list_filter_menu();
@@ -5689,23 +7169,38 @@
                 sync_trade_focus_button();
                 trade_focus_selected_only && apply_trade_list_filter();
               }, 0);
-            document.getElementById("nteTradeListFilter")?.contains?.(e.target) || close_trade_list_filter_menu();
+            document
+              .getElementById("nteTradeListFilter")
+              ?.contains?.(e.target) || close_trade_list_filter_menu();
           }),
           (trade_filter_bound = !0))),
         e.insertAdjacentElement("afterend", r);
     }
     if (!r || !t) return r;
-    if (r.previousElementSibling !== e && e.parentElement) e.insertAdjacentElement("afterend", r);
-    let focus_bar = document.getElementById("nteTradeFocusSelectedBar") || r._nte_focus_bar;
+    if (r.previousElementSibling !== e && e.parentElement)
+      e.insertAdjacentElement("afterend", r);
+    let focus_bar =
+      document.getElementById("nteTradeFocusSelectedBar") || r._nte_focus_bar;
     if (!focus_bar) {
       focus_bar = document.createElement("div");
       focus_bar.id = "nteTradeFocusSelectedBar";
       focus_bar.style.cssText =
         "width:100%;display:flex;align-items:center;justify-content:flex-start;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
     }
-    let scroll_container = document.getElementById("trade-row-scroll-container");
-    if (scroll_container?.parentElement && focus_bar.previousElementSibling !== scroll_container) scroll_container.insertAdjacentElement("afterend", focus_bar);
-    else if (!scroll_container && focus_bar.previousElementSibling !== r && r.parentElement) r.insertAdjacentElement("afterend", focus_bar);
+    let scroll_container = document.getElementById(
+      "trade-row-scroll-container",
+    );
+    if (
+      scroll_container?.parentElement &&
+      focus_bar.previousElementSibling !== scroll_container
+    )
+      scroll_container.insertAdjacentElement("afterend", focus_bar);
+    else if (
+      !scroll_container &&
+      focus_bar.previousElementSibling !== r &&
+      r.parentElement
+    )
+      r.insertAdjacentElement("afterend", focus_bar);
     bind_trade_focus_selected_observer();
     return sync_trade_list_filter_ui_state(), r;
   }
@@ -5726,7 +7221,9 @@
           s = V(n),
           d = n?.recentAveragePrice,
           u = get_trade_search_item_meta({ targetId: a, name: s, rap: d });
-        (t += c.getValueOrRAP(a, s, d)), (o = o || !!u?.isProjected), (i = i || !!u?.isRare);
+        (t += c.getValueOrRAP(a, s, d)),
+          (o = o || !!u?.isProjected),
+          (i = i || !!u?.isRare);
       }
       return t;
     }
@@ -5753,7 +7250,8 @@
     t
       ? ((e.dataset.nteTradeReady = "1"),
         (e.dataset.nteTradeDelta = String(t.delta || 0)),
-        (e.dataset.nteTradePct = null == t.percent || !isFinite(t.percent) ? "" : String(t.percent)),
+        (e.dataset.nteTradePct =
+          null == t.percent || !isFinite(t.percent) ? "" : String(t.percent)),
         (e.dataset.nteTradeGiveCount = String(t.giveItemCount || 0)),
         (e.dataset.nteTradeReceiveCount = String(t.receiveItemCount || 0)),
         (e.dataset.nteTradeProjected = t.hasProjected ? "1" : "0"),
@@ -5802,7 +7300,10 @@
     return filter_pass;
   }
   function sync_trade_list_empty_state(e, t) {
-    let r = document.querySelector("#trade-row-scroll-container .simplebar-content") || document.getElementById("trade-row-scroll-container");
+    let r =
+      document.querySelector(
+        "#trade-row-scroll-container .simplebar-content",
+      ) || document.getElementById("trade-row-scroll-container");
     if (!r) return;
     let n = document.getElementById("nteTradeListFilterEmpty");
     n ||
@@ -5845,7 +7346,9 @@
     sync_trade_list_empty_state(total, shown);
   }
   function apply_trade_list_filter() {
-    let e = document.getElementById("nteTradeListFilter") || ensure_trade_list_filter_ui();
+    let e =
+      document.getElementById("nteTradeListFilter") ||
+      ensure_trade_list_filter_ui();
     let t = document.querySelectorAll(".trade-row-list .trade-row");
     if (!e || !t.length) return sync_trade_list_empty_state(0, 0), void 0;
     let fv = trade_filter_state.value;
@@ -5868,7 +7371,8 @@
   }
   function reset_trade_row_status_hint_flex(el) {
     if (!el) return;
-    if (el.querySelector(".nte-trade-row-decline-wrap")) return void apply_trade_row_status_hint_row_flex(el);
+    if (el.querySelector(".nte-trade-row-decline-wrap"))
+      return void apply_trade_row_status_hint_row_flex(el);
     let line = el.querySelector(".nte-trade-row-status-line");
     if (line?.parentNode === el) {
       while (line.firstChild) el.insertBefore(line.firstChild, line);
@@ -5898,7 +7402,9 @@
         if (node === line || node === decline_wrap) continue;
         line.appendChild(node);
       }
-      decline_wrap && line.nextSibling !== decline_wrap && el.insertBefore(line, decline_wrap);
+      decline_wrap &&
+        line.nextSibling !== decline_wrap &&
+        el.insertBefore(line, decline_wrap);
     }
     (el.style.display = "inline-flex"),
       (el.style.alignItems = "flex-start"),
@@ -5913,12 +7419,17 @@
     return line;
   }
   function remove_trade_row_rolimons_links() {
-    for (let link of [...document.querySelectorAll("a.nte-trade-row-rolimons-link")]) {
+    for (let link of [
+      ...document.querySelectorAll("a.nte-trade-row-rolimons-link"),
+    ]) {
       let parent = link.parentElement;
       link.remove();
-      parent?.classList.contains("text-date-hint") && reset_trade_row_status_hint_flex(parent);
+      parent?.classList.contains("text-date-hint") &&
+        reset_trade_row_status_hint_flex(parent);
     }
-    for (let wrap of [...document.querySelectorAll(".nte-trade-row-name-inline")])
+    for (let wrap of [
+      ...document.querySelectorAll(".nte-trade-row-name-inline"),
+    ])
       if (1 === wrap.childElementCount && wrap.querySelector(".text-lead")) {
         let name_el = wrap.querySelector(".text-lead");
         wrap.parentNode.insertBefore(name_el, wrap);
@@ -5935,20 +7446,29 @@
   }
   function ensure_trade_row_rolimons_link(row) {
     if (!row?.querySelector) return;
-    let href = row.querySelector(".avatar-card-link")?.getAttribute("href") || "",
+    let href =
+        row.querySelector(".avatar-card-link")?.getAttribute("href") || "",
       m = href.match(/\/users\/(\d+)\//);
     if (!m) return;
     let user_id = m[1];
     unwrap_trade_row_name_inline(row);
-    let status_hint = row.querySelector(".text-date-hint:not(.trade-sent-date)") || row.querySelector(".text-date-hint");
+    let status_hint =
+      row.querySelector(".text-date-hint:not(.trade-sent-date)") ||
+      row.querySelector(".text-date-hint");
     if (!status_hint) return;
-    let existing_hint = status_hint.querySelector("a.nte-trade-row-rolimons-link");
-    if (existing_hint && existing_hint.getAttribute("data-nte-user-id") === user_id) {
+    let existing_hint = status_hint.querySelector(
+      "a.nte-trade-row-rolimons-link",
+    );
+    if (
+      existing_hint &&
+      existing_hint.getAttribute("data-nte-user-id") === user_id
+    ) {
       for (let link of row.querySelectorAll("a.nte-trade-row-rolimons-link"))
         if (link !== existing_hint) {
           let parent = link.parentElement;
           link.remove();
-          parent?.classList.contains("text-date-hint") && reset_trade_row_status_hint_flex(parent);
+          parent?.classList.contains("text-date-hint") &&
+            reset_trade_row_status_hint_flex(parent);
         }
       existing_hint.removeAttribute("data-toggle"),
         existing_hint.removeAttribute("title"),
@@ -5966,7 +7486,8 @@
     for (let link of row.querySelectorAll("a.nte-trade-row-rolimons-link")) {
       let parent = link.parentElement;
       link.remove();
-      parent?.classList.contains("text-date-hint") && reset_trade_row_status_hint_flex(parent);
+      parent?.classList.contains("text-date-hint") &&
+        reset_trade_row_status_hint_flex(parent);
     }
     let a = document.createElement("a");
     (a.className = "nte-trade-row-rolimons-link"),
@@ -5982,8 +7503,12 @@
       (a.style.textDecoration = "none"),
       (a.style.flexShrink = "0");
     let icon = document.createElement("span"),
-      svg_asset = "dark" === c.getColorMode() ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
-    (icon.style.backgroundImage = "url(" + JSON.stringify(c.getURL(`assets/${svg_asset}`)) + ")"),
+      svg_asset =
+        "dark" === c.getColorMode()
+          ? "rolimonsLink.svg"
+          : "rolimonsLinkDark.svg";
+    (icon.style.backgroundImage =
+      "url(" + JSON.stringify(c.getURL(`assets/${svg_asset}`)) + ")"),
       (icon.className = "icon icon-link"),
       (icon.style.display = "inline-block"),
       (icon.style.backgroundSize = "cover"),
@@ -6004,7 +7529,9 @@
     (status_line || status_hint).appendChild(a);
   }
   function remove_trade_row_decline_buttons(scope = document) {
-    for (let wrap of [...scope.querySelectorAll(".nte-trade-row-decline-wrap")]) {
+    for (let wrap of [
+      ...scope.querySelectorAll(".nte-trade-row-decline-wrap"),
+    ]) {
       let row = wrap.closest(".trade-row");
       let status_hint = wrap.closest(".text-date-hint");
       row?.classList.remove("nte-trade-row-has-decline");
@@ -6014,7 +7541,9 @@
   }
   function remove_trade_row_decline_button(row) {
     if (!row?.querySelector) return;
-    let status_hint = row.querySelector(".nte-trade-row-decline-wrap")?.closest(".text-date-hint");
+    let status_hint = row
+      .querySelector(".nte-trade-row-decline-wrap")
+      ?.closest(".text-date-hint");
     row.classList.remove("nte-trade-row-has-decline");
     row.querySelector(".nte-trade-row-decline-wrap")?.remove();
     status_hint && reset_trade_row_status_hint_flex(status_hint);
@@ -6032,18 +7561,27 @@
   }
   function prime_trade_row_id(row) {
     if (!row?.isConnected) return;
-    if (get_selected_trade_id_sync(row) || row.getAttribute("data-nru-row-token")) return;
+    if (
+      get_selected_trade_id_sync(row) ||
+      row.getAttribute("data-nru-row-token")
+    )
+      return;
     let index = get_trade_row_index(row);
     if (index < 0) return;
     H(row, index).catch(() => {});
   }
   function get_trade_row_index(row) {
-    return [...document.querySelectorAll(".trade-row-list .trade-row")].indexOf(row);
+    return [...document.querySelectorAll(".trade-row-list .trade-row")].indexOf(
+      row,
+    );
   }
   function get_trade_row_cached_trade(trade_id, saved_trades = null) {
     let key = String(trade_id || "");
     if (!key) return null;
-    let raw = get_trade_row_raw_cache_entry(key) || saved_trades?.[key] || saved_trades?.[trade_id];
+    let raw =
+      get_trade_row_raw_cache_entry(key) ||
+      saved_trades?.[key] ||
+      saved_trades?.[trade_id];
     if (raw) return set_trade_row_cached_trade(key, raw);
     return row_trade_cache[key] || null;
   }
@@ -6056,7 +7594,10 @@
     }
     if (!trade_id) return;
     let trade = get_trade_row_cached_trade(trade_id);
-    trade || (trade = !row_trade_pending[trade_id] ? await K(trade_id).catch(() => null) : await row_trade_pending[trade_id].catch(() => null));
+    trade ||
+      (trade = !row_trade_pending[trade_id]
+        ? await K(trade_id).catch(() => null)
+        : await row_trade_pending[trade_id].catch(() => null));
     trade && prewarm_trade_row_thumbnails(trade).catch(() => {});
   }
   let trade_row_detail_prewarm_bound = false;
@@ -6064,7 +7605,10 @@
     if (trade_row_detail_prewarm_bound) return;
     trade_row_detail_prewarm_bound = true;
     let handler = (event) => {
-      let row = event.target instanceof Element ? event.target.closest(".trade-row-list .trade-row") : null;
+      let row =
+        event.target instanceof Element
+          ? event.target.closest(".trade-row-list .trade-row")
+          : null;
       row && prewarm_trade_row_detail(row);
     };
     document.addEventListener("pointerover", handler, true);
@@ -6076,15 +7620,21 @@
   let trade_row_view_prewarm_running = false;
   function schedule_trade_row_view_prewarm(delay = 0) {
     clearTimeout(trade_row_view_prewarm_timer);
-    trade_row_view_prewarm_timer = setTimeout(run_trade_row_view_prewarm, delay);
+    trade_row_view_prewarm_timer = setTimeout(
+      run_trade_row_view_prewarm,
+      delay,
+    );
   }
   async function run_trade_row_view_prewarm() {
     if (trade_row_view_prewarm_running) return;
     trade_row_view_prewarm_running = true;
     try {
       let retry = false;
-      for (let row of get_trade_rows_for_processing().slice(0, 14)) {
-        get_selected_trade_id_sync(row) || ((retry = true), prime_trade_row_id(row));
+      let rows = document.querySelectorAll(".trade-row-list .trade-row");
+      for (let i = 0; i < rows.length && i < 14; i++) {
+        let row = rows[i];
+        get_selected_trade_id_sync(row) ||
+          ((retry = true), prime_trade_row_id(row));
         prewarm_trade_row_detail(row).catch(() => {});
       }
       retry && schedule_trade_row_view_prewarm(350);
@@ -6109,7 +7659,8 @@
   }
   async function sync_trade_row_decline_button(row, saved_trades = null) {
     if (!row?.querySelector) return;
-    if (!trade_row_decline_enabled || !is_trade_row_decline_tab()) return void remove_trade_row_decline_button(row);
+    if (!trade_row_decline_enabled || !is_trade_row_decline_tab())
+      return void remove_trade_row_decline_button(row);
     prime_trade_row_decline();
     let trade_id = get_selected_trade_id_sync(row);
     if (!trade_id) {
@@ -6131,11 +7682,18 @@
         resolve(result || { ok: false, status: 0, error: "No response." });
       };
       setTimeout(() => {
-        finish({ ok: false, status: 0, error: "Decline timed out. Try again." });
+        finish({
+          ok: false,
+          status: 0,
+          error: "Decline timed out. Try again.",
+        });
       }, 15000);
-      nte_send_message({ type: "trade_row_decline", trade_id }, function (result) {
-        finish(result);
-      });
+      nte_send_message(
+        { type: "trade_row_decline", trade_id },
+        function (result) {
+          finish(result);
+        },
+      );
     });
   }
   function set_trade_row_decline_button_state(btn, state, detail = "") {
@@ -6165,19 +7723,29 @@
   function get_adjacent_trade_row(row) {
     let next = row?.nextElementSibling;
     while (next) {
-      if (next.classList?.contains("trade-row") && "none" !== next.style.display) return next;
+      if (
+        next.classList?.contains("trade-row") &&
+        "none" !== next.style.display
+      )
+        return next;
       next = next.nextElementSibling;
     }
     let prev = row?.previousElementSibling;
     while (prev) {
-      if (prev.classList?.contains("trade-row") && "none" !== prev.style.display) return prev;
+      if (
+        prev.classList?.contains("trade-row") &&
+        "none" !== prev.style.display
+      )
+        return prev;
       prev = prev.previousElementSibling;
     }
     return null;
   }
   function remove_trade_row_after_decline(row, trade_id) {
     if (!row) return;
-    let next_row = row.classList.contains("selected") ? get_adjacent_trade_row(row) : null;
+    let next_row = row.classList.contains("selected")
+      ? get_adjacent_trade_row(row)
+      : null;
     if (trade_id) {
       delete row_trade_cache[trade_id];
       delete row_trade_pending[trade_id];
@@ -6211,16 +7779,24 @@
     let wrap = row.querySelector(".nte-trade-row-decline-wrap");
     if (!wrap) return;
     let box = row.querySelector(".tradeListValuesBox");
-    let summary_width = box ? Math.ceil(box.getBoundingClientRect().width || box.offsetWidth || 0) : 0;
+    let summary_width = box
+      ? Math.ceil(box.getBoundingClientRect().width || box.offsetWidth || 0)
+      : 0;
     let gap = summary_width > 0 ? 6 : 8;
-    wrap.style.right = summary_width > 0 ? `${summary_width + gap}px` : `${gap}px`;
+    wrap.style.right =
+      summary_width > 0 ? `${summary_width + gap}px` : `${gap}px`;
     wrap.style.bottom = "6px";
   }
   function ensure_trade_row_decline_button(row) {
     if (!row?.querySelector) return;
     let trade_id = get_selected_trade_id_sync(row);
     let wrap = row.querySelector(".nte-trade-row-decline-wrap");
-    if (!trade_row_decline_enabled || !is_trade_row_decline_tab() || !trade_id || !get_trade_row_cached_trade(trade_id)) {
+    if (
+      !trade_row_decline_enabled ||
+      !is_trade_row_decline_tab() ||
+      !trade_id ||
+      !get_trade_row_cached_trade(trade_id)
+    ) {
       remove_trade_row_decline_button(row);
       return;
     }
@@ -6236,7 +7812,16 @@
       btn = document.createElement("button");
       btn.type = "button";
       btn.className = "nte-trade-row-decline";
-      for (let ev of ["click", "mousedown", "mouseup", "pointerdown", "pointerup", "touchstart", "touchend", "dblclick"]) {
+      for (let ev of [
+        "click",
+        "mousedown",
+        "mouseup",
+        "pointerdown",
+        "pointerup",
+        "touchstart",
+        "touchend",
+        "dblclick",
+      ]) {
         btn.addEventListener(ev, (event) => {
           event.stopPropagation();
         });
@@ -6248,7 +7833,11 @@
         set_trade_row_decline_button_state(btn, "pending");
         let trade_id = get_selected_trade_id_sync(current_row);
         if (!trade_id || !get_trade_row_cached_trade(trade_id)) {
-          set_trade_row_decline_button_state(btn, "error", "Trade data is not ready yet.");
+          set_trade_row_decline_button_state(
+            btn,
+            "error",
+            "Trade data is not ready yet.",
+          );
           setTimeout(() => {
             btn.isConnected && set_trade_row_decline_button_state(btn, "idle");
           }, 1800);
@@ -6260,7 +7849,11 @@
           remove_trade_row_after_decline(current_row, trade_id);
           return;
         }
-        set_trade_row_decline_button_state(btn, "error", result?.error || "Decline failed.");
+        set_trade_row_decline_button_state(
+          btn,
+          "error",
+          result?.error || "Decline failed.",
+        );
         setTimeout(() => {
           btn.isConnected && set_trade_row_decline_button_state(btn, "idle");
         }, 1800);
@@ -6292,10 +7885,14 @@
   }
   async function L_inner() {
     let e = await c.getOption("Values on Trade Lists");
-    trade_row_decline_enabled = false !== (await c.getOption("Show Quick Decline Button"));
-    let quick_decline_tab = trade_row_decline_enabled && is_trade_row_decline_tab();
+    trade_row_decline_enabled =
+      false !== (await c.getOption("Show Quick Decline Button"));
+    let quick_decline_tab =
+      trade_row_decline_enabled && is_trade_row_decline_tab();
     quick_decline_tab && prime_trade_row_decline();
-    document.getElementById("nteTradeListFilter") || ensure_trade_list_filter_ui() || document.getElementById("nteTradeListFilterEmpty")?.remove();
+    document.getElementById("nteTradeListFilter") ||
+      ensure_trade_list_filter_ui() ||
+      document.getElementById("nteTradeListFilterEmpty")?.remove();
     bind_trade_list_scroll_refresh();
     bind_trade_row_detail_prewarm();
     bind_trade_row_view_prewarm();
@@ -6303,11 +7900,18 @@
     e ||
       (function () {
         for (let e of document.querySelectorAll(".tradeListValuesBox"))
-          e.parentElement.parentElement.parentElement.removeAttribute("nruTradeId"), e.remove();
+          e.parentElement.parentElement.parentElement.removeAttribute(
+            "nruTradeId",
+          ),
+            e.remove();
       })();
     if (!e && "all" === trade_filter_state.value && !trade_search_q) {
       await c.waitForElm(".trade-row");
-      let saved_trades = quick_decline_tab ? (await new Promise((resolve) => nte_send_message("getTradeListData", resolve))) || {} : null;
+      let saved_trades = quick_decline_tab
+        ? (await new Promise((resolve) =>
+            nte_send_message("getTradeListData", resolve),
+          )) || {}
+        : null;
       let pl = await c.getOption("Add User Profile Links");
       let rows = get_trade_rows_for_processing();
       if (pl) {
@@ -6315,7 +7919,9 @@
         c.initTooltips();
       } else remove_trade_row_rolimons_links();
       if (quick_decline_tab) {
-        await Promise.all(rows.map((row) => sync_trade_row_decline_button(row, saved_trades)));
+        await Promise.all(
+          rows.map((row) => sync_trade_row_decline_button(row, saved_trades)),
+        );
       } else remove_trade_row_decline_buttons();
       return apply_trade_list_filter();
     }
@@ -6331,13 +7937,18 @@
           a || (await H(t, n));
           a = await J(t);
           if (!a) return;
-          let l = await K(a, r);
-          quick_decline_tab && (l ? ensure_trade_row_decline_button(t) : remove_trade_row_decline_button(t));
+          let l = await K(a, r, !0);
+          quick_decline_tab &&
+            (l
+              ? ensure_trade_row_decline_button(t)
+              : remove_trade_row_decline_button(t));
           if (!l?.offers?.[0] || !l?.offers?.[1] || !t.isConnected) return;
           let s = get_trade_row_filter_metrics(l);
           set_trade_row_filter_metrics(t, s);
           let all_trade_items = [...X(l.offers[0]), ...X(l.offers[1])];
-          let item_names_arr = all_trade_items.map((it) => V(it)).filter(Boolean);
+          let item_names_arr = all_trade_items
+            .map((it) => V(it))
+            .filter(Boolean);
           t.dataset.nteTradeItemNames = item_names_arr.join("|");
           let d = X(l.offers[0]),
             u = X(l.offers[1]);
@@ -6345,12 +7956,20 @@
             i = 0;
           for (let e = 0; e < d.length; e++) {
             let t = d[e];
-            o += c.getValueOrRAP(get_trade_row_item_id(t), V(t), t?.recentAveragePrice);
+            o += c.getValueOrRAP(
+              get_trade_row_item_id(t),
+              V(t),
+              t?.recentAveragePrice,
+            );
           }
           o += l.offers[0]?.robux || 0;
           for (let e = 0; e < u.length; e++) {
             let t = u[e];
-            i += c.getValueOrRAP(get_trade_row_item_id(t), V(t), t?.recentAveragePrice);
+            i += c.getValueOrRAP(
+              get_trade_row_item_id(t),
+              V(t),
+              t?.recentAveragePrice,
+            );
           }
           if (((i += l.offers[1]?.robux || 0), !e)) {
             t.querySelector(".tradeListValuesBox")?.remove();
@@ -6361,8 +7980,16 @@
           let trade_delta = i - o,
             state = get_trade_profit_state_meta(trade_delta),
             palette = get_trade_profit_palette(),
-            glow_color = state.equal ? palette.list_even_color : state.win ? palette.list_gain_color : palette.list_loss_color,
-            glow_fill = state.equal ? palette.list_even_fill : state.win ? palette.list_gain_fill : palette.list_loss_fill;
+            glow_color = state.equal
+              ? palette.list_even_color
+              : state.win
+                ? palette.list_gain_color
+                : palette.list_loss_color,
+            glow_fill = state.equal
+              ? palette.list_even_fill
+              : state.win
+                ? palette.list_gain_fill
+                : palette.list_loss_fill;
           let box = document.createElement("div");
           box.className = "tradeListValuesBox";
           box.style.height = "60%";
@@ -6385,7 +8012,8 @@
           glow.style.borderTopLeftRadius = "8px";
           let rap = document.createElement("div");
           rap.className = "rapElement";
-          rap.style.fontFamily = "HCo Gotham SSm, Helvetica Neue, Helvetica, Arial, Lucida Grande, sans-serif";
+          rap.style.fontFamily =
+            "HCo Gotham SSm, Helvetica Neue, Helvetica, Arial, Lucida Grande, sans-serif";
           rap.style.fontWeight = "bold";
           rap.style.fontSize = "15px";
           rap.style.lineHeight = trade_profit_colorblind_mode ? "1.3" : "1.5";
@@ -6418,7 +8046,11 @@
             status.style.letterSpacing = "0.08em";
             status.style.lineHeight = "1";
             status.style.marginBottom = "2px";
-            status.style.color = state.equal ? palette.list_even_label : state.win ? palette.list_gain_label : palette.list_loss_label;
+            status.style.color = state.equal
+              ? palette.list_even_label
+              : state.win
+                ? palette.list_gain_label
+                : palette.list_loss_label;
             rap.append(status);
           }
           rap.append(span1, document.createElement("br"), hr, span2);
@@ -6426,12 +8058,18 @@
           let m = Z(t);
           m &&
             !t.querySelector(".tradeListValuesBox") &&
-            (m === t && "static" === getComputedStyle(m).position && (m.style.position = "relative"), m.appendChild(box));
+            (m === t &&
+              !m.dataset.ntePositionFixed &&
+              ((m.dataset.ntePositionFixed = "1"),
+              (m.style.position = "relative")),
+            m.appendChild(box));
           quick_decline_tab && sync_trade_row_decline_position(t);
         }
         r || (r = {});
         prefetch_uncached_trades(r);
-        let n = get_trade_rows_for_processing();
+        let n = sort_trade_rows_by_viewport_priority(
+          get_trade_rows_for_processing(),
+        );
         for (let e = 0; e < n.length; e++) t(n[e], e);
         apply_trade_list_filter();
         show_profile_links && c.initTooltips();
@@ -6447,14 +8085,26 @@
     bg_fetch_pages = 20;
 
   function get_current_trade_tab() {
-    let tab = new URLSearchParams(window.location.search).get("tab") || "inbound";
-    return { inbound: "inbound", outbound: "outbound", completed: "completed", inactive: "inactive" }[tab.toLowerCase()] || "inbound";
+    let tab =
+      new URLSearchParams(window.location.search).get("tab") || "inbound";
+    return (
+      {
+        inbound: "inbound",
+        outbound: "outbound",
+        completed: "completed",
+        inactive: "inactive",
+      }[tab.toLowerCase()] || "inbound"
+    );
   }
 
   async function fetch_all_trade_ids(type) {
     let all = [];
     let cursor = "";
-    for (let page = 0; page < bg_fetch_pages && all.length < bg_fetch_max; page++) {
+    for (
+      let page = 0;
+      page < bg_fetch_pages && all.length < bg_fetch_max;
+      page++
+    ) {
       if (get_current_trade_tab() !== type) break;
       let url = `https://trades.roblox.com/v1/trades/${type}?limit=100&sortOrder=Desc`;
       if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
@@ -6475,13 +8125,16 @@
   async function prefetch_uncached_trades(cached) {
     if (prefetch_running) return;
     let type = get_current_trade_tab();
-    if (type === prefetch_last_tab && Date.now() - prefetch_last_time < 120000) return;
+    if (type === prefetch_last_tab && Date.now() - prefetch_last_time < 120000)
+      return;
     prefetch_running = true;
     try {
       let all_trades = await fetch_all_trade_ids(type);
       prefetch_last_tab = type;
       prefetch_last_time = Date.now();
-      let uncached = all_trades.filter((t) => !(t.id in cached) && !row_trade_cache[t.id]);
+      let uncached = all_trades.filter(
+        (t) => !(t.id in cached) && !row_trade_cache[t.id],
+      );
       if (uncached.length) {
         start_background_trade_fetch(uncached, type);
       }
@@ -6513,7 +8166,9 @@
           if (t.listTrade) m[t.id] = t.listTrade;
           return m;
         }, {});
-        let cached = (await new Promise((r) => nte_send_message("getTradeListData", r))) || {};
+        let cached =
+          (await new Promise((r) => nte_send_message("getTradeListData", r))) ||
+          {};
         if (bg_fetch_abort || fetch_token !== bg_fetch_token) return;
         for (let t of trades) {
           if (bg_fetch_abort || fetch_token !== bg_fetch_token) break;
@@ -6525,14 +8180,25 @@
             continue;
           }
           try {
-            let resp = await fetch_trade_api(`https://trades.roblox.com/v2/trades/${t.id}`, { credentials: "include" });
+            let resp = await fetch_trade_api(
+              `https://trades.roblox.com/v2/trades/${t.id}`,
+              { credentials: "include" },
+            );
             if (bg_fetch_abort || fetch_token !== bg_fetch_token) break;
             if (200 === resp.status) {
               let trade = await resp.json();
-              if (list_map[t.id]) trade = { ...list_map[t.id], ...trade, __nte_list_trade: list_map[t.id] };
+              if (list_map[t.id])
+                trade = {
+                  ...list_map[t.id],
+                  ...trade,
+                  __nte_list_trade: list_map[t.id],
+                };
               if (status_map[t.id]) trade.status = status_map[t.id];
               if (type) trade.tradeType = type;
-              nte_send_message({ type: "cacheTrade", tradeId: t.id, trade }, function () {});
+              nte_send_message(
+                { type: "cacheTrade", tradeId: t.id, trade },
+                function () {},
+              );
               set_trade_row_cached_trade(t.id, trade);
             } else if (429 === resp.status) {
               await new Promise((r) => setTimeout(r, 15000));
@@ -6544,7 +8210,12 @@
       } finally {
         if (fetch_token === bg_fetch_token) {
           bg_fetch_running = false;
-          if (!bg_fetch_abort && get_current_trade_tab() === type && (skipped > 0 || trades.length > 0)) L();
+          if (
+            !bg_fetch_abort &&
+            get_current_trade_tab() === type &&
+            (skipped > 0 || trades.length > 0)
+          )
+            L();
         }
       }
     })();
@@ -6563,17 +8234,29 @@
             r?.removeEventListener("error", d);
         },
         o = setTimeout(() => {
-          (window.__nru_trade_bridge_loaded || "true" === r?.dataset?.nruReady) && i();
-          n || ((custom_trade_bridge_promise = null), (n = !0), a(), t(Error("Timed out while attaching the Roblox trade bridge.")));
+          (window.__nru_trade_bridge_loaded ||
+            "true" === r?.dataset?.nruReady) &&
+            i();
+          n ||
+            ((custom_trade_bridge_promise = null),
+            (n = !0),
+            a(),
+            t(Error("Timed out while attaching the Roblox trade bridge.")));
         }, 2600),
         i = () => {
           n || ((n = !0), a(), e());
         },
         l = () => {
-          (window.__nru_trade_bridge_loaded || "true" === r?.dataset?.nruReady) && i();
+          (window.__nru_trade_bridge_loaded ||
+            "true" === r?.dataset?.nruReady) &&
+            i();
         },
         d = () => {
-          n || ((custom_trade_bridge_promise = null), (n = !0), a(), t(Error("Failed to load the Roblox trade bridge script.")));
+          n ||
+            ((custom_trade_bridge_promise = null),
+            (n = !0),
+            a(),
+            t(Error("Failed to load the Roblox trade bridge script.")));
         };
       if (
         (document.addEventListener("nruTradeBridgeReady", i),
@@ -6590,7 +8273,10 @@
   }
   async function run_custom_trade_bridge_action(e, t = {}) {
     await ensure_custom_trade_bridge();
-    let r = String(t?.request_id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`),
+    let r = String(
+        t?.request_id ||
+          `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ),
       timeout_ms = Math.max(2200, Number(t?.timeout_ms) || 0),
       on_progress = "function" == typeof t?.on_progress ? t.on_progress : null,
       payload = { ...t };
@@ -6606,7 +8292,9 @@
           clearTimeout(o),
             document.removeEventListener("nruTradeBridgeResult", i),
             document.removeEventListener("nruTradeBridgeProgress", l),
-            event.detail?.ok ? n(event.detail) : a(Error(event.detail?.error || "Bridge action failed"));
+            event.detail?.ok
+              ? n(event.detail)
+              : a(Error(event.detail?.error || "Bridge action failed"));
         },
         l = (e) => {
           e.detail?.request_id === r && on_progress?.(e.detail);
@@ -6666,7 +8354,11 @@
         recent_average_price: s.rap,
         value: c.getValueOrRAP(s.targetId, s.name, s.rap),
         rap: c.getRAP(s.targetId, s.name, s.rap),
-        rolimons_id: c.resolveRolimonsItemId(s.targetId, s.name, s.itemType === "Bundle"),
+        rolimons_id: c.resolveRolimonsItemId(
+          s.targetId,
+          s.name,
+          s.itemType === "Bundle",
+        ),
       });
     }
     return {
@@ -6676,21 +8368,34 @@
   }
   function get_native_offer_snapshot() {
     let e = document.querySelectorAll(".trade-request-window-offer");
-    return e[0] && e[1] ? { mine: parse_native_offer_items(e[0]), theirs: parse_native_offer_items(e[1]) } : null;
+    return e[0] && e[1]
+      ? {
+          mine: parse_native_offer_items(e[0]),
+          theirs: parse_native_offer_items(e[1]),
+        }
+      : null;
   }
   function get_offer_signature(e) {
     return [
-      ...e.mine.items.map((e) => e.collectible_item_instance_id || `${e.target_id}:${e.item_name}`),
+      ...e.mine.items.map(
+        (e) =>
+          e.collectible_item_instance_id || `${e.target_id}:${e.item_name}`,
+      ),
       `r${e.mine.robux}`,
       "|",
-      ...e.theirs.items.map((e) => e.collectible_item_instance_id || `${e.target_id}:${e.item_name}`),
+      ...e.theirs.items.map(
+        (e) =>
+          e.collectible_item_instance_id || `${e.target_id}:${e.item_name}`,
+      ),
       `r${e.theirs.robux}`,
     ].join("~");
   }
   function is_native_offer_item_present(e, t = get_native_offer_snapshot()) {
     if (!e || !t) return !1;
     let r = String(e);
-    return [...t.mine.items, ...t.theirs.items].some((e) => String(e.collectible_item_instance_id || "") === r);
+    return [...t.mine.items, ...t.theirs.items].some(
+      (e) => String(e.collectible_item_instance_id || "") === r,
+    );
   }
   function get_native_offer_dom_fingerprint() {
     let e = document.querySelectorAll(".trade-request-window-offer");
@@ -6705,7 +8410,9 @@
                   return `${r || n || t}:${a}`;
                 })
                 .join("|"),
-              r = parseInt(e.querySelector('[name="robux"]')?.value || "0", 10) || 0;
+              r =
+                parseInt(e.querySelector('[name="robux"]')?.value || "0", 10) ||
+                0;
             return `${t}~r${r}`;
           })
           .join("||")
@@ -6745,25 +8452,46 @@
           t && t !== e && d(!0);
         },
         d = (e) => {
-          a || ((a = !0), o?.disconnect(), i && clearInterval(i), l && clearTimeout(l), n(e));
+          a ||
+            ((a = !0),
+            o?.disconnect(),
+            i && clearInterval(i),
+            l && clearTimeout(l),
+            n(e));
         };
       r &&
         window.MutationObserver &&
-        ((o = new MutationObserver(s)), o.observe(r, { childList: !0, subtree: !0, attributes: !0, characterData: !0 }));
+        ((o = new MutationObserver(s)),
+        o.observe(r, {
+          childList: !0,
+          subtree: !0,
+          attributes: !0,
+          characterData: !0,
+        }));
       i = setInterval(s, 70);
       l = setTimeout(() => d(!1), t);
       s();
     });
   }
   function build_custom_trade_bridge_item(e) {
-    let target_id = parseInt(e.target_id ?? e.targetId ?? e.assetId ?? e.bundleId ?? 0, 10) || 0,
+    let target_id =
+        parseInt(
+          e.target_id ?? e.targetId ?? e.assetId ?? e.bundleId ?? 0,
+          10,
+        ) || 0,
       item_type = e.item_type || e.itemType || "Asset",
-      collectible_item_id = e.collectible_item_id ?? e.collectibleItemId ?? null,
-      collectible_item_instance_id = e.collectible_item_instance_id ?? e.collectibleItemInstanceId ?? null,
+      collectible_item_id =
+        e.collectible_item_id ?? e.collectibleItemId ?? null,
+      collectible_item_instance_id =
+        e.collectible_item_instance_id ?? e.collectibleItemInstanceId ?? null,
       item_name = e.item_name || e.itemName || e.name || "Unknown",
       serial_number = e.serial_number ?? e.serialNumber ?? null,
       original_price = e.original_price ?? e.originalPrice ?? null,
-      recent_average_price = parseInt(e.recent_average_price ?? e.recentAveragePrice ?? e.rap ?? 0, 10) || 0,
+      recent_average_price =
+        parseInt(
+          e.recent_average_price ?? e.recentAveragePrice ?? e.rap ?? 0,
+          10,
+        ) || 0,
       asset_stock = parseInt(e.asset_stock ?? e.assetStock ?? 0, 10) || 0,
       user_asset_id =
         parseInt(
@@ -6779,7 +8507,9 @@
     return {
       collectibleItemId: collectible_item_id,
       collectibleItemInstanceId: collectible_item_instance_id,
-      collectibleItemInstance: collectible_item_instance_id ? { collectibleItemInstanceId: collectible_item_instance_id } : void 0,
+      collectibleItemInstance: collectible_item_instance_id
+        ? { collectibleItemInstanceId: collectible_item_instance_id }
+        : void 0,
       itemTarget: { itemType: item_type, targetId: String(target_id) },
       itemType: item_type,
       targetId: target_id,
@@ -6796,7 +8526,11 @@
       userAssetId: user_asset_id,
       userId: user_id || void 0,
       id: e.id ?? collectible_item_instance_id ?? user_asset_id ?? target_id,
-      itemRestrictions: Array.isArray(e.item_restrictions) ? e.item_restrictions : Array.isArray(e.itemRestrictions) ? e.itemRestrictions : [],
+      itemRestrictions: Array.isArray(e.item_restrictions)
+        ? e.item_restrictions
+        : Array.isArray(e.itemRestrictions)
+          ? e.itemRestrictions
+          : [],
       layoutOptions: {
         ...(e.layoutOptions || {}),
         isUnique: null != serial_number,
@@ -6818,8 +8552,12 @@
       get(k) {
         let e = m.get(k);
         if (!e) return undefined;
-        if (Date.now() - e.t > ttl_ms) { m.delete(k); return undefined; }
-        m.delete(k); m.set(k, e);
+        if (Date.now() - e.t > ttl_ms) {
+          m.delete(k);
+          return undefined;
+        }
+        m.delete(k);
+        m.set(k, e);
         return e.v;
       },
       set(k, v) {
@@ -6827,7 +8565,9 @@
         m.set(k, { v, t: Date.now() });
         while (m.size > max) m.delete(m.keys().next().value);
       },
-      clear() { m.clear(); },
+      clear() {
+        m.clear();
+      },
     };
   }
   var nte_trade_sales_hover_data_cache = nte_make_lru(300, 3e5);
@@ -7089,7 +8829,10 @@
   }
   function trade_sales_hover_use_mobile_layout() {
     try {
-      return window.innerWidth <= 700 || !!window.matchMedia("(hover:none), (pointer:coarse)").matches;
+      return (
+        window.innerWidth <= 700 ||
+        !!window.matchMedia("(hover:none), (pointer:coarse)").matches
+      );
     } catch {
       return window.innerWidth <= 700;
     }
@@ -7113,28 +8856,36 @@
       toggle_btn.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        panel.dataset.nteSalesExpanded = panel.dataset.nteSalesExpanded === "1" ? "0" : "1";
+        panel.dataset.nteSalesExpanded =
+          panel.dataset.nteSalesExpanded === "1" ? "0" : "1";
         if (!panel.__nte_sales_data) return;
         rerender_trade_sales_hover_panel(panel);
-        nte_trade_sales_hover_active_el && position_trade_sales_hover_panel(nte_trade_sales_hover_active_el);
+        nte_trade_sales_hover_active_el &&
+          position_trade_sales_hover_panel(nte_trade_sales_hover_active_el);
       });
     }
-    for (let filter_btn of panel?.querySelectorAll("[data-nte-sales-chart-filter]") || []) {
+    for (let filter_btn of panel?.querySelectorAll(
+      "[data-nte-sales-chart-filter]",
+    ) || []) {
       if (filter_btn.__nte_trade_sales_chart_filter_bound) continue;
       filter_btn.__nte_trade_sales_chart_filter_bound = !0;
       filter_btn.addEventListener("click", (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
-        let next_filter = get_trade_sales_chart_filter_key(filter_btn.getAttribute("data-nte-sales-chart-filter"));
+        let next_filter = get_trade_sales_chart_filter_key(
+          filter_btn.getAttribute("data-nte-sales-chart-filter"),
+        );
         if (panel.dataset.nteSalesChartFilter === next_filter) return;
         panel.dataset.nteSalesChartFilter = next_filter;
         rerender_trade_sales_hover_panel(panel);
-        nte_trade_sales_hover_active_el && position_trade_sales_hover_panel(nte_trade_sales_hover_active_el);
+        nte_trade_sales_hover_active_el &&
+          position_trade_sales_hover_panel(nte_trade_sales_hover_active_el);
       });
     }
   }
   function ensure_trade_sales_hover_panel() {
-    if (nte_trade_sales_hover_panel?.isConnected) return nte_trade_sales_hover_panel;
+    if (nte_trade_sales_hover_panel?.isConnected)
+      return nte_trade_sales_hover_panel;
     inject_trade_sales_hover_styles();
     let panel = document.createElement("div");
     panel.className = "nte-sales-hover-panel";
@@ -7144,23 +8895,46 @@
     window.addEventListener(
       "scroll",
       (ev) => {
-        if (!nte_trade_sales_hover_panel?.classList.contains("is-visible")) return;
+        if (!nte_trade_sales_hover_panel?.classList.contains("is-visible"))
+          return;
         let t = ev.target;
-        if (t === document || t === document.documentElement || t === document.body) hide_trade_sales_hover_panel();
+        if (
+          t === document ||
+          t === document.documentElement ||
+          t === document.body
+        )
+          hide_trade_sales_hover_panel();
       },
       { capture: !1, passive: !0 },
     );
     window.addEventListener("resize", hide_trade_sales_hover_panel);
     let handle_trade_sales_hover_press_away = (ev) => {
-      if (!nte_trade_sales_hover_panel?.classList.contains("is-visible")) return;
+      if (!nte_trade_sales_hover_panel?.classList.contains("is-visible"))
+        return;
       if (nte_trade_sales_hover_panel.contains(ev.target)) return;
-      if (ev.target?.closest && ev.target.closest(".nte-sales-hover-btn,.nte-rap-signal-btn")) return;
+      if (
+        ev.target?.closest &&
+        ev.target.closest(".nte-sales-hover-btn,.nte-rap-signal-btn")
+      )
+        return;
       hide_trade_sales_hover_panel();
     };
-    document.addEventListener("mousedown", handle_trade_sales_hover_press_away, true);
-    document.addEventListener("touchstart", handle_trade_sales_hover_press_away, true);
+    document.addEventListener(
+      "mousedown",
+      handle_trade_sales_hover_press_away,
+      true,
+    );
+    document.addEventListener(
+      "touchstart",
+      handle_trade_sales_hover_press_away,
+      true,
+    );
     document.addEventListener("keydown", (ev) => {
-      if (ev.key === "Escape" && nte_trade_sales_hover_panel?.classList.contains("is-visible")) hide_trade_sales_hover_panel();
+      if (
+        ev.key === "Escape" &&
+        nte_trade_sales_hover_panel?.classList.contains("is-visible")
+      )
+        hide_trade_sales_hover_panel();
     });
     document.body.appendChild(panel);
     nte_trade_sales_hover_panel = panel;
@@ -7169,17 +8943,24 @@
   function schedule_trade_sales_hover_hide(delay = 120) {
     clearTimeout(nte_trade_sales_hover_show_timer);
     clearTimeout(nte_trade_sales_hover_hide_timer);
-    nte_trade_sales_hover_hide_timer = setTimeout(hide_trade_sales_hover_panel, delay);
+    nte_trade_sales_hover_hide_timer = setTimeout(
+      hide_trade_sales_hover_panel,
+      delay,
+    );
   }
   var nte_chart_point_tooltip_el = null;
   function hide_chart_point_sale_tooltip() {
     try {
-      document.querySelectorAll(".nte-sales-hover-chart-hover-dot").forEach((g) => g.setAttribute("visibility", "hidden"));
+      document
+        .querySelectorAll(".nte-sales-hover-chart-hover-dot")
+        .forEach((g) => g.setAttribute("visibility", "hidden"));
     } catch {}
-    nte_chart_point_tooltip_el && (nte_chart_point_tooltip_el.style.display = "none");
+    nte_chart_point_tooltip_el &&
+      (nte_chart_point_tooltip_el.style.display = "none");
   }
   function ensure_chart_point_sale_tooltip() {
-    if (nte_chart_point_tooltip_el?.isConnected) return nte_chart_point_tooltip_el;
+    if (nte_chart_point_tooltip_el?.isConnected)
+      return nte_chart_point_tooltip_el;
     let el = document.getElementById("nte-sales-chart-point-tooltip");
     if (!el) {
       (el = document.createElement("div")).id = "nte-sales-chart-point-tooltip";
@@ -7192,7 +8973,9 @@
     let point = ev?.touches?.[0] || ev?.changedTouches?.[0] || ev;
     let x = Number(point?.clientX),
       y = Number(point?.clientY);
-    return Number.isFinite(x) && Number.isFinite(y) ? { clientX: x, clientY: y } : null;
+    return Number.isFinite(x) && Number.isFinite(y)
+      ? { clientX: x, clientY: y }
+      : null;
   }
   function position_chart_point_sale_tooltip(point, tip_el) {
     if (!point) return;
@@ -7201,8 +8984,10 @@
       y = point.clientY + pad;
     tip_el.style.display = "block";
     let r = tip_el.getBoundingClientRect();
-    x > window.innerWidth - r.width - 6 && (x = window.innerWidth - r.width - 6);
-    y > window.innerHeight - r.height - 6 && (y = window.innerHeight - r.height - 6);
+    x > window.innerWidth - r.width - 6 &&
+      (x = window.innerWidth - r.width - 6);
+    y > window.innerHeight - r.height - 6 &&
+      (y = window.innerHeight - r.height - 6);
     x < 6 && (x = 6);
     y < 6 && (y = 6);
     tip_el.style.left = `${Math.round(x)}px`;
@@ -7217,26 +9002,28 @@
       if (node.__nte_chart_point_wired) continue;
       node.__nte_chart_point_wired = !0;
       let move = (ev) => {
-        let point = get_trade_sales_pointer_point(ev);
-        if (!point) return;
-        let raw = node.getAttribute("data-nte-price"),
-          price = parseInt(raw, 10);
-        if (!Number.isFinite(price)) return;
-        if (hover_dot_g) {
-          let cx = parseFloat(node.getAttribute("cx")),
-            cy = parseFloat(node.getAttribute("cy"));
-          Number.isFinite(cx) &&
-            Number.isFinite(cy) &&
-            (hover_dot_g.setAttribute("transform", `translate(${cx} ${cy})`),
-            hover_dot_g.setAttribute("visibility", "visible"));
-        }
-        let date = node.getAttribute("data-nte-date") || "";
-        tip.textContent = date ? `${c.commafy(price)} - ${date}` : c.commafy(price);
-        document.documentElement.classList.contains("light-theme")
-          ? (tip.classList.add("is-light"), tip.classList.remove("is-dark"))
-          : (tip.classList.add("is-dark"), tip.classList.remove("is-light"));
-        position_chart_point_sale_tooltip(point, tip);
-      },
+          let point = get_trade_sales_pointer_point(ev);
+          if (!point) return;
+          let raw = node.getAttribute("data-nte-price"),
+            price = parseInt(raw, 10);
+          if (!Number.isFinite(price)) return;
+          if (hover_dot_g) {
+            let cx = parseFloat(node.getAttribute("cx")),
+              cy = parseFloat(node.getAttribute("cy"));
+            Number.isFinite(cx) &&
+              Number.isFinite(cy) &&
+              (hover_dot_g.setAttribute("transform", `translate(${cx} ${cy})`),
+              hover_dot_g.setAttribute("visibility", "visible"));
+          }
+          let date = node.getAttribute("data-nte-date") || "";
+          tip.textContent = date
+            ? `${c.commafy(price)} - ${date}`
+            : c.commafy(price);
+          document.documentElement.classList.contains("light-theme")
+            ? (tip.classList.add("is-light"), tip.classList.remove("is-dark"))
+            : (tip.classList.add("is-dark"), tip.classList.remove("is-light"));
+          position_chart_point_sale_tooltip(point, tip);
+        },
         leave = () => hide_chart_point_sale_tooltip();
       node.addEventListener("mouseenter", move);
       node.addEventListener("mousemove", move);
@@ -7266,7 +9053,8 @@
     let panel = ensure_trade_sales_hover_panel();
     if (!anchor || !panel) return;
     let position_anchor =
-        anchor.classList?.contains("nte-sales-hover-btn") || anchor.classList?.contains("nte-rap-signal-btn")
+        anchor.classList?.contains("nte-sales-hover-btn") ||
+        anchor.classList?.contains("nte-rap-signal-btn")
           ? anchor.__nte_sales_source ||
             anchor.closest(".item-card-container") ||
             anchor.closest(".nte-sr-card") ||
@@ -7276,9 +9064,12 @@
             anchor
           : anchor,
       rect = position_anchor.getBoundingClientRect();
-    if (!rect.width && !rect.height && anchor.__nte_last_rect) rect = anchor.__nte_last_rect;
+    if (!rect.width && !rect.height && anchor.__nte_last_rect)
+      rect = anchor.__nte_last_rect;
     let mobile_layout = trade_sales_hover_use_mobile_layout(),
-      panel_width = mobile_layout ? Math.min(420, window.innerWidth - 12) : Math.min(320, window.innerWidth - 16);
+      panel_width = mobile_layout
+        ? Math.min(420, window.innerWidth - 12)
+        : Math.min(320, window.innerWidth - 16);
     panel.classList.toggle("is-mobile", mobile_layout);
     panel.style.width = `${panel_width}px`;
     panel.style.left = "-9999px";
@@ -7288,15 +9079,23 @@
       left,
       top;
     if (mobile_layout) {
-      left = Math.max(6, Math.round((window.innerWidth - panel_rect.width) / 2));
+      left = Math.max(
+        6,
+        Math.round((window.innerWidth - panel_rect.width) / 2),
+      );
       top = Math.max(8, window.innerHeight - panel_rect.height - 8);
     } else {
       let gap = 10,
         top_candidate = rect.top;
       left = rect.right + gap;
-      left + panel_rect.width > window.innerWidth - 8 && (left = rect.left - panel_rect.width - gap);
-      left < 8 && (left = Math.max(8, window.innerWidth - panel_rect.width - 8));
-      top = top_candidate + panel_rect.height > window.innerHeight - 8 ? Math.max(8, rect.bottom - panel_rect.height) : top_candidate;
+      left + panel_rect.width > window.innerWidth - 8 &&
+        (left = rect.left - panel_rect.width - gap);
+      left < 8 &&
+        (left = Math.max(8, window.innerWidth - panel_rect.width - 8));
+      top =
+        top_candidate + panel_rect.height > window.innerHeight - 8
+          ? Math.max(8, rect.bottom - panel_rect.height)
+          : top_candidate;
     }
     panel.style.left = `${Math.round(left)}px`;
     panel.style.top = `${Math.round(top)}px`;
@@ -7320,14 +9119,23 @@
       : "Unknown";
   }
   function trade_sales_average(values, fallback = 0) {
-    let nums = values.map((v) => parseFloat(v)).filter((v) => Number.isFinite(v));
-    return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length) : fallback;
+    let nums = values
+      .map((v) => parseFloat(v))
+      .filter((v) => Number.isFinite(v));
+    return nums.length
+      ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length)
+      : fallback;
   }
   function trade_sales_median(values, fallback = 0) {
-    let nums = values.map((v) => parseFloat(v)).filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+    let nums = values
+      .map((v) => parseFloat(v))
+      .filter((v) => Number.isFinite(v))
+      .sort((a, b) => a - b);
     if (!nums.length) return fallback;
     let mid = Math.floor(nums.length / 2);
-    return Math.round(nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2);
+    return Math.round(
+      nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2,
+    );
   }
   function normalize_trade_sales_points(payload) {
     if (!payload) return [];
@@ -7342,10 +9150,25 @@
     push(payload?.itemPriceData?.priceDataPoints);
     return rows
       .map((row) => ({
-        value: parseInt(row?.value ?? row?.price ?? row?.robux ?? row?.amount ?? 0, 10),
-        time_ms: parse_trade_sales_time(row?.date ?? row?.timestamp ?? row?.time ?? row?.created ?? row?.saleDate ?? row?.soldAt),
+        value: parseInt(
+          row?.value ?? row?.price ?? row?.robux ?? row?.amount ?? 0,
+          10,
+        ),
+        time_ms: parse_trade_sales_time(
+          row?.date ??
+            row?.timestamp ??
+            row?.time ??
+            row?.created ??
+            row?.saleDate ??
+            row?.soldAt,
+        ),
       }))
-      .filter((row) => Number.isFinite(row.value) && row.value > 0 && Number.isFinite(row.time_ms))
+      .filter(
+        (row) =>
+          Number.isFinite(row.value) &&
+          row.value > 0 &&
+          Number.isFinite(row.time_ms),
+      )
       .sort((a, b) => b.time_ms - a.time_ms);
   }
   function compute_trade_sales_summary(payload, fallback_rap = 0) {
@@ -7354,14 +9177,24 @@
     if (!Number.isFinite(rap) || rap < 0) rap = points[0]?.value || 0;
     let now = Date.now(),
       day_ms = 864e5,
-      values_7 = points.filter((p) => now - p.time_ms <= 7 * day_ms).map((p) => p.value),
-      values_30 = points.filter((p) => now - p.time_ms <= 30 * day_ms).map((p) => p.value),
-      values_prev_30 = points.filter((p) => now - p.time_ms > 30 * day_ms && now - p.time_ms <= 60 * day_ms).map((p) => p.value),
+      values_7 = points
+        .filter((p) => now - p.time_ms <= 7 * day_ms)
+        .map((p) => p.value),
+      values_30 = points
+        .filter((p) => now - p.time_ms <= 30 * day_ms)
+        .map((p) => p.value),
+      values_prev_30 = points
+        .filter(
+          (p) =>
+            now - p.time_ms > 30 * day_ms && now - p.time_ms <= 60 * day_ms,
+        )
+        .map((p) => p.value),
       avg_7 = trade_sales_average(values_7, rap),
       avg_30 = trade_sales_average(values_30, avg_7 || rap),
       prev_30 = trade_sales_average(values_prev_30, avg_30 || rap),
       median_30 = trade_sales_median(values_30, avg_30 || rap),
-      trend_30 = prev_30 > 0 ? Math.round(((avg_30 - prev_30) / prev_30) * 100) : 0,
+      trend_30 =
+        prev_30 > 0 ? Math.round(((avg_30 - prev_30) / prev_30) * 100) : 0,
       recent_sales = points.map((point) => ({
         date_text: format_trade_sales_date(point.time_ms),
         value: point.value,
@@ -7378,7 +9211,7 @@
   }
   function format_trade_sales_hover_usd(value) {
     let numeric = Number(value) || 0;
-    return `$${(numeric * 3 / 1e3).toFixed(2)}`;
+    return `$${((numeric * 3) / 1e3).toFixed(2)}`;
   }
   function format_trade_sales_hover_currency(value) {
     return `$${Number(value || 0).toLocaleString(undefined, {
@@ -7388,9 +9221,14 @@
   }
   const trade_sales_recent_preview_count = 4;
   function build_trade_sales_recent_sales_html(summary, expanded = !1) {
-    let recent_sales = Array.isArray(summary?.recent_sales) ? summary.recent_sales : [];
-    if (!recent_sales.length) return '<div class="nte-sales-hover-note">Sale history unavailable right now.</div>';
-    let visible_sales = expanded ? recent_sales : recent_sales.slice(0, trade_sales_recent_preview_count),
+    let recent_sales = Array.isArray(summary?.recent_sales)
+      ? summary.recent_sales
+      : [];
+    if (!recent_sales.length)
+      return '<div class="nte-sales-hover-note">Sale history unavailable right now.</div>';
+    let visible_sales = expanded
+        ? recent_sales
+        : recent_sales.slice(0, trade_sales_recent_preview_count),
       toggle_html =
         recent_sales.length > trade_sales_recent_preview_count
           ? `<div class="nte-sales-hover-more"><button type="button" class="nte-sales-hover-more-btn" data-nte-sales-toggle="1">${expanded ? "Show fewer sales" : "Show more sales"}</button></div>`
@@ -7408,15 +9246,26 @@
     let status = String(value || "").trim();
     if (!status) return "";
     let normalized = status.toLowerCase().replace(/[^a-z]/g, "");
-    return ["invalid", "unknown", "undefined", "null", "none"].includes(normalized) ? "" : status;
+    return ["invalid", "unknown", "undefined", "null", "none"].includes(
+      normalized,
+    )
+      ? ""
+      : status;
   }
   async function fetch_trade_sales_payload(collectible_item_id) {
-    if (null == collectible_item_id || "" === String(collectible_item_id).trim()) return null;
+    if (
+      null == collectible_item_id ||
+      "" === String(collectible_item_id).trim()
+    )
+      return null;
     let cid = encodeURIComponent(String(collectible_item_id).trim());
     try {
-      let resp = await fetch(`https://apis.roblox.com/marketplace-sales/v1/item/${cid}/resale-data`, {
-        credentials: "include",
-      });
+      let resp = await fetch(
+        `https://apis.roblox.com/marketplace-sales/v1/item/${cid}/resale-data`,
+        {
+          credentials: "include",
+        },
+      );
       if (resp.ok) return await resp.json().catch(() => null);
     } catch {}
     return null;
@@ -7427,9 +9276,12 @@
     if (cached) return cached;
     let out = null;
     try {
-      let resp = await fetch(`https://economy.roblox.com/v1/assets/${encodeURIComponent(String(asset_id))}/resale-data`, {
-        credentials: "include",
-      });
+      let resp = await fetch(
+        `https://economy.roblox.com/v1/assets/${encodeURIComponent(String(asset_id))}/resale-data`,
+        {
+          credentials: "include",
+        },
+      );
       if (resp.ok) out = await resp.json().catch(() => null);
     } catch {}
     nte_trade_economy_v1_resale_cache.set(key, out);
@@ -7442,9 +9294,12 @@
     if (cached) return cached;
     let out = null;
     try {
-      let resp = await fetch(`https://economy.roblox.com/v2/assets/${encodeURIComponent(String(asset_id))}/details`, {
-        credentials: "include",
-      });
+      let resp = await fetch(
+        `https://economy.roblox.com/v2/assets/${encodeURIComponent(String(asset_id))}/details`,
+        {
+          credentials: "include",
+        },
+      );
       if (resp.ok) out = await resp.json().catch(() => null);
     } catch {}
     nte_trade_economy_v2_detail_cache.set(key, out);
@@ -7457,9 +9312,12 @@
     if (cached) return cached;
     let out = null;
     try {
-      let resp = await fetch(`https://catalog.roblox.com/v1/bundles/${encodeURIComponent(String(bundle_id))}/details`, {
-        credentials: "include",
-      });
+      let resp = await fetch(
+        `https://catalog.roblox.com/v1/bundles/${encodeURIComponent(String(bundle_id))}/details`,
+        {
+          credentials: "include",
+        },
+      );
       if (resp.ok) out = await resp.json().catch(() => null);
     } catch {}
     nte_trade_bundle_detail_cache.set(key, out);
@@ -7468,14 +9326,23 @@
   function parse_lowest_resale_price_from_economy_v2(detail) {
     if (!detail) return null;
     let c = detail.CollectiblesItemDetails || detail.collectiblesItemDetails;
-    let lp = c?.CollectibleLowestResalePrice ?? c?.collectibleLowestResalePrice ?? detail.CollectibleLowestResalePrice ?? detail.collectibleLowestResalePrice;
+    let lp =
+      c?.CollectibleLowestResalePrice ??
+      c?.collectibleLowestResalePrice ??
+      detail.CollectibleLowestResalePrice ??
+      detail.collectibleLowestResalePrice;
     let n = parseInt(lp, 10);
     return Number.isFinite(n) && n > 0 ? n : null;
   }
   function parse_lowest_resale_price_from_bundle_detail(detail) {
     if (!detail) return null;
     let c = detail.collectibleItemDetail || detail.CollectibleItemDetail;
-    let lp = c?.lowestResalePrice ?? c?.lowestPrice ?? c?.LowestResalePrice ?? c?.LowestPrice ?? null;
+    let lp =
+      c?.lowestResalePrice ??
+      c?.lowestPrice ??
+      c?.LowestResalePrice ??
+      c?.LowestPrice ??
+      null;
     let n = parseInt(lp, 10);
     return Number.isFinite(n) && n > 0 ? n : null;
   }
@@ -7511,7 +9378,9 @@
   ];
   function get_trade_sales_chart_filter_key(value) {
     let key = String(value || "").toLowerCase();
-    return trade_sales_chart_timeframes.some((option) => option.key === key) ? key : "all";
+    return trade_sales_chart_timeframes.some((option) => option.key === key)
+      ? key
+      : "all";
   }
   function build_trade_sales_chart_filter_buttons(active_key) {
     let current = get_trade_sales_chart_filter_key(active_key);
@@ -7523,16 +9392,24 @@
       .join("")}</div>`;
   }
   function filter_trade_sales_chart_points(points, filter_key) {
-    let sorted = Array.isArray(points) ? points.slice().sort((a, b) => a.time_ms - b.time_ms) : [];
+    let sorted = Array.isArray(points)
+      ? points.slice().sort((a, b) => a.time_ms - b.time_ms)
+      : [];
     let current = get_trade_sales_chart_filter_key(filter_key);
     if (!sorted.length || current === "all") return sorted;
-    let option = trade_sales_chart_timeframes.find((entry) => entry.key === current);
+    let option = trade_sales_chart_timeframes.find(
+      (entry) => entry.key === current,
+    );
     if (!option?.window_ms) return sorted;
-    let filtered = sorted.filter((point) => Number(point?.time_ms) >= Date.now() - option.window_ms);
+    let filtered = sorted.filter(
+      (point) => Number(point?.time_ms) >= Date.now() - option.window_ms,
+    );
     if (filtered.length) return filtered;
     let latest_time = Number(sorted[sorted.length - 1]?.time_ms) || 0;
     if (latest_time <= 0) return [];
-    filtered = sorted.filter((point) => Number(point?.time_ms) >= latest_time - option.window_ms);
+    filtered = sorted.filter(
+      (point) => Number(point?.time_ms) >= latest_time - option.window_ms,
+    );
     return filtered.length ? filtered : sorted.slice(-1);
   }
   function build_trade_sales_chart_header(filter_key) {
@@ -7573,7 +9450,8 @@
     vmax <= vmin && (vmax = vmin + 1);
     let step = sorted.length > 1 ? inner_w / (sorted.length - 1) : 0,
       x_at = (index) => pad_x + step * index,
-      y_at = (value) => pad_top + (1 - (value - vmin) / (vmax - vmin)) * inner_h;
+      y_at = (value) =>
+        pad_top + (1 - (value - vmin) / (vmax - vmin)) * inner_h;
     let guides = sorted
         .map((p, index) => {
           let x = x_at(index).toFixed(1),
@@ -7581,11 +9459,18 @@
           return `<line class="nte-sales-hover-chart-sparse-guide" x1="${x}" y1="${y}" x2="${x}" y2="${H - pad_bottom + 2}" />`;
         })
         .join(""),
-      pts = sorted.map((p, index) => `${x_at(index).toFixed(1)},${y_at(p.value).toFixed(1)}`).join(" "),
+      pts = sorted
+        .map(
+          (p, index) => `${x_at(index).toFixed(1)},${y_at(p.value).toFixed(1)}`,
+        )
+        .join(" "),
       dates = sorted
         .map((p, index) => {
           let x = x_at(index).toFixed(1),
-            d = String(format_trade_sales_date(p.time_ms) || "").replace(/[<>]/g, "");
+            d = String(format_trade_sales_date(p.time_ms) || "").replace(
+              /[<>]/g,
+              "",
+            );
           return `<text class="nte-sales-hover-chart-sparse-date" x="${x}" y="${H - 4}" text-anchor="middle">${d}</text>`;
         })
         .join(""),
@@ -7617,17 +9502,23 @@
   function rerender_trade_sales_hover_panel(panel) {
     if (!panel?.__nte_sales_data) return;
     panel.__nte_sales_mode === "rap_signal"
-      ? render_trade_rap_signal_data(panel.__nte_sales_data, !!panel.__nte_sales_load_failed)
+      ? render_trade_rap_signal_data(
+          panel.__nte_sales_data,
+          !!panel.__nte_sales_load_failed,
+        )
       : render_trade_sales_hover_data(panel.__nte_sales_data);
   }
   function build_trade_sales_chart_svg(points, filter_key = "all") {
     let active_filter = get_trade_sales_chart_filter_key(filter_key),
       sorted = filter_trade_sales_chart_points(points, active_filter),
       chart_head = build_trade_sales_chart_header(active_filter);
-    if (Array.isArray(points) && points.length && !sorted.length) return build_trade_sales_chart_empty_state(active_filter);
-    if (sorted.length === 1) return build_trade_sales_single_chart_svg(sorted[0], chart_head);
+    if (Array.isArray(points) && points.length && !sorted.length)
+      return build_trade_sales_chart_empty_state(active_filter);
+    if (sorted.length === 1)
+      return build_trade_sales_single_chart_svg(sorted[0], chart_head);
     if (sorted.length < 2) return "";
-    if (sorted.length < 5) return build_trade_sales_sparse_chart_svg(sorted, chart_head);
+    if (sorted.length < 5)
+      return build_trade_sales_sparse_chart_svg(sorted, chart_head);
     let W = 280,
       H = 84,
       pad = 6,
@@ -7642,19 +9533,23 @@
     vmax <= vmin && (vmax = vmin + 1);
     let x_at = (t) => pad + ((t - t0) / (t1 - t0)) * inner_w,
       y_at = (v) => pad + (1 - (v - vmin) / (vmax - vmin)) * inner_h;
-    let pts = sorted.map((p) => `${x_at(p.time_ms).toFixed(1)},${y_at(p.value).toFixed(1)}`).join(" ");
+    let pts = sorted
+      .map((p) => `${x_at(p.time_ms).toFixed(1)},${y_at(p.value).toFixed(1)}`)
+      .join(" ");
     let area =
       `M ${x_at(sorted[0].time_ms).toFixed(1)} ${H - pad} L ` +
-      sorted.map((p) => `${x_at(p.time_ms).toFixed(1)},${y_at(p.value).toFixed(1)}`).join(" L ") +
+      sorted
+        .map((p) => `${x_at(p.time_ms).toFixed(1)},${y_at(p.value).toFixed(1)}`)
+        .join(" L ") +
       ` L ${x_at(sorted[sorted.length - 1].time_ms).toFixed(1)} ${H - pad} Z`;
     let hit_layer = sorted
-        .map((p) => {
-          let x = x_at(p.time_ms).toFixed(1),
-            y = y_at(p.value).toFixed(1),
-            d = escape_html_attr(format_trade_sales_date(p.time_ms));
-          return `<circle class="nte-sales-hover-chart-hit" cx="${x}" cy="${y}" r="12" data-nte-price="${p.value}" data-nte-date="${d}"></circle>`;
-        })
-        .join("");
+      .map((p) => {
+        let x = x_at(p.time_ms).toFixed(1),
+          y = y_at(p.value).toFixed(1),
+          d = escape_html_attr(format_trade_sales_date(p.time_ms));
+        return `<circle class="nte-sales-hover-chart-hit" cx="${x}" cy="${y}" r="12" data-nte-price="${p.value}" data-nte-date="${d}"></circle>`;
+      })
+      .join("");
     return `<div class="nte-sales-hover-chart-wrap">${chart_head}<svg class="nte-sales-hover-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
       <line class="nte-sales-hover-chart-grid" x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" />
       <path class="nte-sales-hover-chart-area" d="${area}" />
@@ -7666,24 +9561,47 @@
   function get_trade_sales_hover_context_from_element(el) {
     let source_el = el?.__nte_sales_source || el;
     let data_el =
-      source_el?.closest?.(".item-card-container,.trade-request-item,.nte-sr-card") ||
+      source_el?.closest?.(
+        ".item-card-container,.trade-request-item,.nte-sr-card",
+      ) ||
       el?.closest?.(".item-card-container,.trade-request-item,.nte-sr-card") ||
       source_el;
-    let item = el?.__nte_sales_item || source_el?.__nte_sales_item || data_el?.__nte_sales_item || null;
-    let fallback_target_id = c.getItemIdFromElement(data_el) || c.getItemIdFromElement(source_el) || 0,
-      fallback_name = c.getItemNameFromElement(data_el) || c.getItemNameFromElement(source_el) || "Item",
-      fallback_price_el = data_el?.querySelector?.(".item-card-price, .item-value") || source_el?.querySelector?.(".item-card-price, .item-value"),
+    let item =
+      el?.__nte_sales_item ||
+      source_el?.__nte_sales_item ||
+      data_el?.__nte_sales_item ||
+      null;
+    let fallback_target_id =
+        c.getItemIdFromElement(data_el) ||
+        c.getItemIdFromElement(source_el) ||
+        0,
+      fallback_name =
+        c.getItemNameFromElement(data_el) ||
+        c.getItemNameFromElement(source_el) ||
+        "Item",
+      fallback_price_el =
+        data_el?.querySelector?.(".item-card-price, .item-value") ||
+        source_el?.querySelector?.(".item-card-price, .item-value"),
       fallback_rap = (() => {
         if (!fallback_price_el) return 0;
         let t = fallback_price_el.cloneNode(true);
-        for (let e of t.querySelectorAll(".valueSpan,.icon-rolimons,.icon-link,br")) e.remove();
+        for (let e of t.querySelectorAll(
+          ".valueSpan,.icon-rolimons,.icon-link,br",
+        ))
+          e.remove();
         let r = (t.textContent || "").match(/\d[\d,]*/);
         return r ? parseInt(r[0].replace(/,/g, ""), 10) || 0 : 0;
       })();
     if (item) {
       let normalized = {
         ...item,
-        targetId: item.targetId || item.itemTarget?.targetId || item.assetId || item.itemId || fallback_target_id || 0,
+        targetId:
+          item.targetId ||
+          item.itemTarget?.targetId ||
+          item.assetId ||
+          item.itemId ||
+          fallback_target_id ||
+          0,
         itemType: item.itemType || item.itemTarget?.itemType || "Asset",
         name: item.name || item.itemName || fallback_name || "Item",
         rap: item.rap ?? item.recentAveragePrice ?? fallback_rap ?? 0,
@@ -7697,20 +9615,38 @@
         has_value: !!meta.hasValue,
         value: meta.value,
         rolimons_id: meta.rolimonsId,
-        collectible_item_id: item.collectibleItemId || normalized.collectibleItemId || null,
+        collectible_item_id:
+          item.collectibleItemId || normalized.collectibleItemId || null,
         serial_number: item.serialNumber ?? null,
         is_on_hold: !!item.isOnHold,
         is_projected: !!meta.isProjected,
         demand: Number.isFinite(meta.demand) ? meta.demand : -1,
-        demand_label: Number.isFinite(meta.demand) && meta.demand >= 0 ? meta.demandLabel : "No",
+        demand_label:
+          Number.isFinite(meta.demand) && meta.demand >= 0
+            ? meta.demandLabel
+            : "No",
       };
     }
     let target_id = fallback_target_id,
       name = fallback_name,
       price_el = fallback_price_el,
-      rap = (() => { if (!price_el) return 0; let t = price_el.cloneNode(true); for (let e of t.querySelectorAll(".valueSpan,.icon-rolimons,.icon-link,br")) e.remove(); let r = (t.textContent || "").match(/\d[\d,]*/); return r ? parseInt(r[0].replace(/,/g, ""), 10) || 0 : 0; })(),
+      rap = (() => {
+        if (!price_el) return 0;
+        let t = price_el.cloneNode(true);
+        for (let e of t.querySelectorAll(
+          ".valueSpan,.icon-rolimons,.icon-link,br",
+        ))
+          e.remove();
+        let r = (t.textContent || "").match(/\d[\d,]*/);
+        return r ? parseInt(r[0].replace(/,/g, ""), 10) || 0 : 0;
+      })(),
       base = get_trade_el_value_ctx(data_el, target_id, name, rap),
-      item_type = base.itemType || (data_el.querySelector('a[href*="/bundles/"]') || data_el.querySelector('[thumbnail-type="BundleThumbnail"]') ? "Bundle" : "Asset"),
+      item_type =
+        base.itemType ||
+        (data_el.querySelector('a[href*="/bundles/"]') ||
+        data_el.querySelector('[thumbnail-type="BundleThumbnail"]')
+          ? "Bundle"
+          : "Asset"),
       serial_text = data_el.querySelector(".limited-number")?.textContent || "",
       serial_number = parseInt(serial_text.replace(/[^\d]/g, ""), 10);
     Number.isFinite(serial_number) || (serial_number = null);
@@ -7742,45 +9678,76 @@
     let cache_key = `${ctx.collectible_item_id || ""}:${ctx.item_type}:${ctx.target_id}:${ctx.rap}:${ctx.value}`;
     let cache_entry = nte_trade_sales_hover_data_cache.get(cache_key);
     if (cache_entry) return cache_entry;
-    let bundle_detail = "Bundle" === ctx.item_type && ctx.target_id ? await fetch_trade_bundle_details(ctx.target_id) : null;
-    let econ_v2 = !bundle_detail && ctx.target_id ? await fetch_trade_economy_v2_asset_details(ctx.target_id) : null;
+    let bundle_detail =
+      "Bundle" === ctx.item_type && ctx.target_id
+        ? await fetch_trade_bundle_details(ctx.target_id)
+        : null;
+    let econ_v2 =
+      !bundle_detail && ctx.target_id
+        ? await fetch_trade_economy_v2_asset_details(ctx.target_id)
+        : null;
     let collectible_item_id =
-      ctx.collectible_item_id || extract_collectible_item_id_from_bundle_detail(bundle_detail) || extract_collectible_item_id_from_economy_v2(econ_v2) || null;
-    let sales_payload = collectible_item_id ? await fetch_trade_sales_payload(collectible_item_id) : null;
+      ctx.collectible_item_id ||
+      extract_collectible_item_id_from_bundle_detail(bundle_detail) ||
+      extract_collectible_item_id_from_economy_v2(econ_v2) ||
+      null;
+    let sales_payload = collectible_item_id
+      ? await fetch_trade_sales_payload(collectible_item_id)
+      : null;
     let pts = normalize_trade_sales_points(sales_payload);
-    if ((!pts.length || !sales_payload) && ctx.target_id && ctx.item_type !== "Bundle") {
+    if (
+      (!pts.length || !sales_payload) &&
+      ctx.target_id &&
+      ctx.item_type !== "Bundle"
+    ) {
       let eco1 = await fetch_trade_economy_v1_asset_resale(ctx.target_id);
-      if (eco1 && normalize_trade_sales_points(eco1).length) sales_payload = eco1;
+      if (eco1 && normalize_trade_sales_points(eco1).length)
+        sales_payload = eco1;
     }
-    let summary = compute_trade_sales_summary(sales_payload || {}, ctx.rap || 0);
-    let lowest_price = parse_lowest_resale_price_from_bundle_detail(bundle_detail) || parse_lowest_resale_price_from_economy_v2(econ_v2);
+    let summary = compute_trade_sales_summary(
+      sales_payload || {},
+      ctx.rap || 0,
+    );
+    let lowest_price =
+      parse_lowest_resale_price_from_bundle_detail(bundle_detail) ||
+      parse_lowest_resale_price_from_economy_v2(econ_v2);
     let chart_points = normalize_trade_sales_points(sales_payload || {});
     let price_status = "",
       is_off_sale = !1;
     if (bundle_detail) {
       let sale_status = sanitize_trade_sales_price_status(
-        bundle_detail?.collectibleItemDetail?.saleStatus || bundle_detail?.CollectibleItemDetail?.SaleStatus || "",
+        bundle_detail?.collectibleItemDetail?.saleStatus ||
+          bundle_detail?.CollectibleItemDetail?.SaleStatus ||
+          "",
       );
-      let normalized_sale_status = sale_status.toLowerCase().replace(/[^a-z]/g, "");
+      let normalized_sale_status = sale_status
+        .toLowerCase()
+        .replace(/[^a-z]/g, "");
       if (sale_status) {
         price_status = sale_status;
-        if (["offsale", "notforsale"].includes(normalized_sale_status)) is_off_sale = !0;
+        if (["offsale", "notforsale"].includes(normalized_sale_status))
+          is_off_sale = !0;
       } else if (bundle_detail?.product?.isForSale === !1) {
         is_off_sale = !0;
         price_status = "Offsale";
       }
     } else if (econ_v2) {
-      if (econ_v2.IsForSale === !1 || econ_v2.isForSale === !1) (is_off_sale = !0), (price_status = "Not for sale");
-      else if (econ_v2.IsLimited === !0 || econ_v2.isLimited === !0) price_status = price_status || "Limited";
+      if (econ_v2.IsForSale === !1 || econ_v2.isForSale === !1)
+        (is_off_sale = !0), (price_status = "Not for sale");
+      else if (econ_v2.IsLimited === !0 || econ_v2.isLimited === !0)
+        price_status = price_status || "Limited";
     }
     let resale_active =
       (Number.isFinite(lowest_price) && lowest_price > 0) ||
       (Array.isArray(chart_points) && chart_points.length > 0) ||
       (Array.isArray(summary?.recent_sales) && summary.recent_sales.length > 0);
-    let normalized_price_status = String(price_status).toLowerCase().replace(/[^a-z]/g, "");
+    let normalized_price_status = String(price_status)
+      .toLowerCase()
+      .replace(/[^a-z]/g, "");
     if (resale_active) {
       is_off_sale = !1;
-      if (["notforsale", "offsale"].includes(normalized_price_status)) price_status = "";
+      if (["notforsale", "offsale"].includes(normalized_price_status))
+        price_status = "";
     }
     price_status = sanitize_trade_sales_price_status(price_status);
     let routility_usd = get_trade_sales_hover_routility_usd(ctx);
@@ -7807,7 +9774,9 @@
     panel.__nte_sales_mode = "";
     panel.__nte_sales_load_failed = !1;
     panel.innerHTML = `<div class="nte-sales-hover-head"><div class="nte-sales-hover-title">${String(ctx?.name || "Item").replace(/[<>]/g, "")}${
-      ctx?.serial_number != null ? ` <span class="nte-sales-hover-serial">#${ctx.serial_number}</span>` : ""
+      ctx?.serial_number != null
+        ? ` <span class="nte-sales-hover-serial">#${ctx.serial_number}</span>`
+        : ""
     }</div>${trade_sales_hover_close_markup()}</div><div class="nte-sales-hover-loading"><div style="margin-top:6px;">RAP: ${c.commafy(ctx?.rap || 0)}${
       ctx?.value ? ` - Value: ${c.commafy(ctx.value)}` : ""
     }</div><div style="margin-top:6px;">Loading sale data...</div></div>`;
@@ -7819,12 +9788,20 @@
     panel.__nte_sales_mode = "sales";
     panel.__nte_sales_load_failed = !1;
     let badges = "";
-    data.is_projected && (badges += '<span class="nte-sales-hover-badge warn">Projected</span>');
-    data.summary?.is_probably_projected && (badges += '<span class="nte-sales-hover-badge danger">RAP Spike</span>');
-    data.is_on_hold && (badges += '<span class="nte-sales-hover-badge warn">On Hold</span>');
-    data.is_off_sale && (badges += '<span class="nte-sales-hover-badge">Offsale</span>');
-    data.item_type === "Bundle" && (badges += '<span class="nte-sales-hover-badge">Bundle</span>');
-    let recent_sales_html = build_trade_sales_recent_sales_html(data.summary, panel.dataset.nteSalesExpanded === "1");
+    data.is_projected &&
+      (badges += '<span class="nte-sales-hover-badge warn">Projected</span>');
+    data.summary?.is_probably_projected &&
+      (badges += '<span class="nte-sales-hover-badge danger">RAP Spike</span>');
+    data.is_on_hold &&
+      (badges += '<span class="nte-sales-hover-badge warn">On Hold</span>');
+    data.is_off_sale &&
+      (badges += '<span class="nte-sales-hover-badge">Offsale</span>');
+    data.item_type === "Bundle" &&
+      (badges += '<span class="nte-sales-hover-badge">Bundle</span>');
+    let recent_sales_html = build_trade_sales_recent_sales_html(
+      data.summary,
+      panel.dataset.nteSalesExpanded === "1",
+    );
     let demand_esc = String(data.demand_label || "").replace(/[<>]/g, ""),
       demand_cls = trade_sales_hover_demand_value_class(data.demand_label),
       demand_block =
@@ -7834,18 +9811,32 @@
       price_tail = data.price_status
         ? `<span class="nte-sales-hover-sub-sep" aria-hidden="true">-</span><span class="nte-sales-hover-price-status">${String(data.price_status).replace(/[<>]/g, "")}</span>`
         : "";
-    let usd_basis = Number(data.value || data.summary?.avg_30 || data.summary?.rap || data.rap || 0),
-      usd_note = data.routility_usd > 0
-        ? `<div class="nte-sales-hover-note">Routility USD: <strong class="nte-sales-hover-usd">${format_trade_sales_hover_currency(data.routility_usd)}</strong></div>`
-        : `<div class="nte-sales-hover-note">Est. USD @ $3/1k: <strong class="nte-sales-hover-usd">${format_trade_sales_hover_usd(usd_basis)}</strong></div>`,
-      chart_filter = get_trade_sales_chart_filter_key(panel.dataset.nteSalesChartFilter),
-      chart_html = build_trade_sales_chart_svg(Array.isArray(data.chart_points) ? data.chart_points : [], chart_filter);
+    let usd_basis = Number(
+        data.value ||
+          data.summary?.avg_30 ||
+          data.summary?.rap ||
+          data.rap ||
+          0,
+      ),
+      usd_note =
+        data.routility_usd > 0
+          ? `<div class="nte-sales-hover-note">Routility USD: <strong class="nte-sales-hover-usd">${format_trade_sales_hover_currency(data.routility_usd)}</strong></div>`
+          : `<div class="nte-sales-hover-note">Est. USD @ $3/1k: <strong class="nte-sales-hover-usd">${format_trade_sales_hover_usd(usd_basis)}</strong></div>`,
+      chart_filter = get_trade_sales_chart_filter_key(
+        panel.dataset.nteSalesChartFilter,
+      ),
+      chart_html = build_trade_sales_chart_svg(
+        Array.isArray(data.chart_points) ? data.chart_points : [],
+        chart_filter,
+      );
     panel.innerHTML = `
       <div class="nte-sales-hover-head">
         <div>
           <div class="nte-sales-hover-title">${String(data.name || "Item").replace(/[<>]/g, "")}${
-      data.serial_number != null ? ` <span class="nte-sales-hover-serial">#${data.serial_number}</span>` : ""
-    }</div>
+            data.serial_number != null
+              ? ` <span class="nte-sales-hover-serial">#${data.serial_number}</span>`
+              : ""
+          }</div>
           <div class="nte-sales-hover-sub">
             ${demand_block}${price_tail}
           </div>
@@ -7879,14 +9870,18 @@
     hide_chart_point_sale_tooltip();
     let panel = ensure_trade_sales_hover_panel(),
       signal = ctx?.rap_signal || get_trade_rap_signal_info(ctx),
-      badge = signal ? `<div class="nte-sales-hover-badges"><span class="nte-sales-hover-badge ${signal.badge_class}">${signal.label}</span></div>` : "";
+      badge = signal
+        ? `<div class="nte-sales-hover-badges"><span class="nte-sales-hover-badge ${signal.badge_class}">${signal.label}</span></div>`
+        : "";
     panel.dataset.nteSalesExpanded = "0";
     panel.dataset.nteSalesChartFilter = "all";
     panel.__nte_sales_data = null;
     panel.__nte_sales_mode = "";
     panel.__nte_sales_load_failed = !1;
     panel.innerHTML = `<div class="nte-sales-hover-head"><div class="nte-sales-hover-title">${String(ctx?.name || "Item").replace(/[<>]/g, "")}${
-      ctx?.serial_number != null ? ` <span class="nte-sales-hover-serial">#${ctx.serial_number}</span>` : ""
+      ctx?.serial_number != null
+        ? ` <span class="nte-sales-hover-serial">#${ctx.serial_number}</span>`
+        : ""
     }</div>${trade_sales_hover_close_markup()}</div>${badge}<div class="nte-sales-hover-loading"><div style="margin-top:6px;">RAP: ${c.commafy(ctx?.rap || 0)}${
       ctx?.value ? ` - Value: ${c.commafy(ctx.value)}` : ""
     }</div><div style="margin-top:6px;">Loading lowest price and sales chart...</div></div>`;
@@ -7917,20 +9912,32 @@
     let status_note = signal.is_over
         ? `This item might raise to <strong>${c.commafy(signal.target_value)}</strong> since it's at <strong>${c.commafy(current_rap)}</strong> RAP.`
         : `This item might drop to <strong>${c.commafy(signal.target_value)}</strong> since it's at <strong>${c.commafy(current_rap)}</strong> RAP.`,
-      chart_filter = get_trade_sales_chart_filter_key(panel.dataset.nteSalesChartFilter),
-      chart_html = build_trade_sales_chart_svg(Array.isArray(data.chart_points) ? data.chart_points : [], chart_filter),
-      lowest_price_html = Number.isFinite(data.lowest_price) && data.lowest_price > 0
-        ? `<div class="nte-sales-hover-note">Lowest price: <strong>${c.commafy(data.lowest_price)}</strong></div>`
-        : load_failed
-          ? `<div class="nte-sales-hover-note">Lowest price and sales history could not be loaded right now.</div>`
-          : `<div class="nte-sales-hover-note">Lowest price: <strong>-</strong> <span style="opacity:.75">(sign in / not reselling)</span></div>`,
-      chart_or_note = chart_html || (load_failed ? "" : '<div class="nte-sales-hover-note">Sales history unavailable right now.</div>');
+      chart_filter = get_trade_sales_chart_filter_key(
+        panel.dataset.nteSalesChartFilter,
+      ),
+      chart_html = build_trade_sales_chart_svg(
+        Array.isArray(data.chart_points) ? data.chart_points : [],
+        chart_filter,
+      ),
+      lowest_price_html =
+        Number.isFinite(data.lowest_price) && data.lowest_price > 0
+          ? `<div class="nte-sales-hover-note">Lowest price: <strong>${c.commafy(data.lowest_price)}</strong></div>`
+          : load_failed
+            ? `<div class="nte-sales-hover-note">Lowest price and sales history could not be loaded right now.</div>`
+            : `<div class="nte-sales-hover-note">Lowest price: <strong>-</strong> <span style="opacity:.75">(sign in / not reselling)</span></div>`,
+      chart_or_note =
+        chart_html ||
+        (load_failed
+          ? ""
+          : '<div class="nte-sales-hover-note">Sales history unavailable right now.</div>');
     panel.innerHTML = `
       <div class="nte-sales-hover-head">
         <div>
           <div class="nte-sales-hover-title">${String(data.name || "Item").replace(/[<>]/g, "")}${
-      data.serial_number != null ? ` <span class="nte-sales-hover-serial">#${data.serial_number}</span>` : ""
-    }</div>
+            data.serial_number != null
+              ? ` <span class="nte-sales-hover-serial">#${data.serial_number}</span>`
+              : ""
+          }</div>
           <div class="nte-sales-hover-sub">
             ${demand_block}
           </div>
@@ -7951,7 +9958,8 @@
     wire_trade_sales_chart_hovers(panel);
   }
   function show_trade_rap_signal_hover_from_element(el) {
-    let ctx = el?.__nte_rap_signal_ctx || get_trade_rap_signal_context_from_element(el);
+    let ctx =
+      el?.__nte_rap_signal_ctx || get_trade_rap_signal_context_from_element(el);
     if (!ctx) return;
     clearTimeout(nte_trade_sales_hover_hide_timer);
     nte_trade_sales_hover_active_el = el;
@@ -7960,19 +9968,33 @@
     let request_token = ++nte_trade_sales_hover_request_token;
     fetch_trade_sales_hover_data(ctx)
       .then((data) => {
-        if (request_token !== nte_trade_sales_hover_request_token || nte_trade_sales_hover_active_el !== el) return;
+        if (
+          request_token !== nte_trade_sales_hover_request_token ||
+          nte_trade_sales_hover_active_el !== el
+        )
+          return;
         render_trade_rap_signal_data(data);
         position_trade_sales_hover_panel(el);
       })
       .catch(() => {
-        if (request_token !== nte_trade_sales_hover_request_token || nte_trade_sales_hover_active_el !== el) return;
-        render_trade_rap_signal_data({ ...ctx, chart_points: [], lowest_price: null }, !0);
+        if (
+          request_token !== nte_trade_sales_hover_request_token ||
+          nte_trade_sales_hover_active_el !== el
+        )
+          return;
+        render_trade_rap_signal_data(
+          { ...ctx, chart_points: [], lowest_price: null },
+          !0,
+        );
         position_trade_sales_hover_panel(el);
       });
   }
   function show_trade_sales_hover_from_element(el) {
     let ctx = get_trade_sales_hover_context_from_element(el);
-    if (!ctx) { console.warn("[NTE] Sales hover: no context for", el); return; }
+    if (!ctx) {
+      console.warn("[NTE] Sales hover: no context for", el);
+      return;
+    }
     clearTimeout(nte_trade_sales_hover_hide_timer);
     nte_trade_sales_hover_active_el = el;
     render_trade_sales_hover_loading(ctx);
@@ -7980,12 +10002,20 @@
     let request_token = ++nte_trade_sales_hover_request_token;
     fetch_trade_sales_hover_data(ctx)
       .then((data) => {
-        if (request_token !== nte_trade_sales_hover_request_token || nte_trade_sales_hover_active_el !== el) return;
+        if (
+          request_token !== nte_trade_sales_hover_request_token ||
+          nte_trade_sales_hover_active_el !== el
+        )
+          return;
         render_trade_sales_hover_data(data);
         position_trade_sales_hover_panel(el);
       })
       .catch(() => {
-        if (request_token !== nte_trade_sales_hover_request_token || nte_trade_sales_hover_active_el !== el) return;
+        if (
+          request_token !== nte_trade_sales_hover_request_token ||
+          nte_trade_sales_hover_active_el !== el
+        )
+          return;
         hide_chart_point_sale_tooltip();
         let panel = ensure_trade_sales_hover_panel();
         panel.__nte_sales_data = null;
@@ -8016,7 +10046,10 @@
       btn.__nte_last_rect = btn.getBoundingClientRect();
       clearTimeout(nte_trade_sales_hover_hide_timer);
       clearTimeout(nte_trade_sales_hover_show_timer);
-      if (nte_trade_sales_hover_active_el === btn && nte_trade_sales_hover_panel?.classList.contains("is-visible")) {
+      if (
+        nte_trade_sales_hover_active_el === btn &&
+        nte_trade_sales_hover_panel?.classList.contains("is-visible")
+      ) {
         hide_trade_sales_hover_panel();
         return;
       }
@@ -8056,7 +10089,10 @@
       btn.__nte_last_rect = btn.getBoundingClientRect();
       clearTimeout(nte_trade_sales_hover_hide_timer);
       clearTimeout(nte_trade_sales_hover_show_timer);
-      if (nte_trade_sales_hover_active_el === btn && nte_trade_sales_hover_panel?.classList.contains("is-visible")) {
+      if (
+        nte_trade_sales_hover_active_el === btn &&
+        nte_trade_sales_hover_panel?.classList.contains("is-visible")
+      ) {
         hide_trade_sales_hover_panel();
         return;
       }
@@ -8069,13 +10105,17 @@
     if (!btn || !signal) return;
     btn.classList.toggle("is-over", !!signal.is_over);
     btn.classList.toggle("is-under", !signal.is_over);
-    btn.setAttribute("aria-label", `${signal.label} indicator - click to view details`);
+    btn.setAttribute(
+      "aria-label",
+      `${signal.label} indicator - click to view details`,
+    );
     btn.setAttribute("title", `${signal.label} - click for details`);
     btn.__nte_rap_signal_ctx = ctx;
   }
   function ensure_trade_sales_hover_button(card) {
     if (!card) return;
-    let cached_item = get_cached_search_item_from_el(card) || card.__nte_sales_item || null;
+    let cached_item =
+      get_cached_search_item_from_el(card) || card.__nte_sales_item || null;
     cached_item && (card.__nte_sales_item = cached_item);
     let thumb =
       card.querySelector(".item-card-thumb-container") ||
@@ -8084,10 +10124,13 @@
       card.querySelector(".thumbnail-2d-container") ||
       card;
     if (!thumb) return;
-    if ("static" === getComputedStyle(thumb).position) thumb.style.position = "relative";
+    if ("static" === getComputedStyle(thumb).position)
+      thumb.style.position = "relative";
     let existing = thumb.querySelector(".nte-sales-hover-btn");
     if (existing) {
-      cached_item ? (existing.__nte_sales_item = cached_item) : delete existing.__nte_sales_item;
+      cached_item
+        ? (existing.__nte_sales_item = cached_item)
+        : delete existing.__nte_sales_item;
       existing.__nte_sales_source = thumb;
       return;
     }
@@ -8098,7 +10141,8 @@
   }
   function sync_trade_rap_signal_button(card) {
     if (!card) return;
-    let cached_item = get_cached_search_item_from_el(card) || card.__nte_sales_item || null;
+    let cached_item =
+      get_cached_search_item_from_el(card) || card.__nte_sales_item || null;
     cached_item && (card.__nte_sales_item = cached_item);
     let flag_host = card.querySelector(".item-card-link") || card;
     let thumb =
@@ -8108,27 +10152,33 @@
       card.querySelector(".thumbnail-2d-container") ||
       card;
     if (!thumb) return;
-    if ("static" === getComputedStyle(thumb).position) thumb.style.position = "relative";
+    if ("static" === getComputedStyle(thumb).position)
+      thumb.style.position = "relative";
     let btn = thumb.querySelector(".nte-rap-signal-btn"),
       ctx = get_trade_rap_signal_context_from_element(card);
     if (!ctx) {
       flag_host?.classList?.remove("nte-has-rap-signal");
       if (btn) {
-        nte_trade_sales_hover_active_el === btn && hide_trade_sales_hover_panel();
+        nte_trade_sales_hover_active_el === btn &&
+          hide_trade_sales_hover_panel();
         btn.remove();
       }
       return;
     }
     flag_host?.classList?.add("nte-has-rap-signal");
     btn || (btn = create_trade_rap_signal_button());
-    cached_item ? (btn.__nte_sales_item = cached_item) : delete btn.__nte_sales_item;
+    cached_item
+      ? (btn.__nte_sales_item = cached_item)
+      : delete btn.__nte_sales_item;
     btn.__nte_sales_source = thumb;
     update_trade_rap_signal_button(btn, ctx);
     btn.isConnected || thumb.appendChild(btn);
   }
   function mount_trade_sales_hover_targets(root = document) {
     ensure_trade_sales_hover_panel();
-    for (let el of root.querySelectorAll(".trade-list-detail-offer .item-card-container, .trade-inventory-panel .item-card-container")) {
+    for (let el of root.querySelectorAll(
+      ".trade-list-detail-offer .item-card-container, .trade-inventory-panel .item-card-container",
+    )) {
       ensure_trade_sales_hover_button(el);
       sync_trade_rap_signal_button(el);
     }
@@ -8136,7 +10186,8 @@
   function sync_mobile_trade_inventory_scroll() {
     if ("sendOrCounter" !== c.getPageType()) return;
     let mobile_layout = trade_sales_hover_use_mobile_layout(),
-      scroll_hosts = ".trade-inventory-panel .item-cards, .trade-inventory-panel .item-cards-stackable, .trade-inventory-panel .item-list, .inventory-panel-holder .hlist",
+      scroll_hosts =
+        ".trade-inventory-panel .item-cards, .trade-inventory-panel .item-cards-stackable, .trade-inventory-panel .item-list, .inventory-panel-holder .hlist",
       scroll_wrappers = ".trade-inventory-panel, .inventory-panel-holder";
     for (let el of document.querySelectorAll(scroll_wrappers))
       mobile_layout
@@ -8160,16 +10211,38 @@
           el.style.removeProperty("-webkit-overflow-scrolling"));
   }
   let nte_trade_dominance_frame = 0;
+  let nte_trade_dominance_last_run = 0;
+  const NTE_TRADE_DOMINANCE_THROTTLE_MS = 500;
+  let trade_interference_cache = null;
+  let trade_interference_cache_time = 0;
+  const TRADE_INTERFERENCE_CACHE_MS = 1000;
   function is_trade_overlay_visible(el) {
-    if (!(el instanceof Element) || !el.isConnected || el.hidden || "true" === el.getAttribute("aria-hidden") || el.classList?.contains("ng-hide")) return false;
+    if (
+      !(el instanceof Element) ||
+      !el.isConnected ||
+      el.hidden ||
+      "true" === el.getAttribute("aria-hidden") ||
+      el.classList?.contains("ng-hide")
+    )
+      return false;
     let style = getComputedStyle(el);
-    if ("none" === style.display || "hidden" === style.visibility || Number(style.opacity || "1") < 0.05) return false;
+    if (
+      "none" === style.display ||
+      "hidden" === style.visibility ||
+      Number(style.opacity || "1") < 0.05
+    )
+      return false;
     let rect = el.getBoundingClientRect();
     return !(rect.width < 90 || rect.height < 90);
   }
   function is_trade_modal_like(el) {
     if (!is_trade_overlay_visible(el)) return false;
-    if (el.matches?.("dialog[open], #nte-totp-unlock-dialog[open], [role='dialog'][aria-modal='true'], [aria-modal='true']")) return true;
+    if (
+      el.matches?.(
+        "dialog[open], #nte-totp-unlock-dialog[open], [role='dialog'][aria-modal='true'], [aria-modal='true']",
+      )
+    )
+      return true;
     let style = getComputedStyle(el),
       z_index = parseInt(style.zIndex || "0", 10);
     if ("fixed" !== style.position && "sticky" !== style.position) return false;
@@ -8189,15 +10262,22 @@
       ".verification-modal",
       ".challenge-dialog",
     ];
-    for (let el of document.querySelectorAll(selectors.join(","))) if (is_trade_modal_like(el)) return true;
+    for (let el of document.querySelectorAll(selectors.join(",")))
+      if (is_trade_modal_like(el)) return true;
     return false;
   }
   function trade_rects_overlap(a, b, padding = 2) {
     if (!(a instanceof Element) || !(b instanceof Element)) return false;
     let r1 = a.getBoundingClientRect(),
       r2 = b.getBoundingClientRect();
-    if (r1.width < 4 || r1.height < 4 || r2.width < 4 || r2.height < 4) return false;
-    return !(r1.right <= r2.left + padding || r1.left >= r2.right - padding || r1.bottom <= r2.top + padding || r1.top >= r2.bottom - padding);
+    if (r1.width < 4 || r1.height < 4 || r2.width < 4 || r2.height < 4)
+      return false;
+    return !(
+      r1.right <= r2.left + padding ||
+      r1.left >= r2.right - padding ||
+      r1.bottom <= r2.top + padding ||
+      r1.top >= r2.bottom - padding
+    );
   }
   function get_trade_interference_targets() {
     let selectors = [
@@ -8230,15 +10310,32 @@
     return targets;
   }
   function has_trade_interference() {
+    let now = Date.now();
+    if (
+      trade_interference_cache !== null &&
+      now - trade_interference_cache_time < TRADE_INTERFERENCE_CACHE_MS
+    )
+      return trade_interference_cache;
     let targets = get_trade_interference_targets();
-    if (!targets.length) return false;
+    if (!targets.length) {
+      trade_interference_cache = false;
+      trade_interference_cache_time = now;
+      return false;
+    }
     let ours = document.querySelectorAll(
       ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn,.nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link,.nte-history-panel,.nte-sales-hover-panel,.nte-sales-chart-point-tooltip",
     );
     for (let own of ours) {
       if (!is_trade_overlay_visible(own)) continue;
-      for (let target of targets) if (trade_rects_overlap(own, target)) return true;
+      for (let target of targets)
+        if (trade_rects_overlap(own, target)) {
+          trade_interference_cache = true;
+          trade_interference_cache_time = now;
+          return true;
+        }
     }
+    trade_interference_cache = false;
+    trade_interference_cache_time = now;
     return false;
   }
   function should_back_off_trade_thumb_ui() {
@@ -8290,7 +10387,11 @@
   }
   function set_trade_style(el, property, value, priority = "") {
     if (!el?.style) return;
-    if (el.style.getPropertyValue(property) === value && el.style.getPropertyPriority(property) === priority) return;
+    if (
+      el.style.getPropertyValue(property) === value &&
+      el.style.getPropertyPriority(property) === priority
+    )
+      return;
     el.style.setProperty(property, value, priority);
   }
   function remove_trade_style(el, property) {
@@ -8300,7 +10401,8 @@
   function mark_trade_dominant(el, z_index) {
     if (!el?.style) return;
     let position = getComputedStyle(el).position;
-    if (!position || "static" === position) set_trade_style(el, "position", "relative", "important");
+    if (!position || "static" === position)
+      set_trade_style(el, "position", "relative", "important");
     set_trade_style(el, "z-index", String(z_index), "important");
     set_trade_style(el, "pointer-events", "auto", "important");
     set_trade_style(el, "isolation", "isolate", "important");
@@ -8309,7 +10411,11 @@
     remove_trade_style(el, "z-index");
   }
   function is_trade_action_button(el) {
-    return !!(el?.matches?.('button[ng-click*="acceptTrade"],button[ng-click*="counterTrade"],button[ng-click*="declineTrade"]') && !el.classList.contains("ng-hide"));
+    return !!(
+      el?.matches?.(
+        'button[ng-click*="acceptTrade"],button[ng-click*="counterTrade"],button[ng-click*="declineTrade"]',
+      ) && !el.classList.contains("ng-hide")
+    );
   }
   function sync_trade_button_position(btn) {
     let container = btn?.parentElement;
@@ -8320,60 +10426,120 @@
       if (is_trade_action_button(child)) after = child;
     }
     if (btn.classList.contains("nte-analyze-trade-btn")) {
-      let history_btn = children.find((child) => child.classList?.contains("nte-history-btn"));
+      let history_btn = children.find((child) =>
+        child.classList?.contains("nte-history-btn"),
+      );
       if (history_btn) after = history_btn;
     }
     if (btn.classList.contains("nte-poison-btn")) {
-      let analyze_btn = children.find((child) => child.classList?.contains("nte-analyze-trade-btn"));
-      let history_btn = children.find((child) => child.classList?.contains("nte-history-btn"));
+      let analyze_btn = children.find((child) =>
+        child.classList?.contains("nte-analyze-trade-btn"),
+      );
+      let history_btn = children.find((child) =>
+        child.classList?.contains("nte-history-btn"),
+      );
       if (analyze_btn) after = analyze_btn;
       else if (history_btn) after = history_btn;
     }
     let desired_next = after ? after.nextSibling : container.firstChild;
-    if ((after && btn.previousSibling === after) || (!after && container.firstChild === btn)) return;
+    if (
+      (after && btn.previousSibling === after) ||
+      (!after && container.firstChild === btn)
+    )
+      return;
     container.insertBefore(btn, desired_next);
   }
   function assert_trade_page_dominance() {
-    nte_trade_dominance_frame && cancelAnimationFrame(nte_trade_dominance_frame);
+    nte_trade_dominance_frame &&
+      cancelAnimationFrame(nte_trade_dominance_frame);
     nte_trade_dominance_frame = requestAnimationFrame(() => {
       nte_trade_dominance_frame = 0;
+      let now = Date.now();
+      if (now - nte_trade_dominance_last_run < NTE_TRADE_DOMINANCE_THROTTLE_MS)
+        return;
+      nte_trade_dominance_last_run = now;
       ensure_trade_page_dominance_styles();
       let back_off_thumb_ui = should_back_off_trade_thumb_ui();
       let fight_mode = !back_off_thumb_ui && has_trade_interference();
-      document.documentElement.classList.toggle("nte-trade-ui-backoff", back_off_thumb_ui);
-      document.documentElement.classList.toggle("nte-trade-ui-fight", fight_mode);
+      document.documentElement.classList.toggle(
+        "nte-trade-ui-backoff",
+        back_off_thumb_ui,
+      );
+      document.documentElement.classList.toggle(
+        "nte-trade-ui-fight",
+        fight_mode,
+      );
       if (back_off_thumb_ui) {
         clearTimeout(nte_trade_sales_hover_hide_timer);
         clearTimeout(nte_trade_sales_hover_show_timer);
         nte_trade_sales_hover_active_el = null;
         schedule_trade_sales_hover_hide(0);
       }
-      for (let el of document.querySelectorAll(".trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row")) set_trade_style(el, "overflow", "visible", "important");
-      for (let el of document.querySelectorAll(".item-card-container,.item-card-link,.item-card-thumb-container,.trade-request-item")) {
+      for (let el of document.querySelectorAll(
+        ".trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row",
+      ))
         set_trade_style(el, "overflow", "visible", "important");
-        let position = getComputedStyle(el).position;
-        if (!position || "static" === position) set_trade_style(el, "position", "relative", "important");
+      for (let el of document.querySelectorAll(
+        ".item-card-container,.item-card-link,.item-card-thumb-container,.trade-request-item",
+      )) {
+        set_trade_style(el, "overflow", "visible", "important");
+        if (!el.dataset.ntePositionFixed) {
+          el.dataset.ntePositionFixed = "1";
+          let position = getComputedStyle(el).position;
+          if (!position || "static" === position)
+            set_trade_style(el, "position", "relative", "important");
+        }
       }
-      for (let el of document.querySelectorAll(".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn")) {
-        fight_mode ? mark_trade_dominant(el, 2147483588) : clear_trade_dominant(el);
+      for (let el of document.querySelectorAll(
+        ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn",
+      )) {
+        fight_mode
+          ? mark_trade_dominant(el, 2147483588)
+          : clear_trade_dominant(el);
         sync_trade_button_position(el);
       }
-      for (let el of document.querySelectorAll(".nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link")) {
-        if (el.classList?.contains("nte-rolimons-thumb-link") && el.dataset.nteInlineLink === "1") {
+      for (let el of document.querySelectorAll(
+        ".nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link",
+      )) {
+        if (
+          el.classList?.contains("nte-rolimons-thumb-link") &&
+          el.dataset.nteInlineLink === "1"
+        ) {
           clear_trade_dominant(el);
           continue;
         }
-        fight_mode ? mark_trade_dominant(el, 2147483589) : clear_trade_dominant(el);
-        let host = el.__nte_sales_source || el.closest(".item-card-link,.item-card-thumb-container,.item-card-container,.trade-request-item");
+        fight_mode
+          ? mark_trade_dominant(el, 2147483589)
+          : clear_trade_dominant(el);
+        let host =
+          el.__nte_sales_source ||
+          el.closest(
+            ".item-card-link,.item-card-thumb-container,.item-card-container,.trade-request-item",
+          );
         host && el.parentElement !== host && host.appendChild(el);
       }
-      for (let el of document.querySelectorAll(".nte-history-fallback-row,.nte-poison-fallback-row")) fight_mode ? mark_trade_dominant(el, 2147483586) : clear_trade_dominant(el);
-      for (let el of document.querySelectorAll(".nte-history-panel")) fight_mode ? mark_trade_dominant(el, 2147483610) : clear_trade_dominant(el);
+      for (let el of document.querySelectorAll(
+        ".nte-history-fallback-row,.nte-poison-fallback-row",
+      ))
+        fight_mode
+          ? mark_trade_dominant(el, 2147483586)
+          : clear_trade_dominant(el);
+      for (let el of document.querySelectorAll(".nte-history-panel"))
+        fight_mode
+          ? mark_trade_dominant(el, 2147483610)
+          : clear_trade_dominant(el);
       if (!back_off_thumb_ui && fight_mode) {
-        for (let el of document.querySelectorAll(".nte-sales-hover-panel")) mark_trade_dominant(el, 2147483612);
-        for (let el of document.querySelectorAll(".nte-sales-chart-point-tooltip")) mark_trade_dominant(el, 2147483613);
+        for (let el of document.querySelectorAll(".nte-sales-hover-panel"))
+          mark_trade_dominant(el, 2147483612);
+        for (let el of document.querySelectorAll(
+          ".nte-sales-chart-point-tooltip",
+        ))
+          mark_trade_dominant(el, 2147483613);
       } else {
-        for (let el of document.querySelectorAll(".nte-sales-hover-panel,.nte-sales-chart-point-tooltip")) clear_trade_dominant(el);
+        for (let el of document.querySelectorAll(
+          ".nte-sales-hover-panel,.nte-sales-chart-point-tooltip",
+        ))
+          clear_trade_dominant(el);
       }
     });
   }
@@ -8382,7 +10548,8 @@
     trade_ui_refresh_running = null,
     trade_ui_refresh_pending = !1;
   async function run_trade_ui_refresh_now() {
-    if (trade_ui_refresh_running) return (trade_ui_refresh_pending = !0), trade_ui_refresh_running;
+    if (trade_ui_refresh_running)
+      return (trade_ui_refresh_pending = !0), trade_ui_refresh_running;
     trade_ui_refresh_running = (async () => {
       do {
         trade_ui_refresh_pending = !1;
@@ -8412,7 +10579,8 @@
     get_trade_list_filter_anchor() || clear_trade_list_filter_ui();
     (0, u.default)();
     bind_trade_detail_uaid_refresh();
-    if (typeof schedule_ownership_check === "function") schedule_ownership_check();
+    if (typeof schedule_ownership_check === "function")
+      schedule_ownership_check();
     await Promise.allSettled([Promise.resolve(m()), S(), p(), C()]);
     w();
     (0, B.default)();
@@ -8423,8 +10591,10 @@
     F();
     mount_trade_sales_hover_targets();
     sync_mobile_trade_inventory_scroll();
-    if (typeof inject_trade_history_button === "function") inject_trade_history_button();
-    if (typeof schedule_ownership_check === "function") schedule_ownership_check();
+    if (typeof inject_trade_history_button === "function")
+      inject_trade_history_button();
+    if (typeof schedule_ownership_check === "function")
+      schedule_ownership_check();
     assert_trade_page_dominance();
   }
   async function F() {
@@ -8437,10 +10607,17 @@
     if (t[0])
       for (let robux_input of t)
         robux_input.dataset.nteTradeRefreshBound ||
-          ((robux_input.dataset.nteTradeRefreshBound = "1"), robux_input.addEventListener("input", e));
+          ((robux_input.dataset.nteTradeRefreshBound = "1"),
+          robux_input.addEventListener("input", e));
   }
-  console.info(`%c${c.getExtensionTitle()} v${chrome.runtime.getManifest().version} has started!`, "color: #0084DD");
-  console.info("%cJoin our Discord: discord.gg/4XWE7yy2uE", "color: #5865F2; font-weight: bold");
+  console.info(
+    `%c${c.getExtensionTitle()} v${chrome.runtime.getManifest().version} has started!`,
+    "color: #0084DD",
+  );
+  console.info(
+    "%cJoin our Discord: discord.gg/4XWE7yy2uE",
+    "color: #5865F2; font-weight: bold",
+  );
   c.refreshData(N);
   (async () => {
     let e = await c.waitForElm(".trades-container");
@@ -8449,10 +10626,15 @@
       for (let t of e) {
         if ("attributes" === t.type) {
           let node = t.target;
-          if (node?.classList?.contains("trade-row") && node.classList.contains("selected")) {
+          if (
+            node?.classList?.contains("trade-row") &&
+            node.classList.contains("selected")
+          ) {
             reset_ownership_check_state_for_row(node);
-            if (typeof prewarm_ownership_for_row === "function") prewarm_ownership_for_row(node);
-            if (typeof schedule_ownership_check === "function") schedule_ownership_check(0);
+            if (typeof prewarm_ownership_for_row === "function")
+              prewarm_ownership_for_row(node);
+            if (typeof schedule_ownership_check === "function")
+              schedule_ownership_check(0);
             schedule_trade_ui_refresh(0, !0);
             continue;
           }
@@ -8460,24 +10642,38 @@
         if ("childList" !== t.type || !t.addedNodes) continue;
         for (let node of t.addedNodes) {
           if (node.classList?.contains("trade-item-card")) {
-            if (typeof schedule_ownership_check === "function") schedule_ownership_check(0);
+            if (typeof schedule_ownership_check === "function")
+              schedule_ownership_check(0);
             return schedule_trade_ui_refresh(0, !0);
           }
           if (
-            node.matches?.(".item-card-container[data-collectibleiteminstanceid], .trade-item-card[data-collectibleiteminstanceid]") ||
-            node.querySelector?.(".item-card-container[data-collectibleiteminstanceid], .trade-item-card[data-collectibleiteminstanceid]")
+            node.matches?.(
+              ".item-card-container[data-collectibleiteminstanceid], .trade-item-card[data-collectibleiteminstanceid]",
+            ) ||
+            node.querySelector?.(
+              ".item-card-container[data-collectibleiteminstanceid], .trade-item-card[data-collectibleiteminstanceid]",
+            )
           ) {
-            if (typeof schedule_ownership_check === "function") schedule_ownership_check(0);
+            if (typeof schedule_ownership_check === "function")
+              schedule_ownership_check(0);
             return schedule_trade_ui_refresh(0, !0);
           }
-          if (node.classList?.contains("trade-row") || node.querySelector?.(".trade-row")) {
+          if (
+            node.classList?.contains("trade-row") ||
+            node.querySelector?.(".trade-row")
+          ) {
             return L();
           }
-          if (node.classList?.contains("loading") || node.classList?.contains("trade-request-item")) return schedule_trade_ui_refresh(0, !0);
+          if (
+            node.classList?.contains("loading") ||
+            node.classList?.contains("trade-request-item")
+          )
+            return schedule_trade_ui_refresh(0, !0);
         }
       }
     }).observe(e, {
       attributes: !0,
+      attributeFilter: ["class"],
       childList: !0,
       subtree: !0,
     });
@@ -8519,6 +10715,7 @@
           document.dispatchEvent(new CustomEvent("nru_trade_thumb_clear"));
         } catch {}
         row_fetch_q = [];
+        row_fetch_fast_q = [];
         row_active_requests = 0;
         reset_ownership_check_state();
         if (current !== "inbound" && current !== "outbound") {
@@ -8530,11 +10727,16 @@
         }
       }
     }
-    new MutationObserver(check_tab_switch).observe(document.querySelector(".trade-tab-group") || document.querySelector(".tab-nav") || e, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-    });
+    new MutationObserver(check_tab_switch).observe(
+      document.querySelector(".trade-tab-group") ||
+        document.querySelector(".tab-nav") ||
+        e,
+      {
+        childList: true,
+        subtree: true,
+        attributes: true,
+      },
+    );
     setInterval(check_tab_switch, 1500);
   })();
   async function rerender_open_trade_history_panel() {
@@ -8557,7 +10759,8 @@
     if (trade_ui_refresh_messages.includes(e)) N();
     if (e === "Show Quick Decline Button") L();
     if (e === "Analyze Trade") inject_trade_history_button();
-    if (e === "Duplicate Trade Warning") schedule_duplicate_trade_warning_update(0);
+    if (e === "Duplicate Trade Warning")
+      schedule_duplicate_trade_warning_update(0);
   });
   try {
     let keepalive_port = chrome.runtime.connect({ name: "nte-keepalive" });
@@ -8586,26 +10789,51 @@
   let duplicate_trade_warning_local_sent = {};
 
   function normalize_duplicate_trade_warning_hours(value) {
-    let parsed = Number(String(value ?? "").replace(/h/gi, "").trim());
-    if (!Number.isFinite(parsed)) parsed = duplicate_trade_warning_hours_default;
+    let parsed = Number(
+      String(value ?? "")
+        .replace(/h/gi, "")
+        .trim(),
+    );
+    if (!Number.isFinite(parsed))
+      parsed = duplicate_trade_warning_hours_default;
     parsed = Math.round(parsed);
     return Math.max(1, Math.min(168, parsed));
   }
 
   function prune_duplicate_trade_warning_local_sent(now = Date.now()) {
-    for (let [user_id, timestamp] of Object.entries(duplicate_trade_warning_local_sent)) {
-      if (!Number.isFinite(timestamp) || now - timestamp > duplicate_trade_warning_max_age_ms) delete duplicate_trade_warning_local_sent[user_id];
+    for (let [user_id, timestamp] of Object.entries(
+      duplicate_trade_warning_local_sent,
+    )) {
+      if (
+        !Number.isFinite(timestamp) ||
+        now - timestamp > duplicate_trade_warning_max_age_ms
+      )
+        delete duplicate_trade_warning_local_sent[user_id];
     }
   }
 
   function is_duplicate_trade_warning_modal(el) {
-    return el instanceof Element && !el.classList.contains("ng-hide") && el.getClientRects().length > 0 && /send a trade request/i.test(el.textContent || "");
+    return (
+      el instanceof Element &&
+      !el.classList.contains("ng-hide") &&
+      el.getClientRects().length > 0 &&
+      /send a trade request/i.test(el.textContent || "")
+    );
   }
 
   function find_duplicate_trade_warning_modal() {
-    let selectors = [".modal-dialog", ".modal-content", ".modal-body", '[role="dialog"]', ".rbx-overlay", ".rbx-modal", ".modal-container"];
+    let selectors = [
+      ".modal-dialog",
+      ".modal-content",
+      ".modal-body",
+      '[role="dialog"]',
+      ".rbx-overlay",
+      ".rbx-modal",
+      ".modal-container",
+    ];
     let candidates = [];
-    for (let selector of selectors) candidates.push(...document.querySelectorAll(selector));
+    for (let selector of selectors)
+      candidates.push(...document.querySelectorAll(selector));
     for (let i = candidates.length - 1; i >= 0; i--) {
       if (is_duplicate_trade_warning_modal(candidates[i])) return candidates[i];
     }
@@ -8613,24 +10841,47 @@
   }
 
   function find_duplicate_trade_warning_anchor(modal) {
-    let body = modal.matches(".modal-body") ? modal : modal.querySelector(".modal-body") || modal;
+    let body = modal.matches(".modal-body")
+      ? modal
+      : modal.querySelector(".modal-body") || modal;
     let candidates = Array.from(body.querySelectorAll("div, p, span, h4, h5"));
-    return candidates.find((el) => /send a trade request/i.test(el.textContent || "") && el.children.length <= 3) || body.firstElementChild || body;
+    return (
+      candidates.find(
+        (el) =>
+          /send a trade request/i.test(el.textContent || "") &&
+          el.children.length <= 3,
+      ) ||
+      body.firstElementChild ||
+      body
+    );
   }
 
   function is_duplicate_trade_warning_relevant_page() {
     let page_type = c.getPageType();
-    return page_type === "details" || page_type === "sendOrCounter" || /\/users\/\d+\/trade/i.test(window.location.pathname) || !!document.querySelector(".trade-request-window, .trades-container");
+    return (
+      page_type === "details" ||
+      page_type === "sendOrCounter" ||
+      /\/users\/\d+\/trade/i.test(window.location.pathname) ||
+      !!document.querySelector(".trade-request-window, .trades-container")
+    );
   }
 
   function get_duplicate_trade_warning_partner_id() {
     let path_match = window.location.pathname.match(/\/users\/(\d+)\/trade/i);
     if (path_match) return String(path_match[1]);
-    let header_link = [...document.querySelectorAll(".trades-header-nowrap .paired-name a[href*='/users/'], .paired-name a[href*='/users/']")].at(-1);
+    let header_link = [
+      ...document.querySelectorAll(
+        ".trades-header-nowrap .paired-name a[href*='/users/'], .paired-name a[href*='/users/']",
+      ),
+    ].at(-1);
     let href = header_link?.getAttribute("href") || header_link?.href || "";
     let href_match = href.match(/\/users\/(\d+)/i);
     if (href_match) return String(href_match[1]);
-    return get_selected_trade_partner_id(document.querySelector(".trade-row.selected")) || "";
+    return (
+      get_selected_trade_partner_id(
+        document.querySelector(".trade-row.selected"),
+      ) || ""
+    );
   }
 
   function ensure_duplicate_trade_warning_styles() {
@@ -8651,7 +10902,8 @@
     let diff = Math.max(0, Date.now() - Number(timestamp || 0));
     if (diff < 60000) return "just now";
     if (diff < 3600000) return `${Math.max(1, Math.floor(diff / 60000))}m ago`;
-    if (diff < 86400000) return `${Math.max(1, Math.floor(diff / 3600000))}h ago`;
+    if (diff < 86400000)
+      return `${Math.max(1, Math.floor(diff / 3600000))}h ago`;
     let days = Math.max(1, Math.floor(diff / 86400000));
     return `${days} day${days === 1 ? "" : "s"} ago`;
   }
@@ -8665,17 +10917,26 @@
   }
 
   function remove_duplicate_trade_warning() {
-    document.querySelectorAll(".nte-duplicate-trade-warning").forEach((el) => el.remove());
+    document
+      .querySelectorAll(".nte-duplicate-trade-warning")
+      .forEach((el) => el.remove());
   }
 
   function parse_duplicate_trade_warning_created(trade) {
-    let raw = trade?.created || trade?.createdAt || trade?.createdDate || trade?.createdUtc || trade?.createdOn;
+    let raw =
+      trade?.created ||
+      trade?.createdAt ||
+      trade?.createdDate ||
+      trade?.createdUtc ||
+      trade?.createdOn;
     let parsed = raw ? new Date(raw).getTime() : NaN;
     return Number.isFinite(parsed) ? parsed : NaN;
   }
 
   function get_duplicate_trade_warning_trade_user_id(trade) {
-    return String(trade?.user?.id || trade?.partner?.id || trade?.counterparty?.id || "");
+    return String(
+      trade?.user?.id || trade?.partner?.id || trade?.counterparty?.id || "",
+    );
   }
 
   async function get_duplicate_trade_warning_recent_by_user(hours) {
@@ -8685,12 +10946,19 @@
 
     if (
       duplicate_trade_warning_cache &&
-      Date.now() - duplicate_trade_warning_cache.fetched_at < duplicate_trade_warning_cache_ttl_ms &&
+      Date.now() - duplicate_trade_warning_cache.fetched_at <
+        duplicate_trade_warning_cache_ttl_ms &&
       duplicate_trade_warning_cache.cutoff <= cutoff
     ) {
       let merged = { ...duplicate_trade_warning_cache.latest_by_user };
-      for (let [user_id, timestamp] of Object.entries(duplicate_trade_warning_local_sent)) {
-        if (timestamp >= cutoff && (!merged[user_id] || timestamp > merged[user_id])) merged[user_id] = timestamp;
+      for (let [user_id, timestamp] of Object.entries(
+        duplicate_trade_warning_local_sent,
+      )) {
+        if (
+          timestamp >= cutoff &&
+          (!merged[user_id] || timestamp > merged[user_id])
+        )
+          merged[user_id] = timestamp;
       }
       return merged;
     }
@@ -8713,7 +10981,8 @@
           break;
         }
         let user_id = get_duplicate_trade_warning_trade_user_id(trade);
-        if (user_id && latest_by_user[user_id] === undefined) latest_by_user[user_id] = created;
+        if (user_id && latest_by_user[user_id] === undefined)
+          latest_by_user[user_id] = created;
       }
       if (reached_cutoff || !json?.nextPageCursor) break;
       cursor = json.nextPageCursor;
@@ -8725,8 +10994,14 @@
       latest_by_user,
     };
 
-    for (let [user_id, timestamp] of Object.entries(duplicate_trade_warning_local_sent)) {
-      if (timestamp >= cutoff && (!latest_by_user[user_id] || timestamp > latest_by_user[user_id])) latest_by_user[user_id] = timestamp;
+    for (let [user_id, timestamp] of Object.entries(
+      duplicate_trade_warning_local_sent,
+    )) {
+      if (
+        timestamp >= cutoff &&
+        (!latest_by_user[user_id] || timestamp > latest_by_user[user_id])
+      )
+        latest_by_user[user_id] = timestamp;
     }
     return latest_by_user;
   }
@@ -8751,8 +11026,12 @@
       return;
     }
     let request_token = ++duplicate_trade_warning_request_token;
-    let hours = normalize_duplicate_trade_warning_hours(await c.getOption(duplicate_trade_warning_hours_key));
-    let recent_by_user = await get_duplicate_trade_warning_recent_by_user(hours).catch(() => ({}));
+    let hours = normalize_duplicate_trade_warning_hours(
+      await c.getOption(duplicate_trade_warning_hours_key),
+    );
+    let recent_by_user = await get_duplicate_trade_warning_recent_by_user(
+      hours,
+    ).catch(() => ({}));
     if (request_token !== duplicate_trade_warning_request_token) return;
     modal = find_duplicate_trade_warning_modal();
     if (!modal) return;
@@ -8770,7 +11049,8 @@
     if (existing) existing.replaceWith(warning);
     else {
       let anchor = find_duplicate_trade_warning_anchor(modal);
-      if (anchor?.parentElement) anchor.insertAdjacentElement("afterend", warning);
+      if (anchor?.parentElement)
+        anchor.insertAdjacentElement("afterend", warning);
       else modal.insertBefore(warning, modal.firstChild);
     }
   }
@@ -8786,10 +11066,19 @@
   function note_duplicate_trade_warning_send(event) {
     let btn = event.target?.closest?.("button");
     if (!(btn instanceof Element)) return;
-    let modal = btn.closest(".modal-dialog, .modal-content, .modal-body, [role='dialog'], .rbx-overlay, .rbx-modal, .modal-container");
+    let modal = btn.closest(
+      ".modal-dialog, .modal-content, .modal-body, [role='dialog'], .rbx-overlay, .rbx-modal, .modal-container",
+    );
     if (!is_duplicate_trade_warning_modal(modal)) return;
-    let label = String(btn.textContent || "").trim().toLowerCase();
-    if (!/send|submit|confirm/.test(label) && !btn.classList.contains("btn-primary-md") && !btn.classList.contains("btn-cta-md")) return;
+    let label = String(btn.textContent || "")
+      .trim()
+      .toLowerCase();
+    if (
+      !/send|submit|confirm/.test(label) &&
+      !btn.classList.contains("btn-primary-md") &&
+      !btn.classList.contains("btn-cta-md")
+    )
+      return;
     duplicate_trade_warning_cache = null;
     schedule_duplicate_trade_warning_update(2500);
   }
@@ -8814,7 +11103,6 @@
   }
 
   ensure_duplicate_trade_warning_observer();
-
 
   var nte_ownership_style_injected = false;
   function inject_ownership_styles() {
@@ -8843,8 +11131,14 @@
 
   function is_ownership_check_allowed() {
     if (!/\/trades\b/i.test(location.pathname)) return false;
-    let tab = (new URLSearchParams(location.search).get("tab") || "").toLowerCase();
-    if (!tab) tab = String(document.querySelector(".trades-header .rbx-selection-label")?.textContent || "").toLowerCase();
+    let tab = (
+      new URLSearchParams(location.search).get("tab") || ""
+    ).toLowerCase();
+    if (!tab)
+      tab = String(
+        document.querySelector(".trades-header .rbx-selection-label")
+          ?.textContent || "",
+      ).toLowerCase();
     return !(tab.includes("completed") || tab.includes("inactive"));
   }
 
@@ -8872,11 +11166,19 @@
   }
 
   function create_owned_item_state() {
-    return { instance_ids: new Set(), target_counts: new Map(), name_counts: new Map(), is_complete: false };
+    return {
+      instance_ids: new Set(),
+      target_counts: new Map(),
+      name_counts: new Map(),
+      is_complete: false,
+    };
   }
 
   function normalize_ownership_name(name) {
-    return String(name || "").toLowerCase().replace(/\s+/g, " ").trim();
+    return String(name || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function add_ownership_count(map, key) {
@@ -8887,8 +11189,12 @@
     return [
       item,
       ...(Array.isArray(item?.instances) ? item.instances : []),
-      ...(Array.isArray(item?.collectibleItemInstances) ? item.collectibleItemInstances : []),
-      ...(Array.isArray(item?.userAssetInstances) ? item.userAssetInstances : []),
+      ...(Array.isArray(item?.collectibleItemInstances)
+        ? item.collectibleItemInstances
+        : []),
+      ...(Array.isArray(item?.userAssetInstances)
+        ? item.userAssetInstances
+        : []),
       ...(Array.isArray(item?.assetInstances) ? item.assetInstances : []),
     ].filter(Boolean);
   }
@@ -8939,7 +11245,7 @@
         inst?.item?.name ||
         item?.item?.name ||
         inst?.collectibleItem?.name ||
-        item?.collectibleItem?.name
+        item?.collectibleItem?.name,
     );
   }
 
@@ -8962,14 +11268,26 @@
       return merged;
     }
     for (let value of extra.instance_ids || []) merged.instance_ids.add(value);
-    for (let [key, value] of extra.target_counts || []) merged.target_counts.set(key, (merged.target_counts.get(key) || 0) + value);
-    for (let [key, value] of extra.name_counts || []) merged.name_counts.set(key, (merged.name_counts.get(key) || 0) + value);
-    merged.is_complete = had_base ? !!merged.is_complete && !!extra.is_complete : !!extra.is_complete;
+    for (let [key, value] of extra.target_counts || [])
+      merged.target_counts.set(
+        key,
+        (merged.target_counts.get(key) || 0) + value,
+      );
+    for (let [key, value] of extra.name_counts || [])
+      merged.name_counts.set(key, (merged.name_counts.get(key) || 0) + value);
+    merged.is_complete = had_base
+      ? !!merged.is_complete && !!extra.is_complete
+      : !!extra.is_complete;
     return merged;
   }
 
   function has_owned_item_state(state) {
-    return !!(state && (state.instance_ids.size || state.target_counts.size || state.name_counts.size));
+    return !!(
+      state &&
+      (state.instance_ids.size ||
+        state.target_counts.size ||
+        state.name_counts.size)
+    );
   }
 
   async function fetch_inventory_owned_items(user_id, wanted_offers = null) {
@@ -8987,9 +11305,11 @@
       if (!resp.ok) return null;
       let json = await resp.json().catch(() => null);
       if (!json) return null;
-      if (json.data) for (let item of json.data) {
-        for (let inst of get_owned_item_instances(item)) add_owned_item_state(owned, item, inst);
-      }
+      if (json.data)
+        for (let item of json.data) {
+          for (let inst of get_owned_item_instances(item))
+            add_owned_item_state(owned, item, inst);
+        }
       if (wanted_ownership_met(owned, wanted_offers)) return owned;
       cursor = json.nextPageCursor;
       if (!cursor) break;
@@ -9003,10 +11323,18 @@
     let owned = create_owned_item_state();
     let cursor = "";
     for (let page = 0; page < 40; page++) {
-      let params = new URLSearchParams({ sortBy: "CreationTime", cursor, limit: "100", sortOrder: "Desc" });
+      let params = new URLSearchParams({
+        sortBy: "CreationTime",
+        cursor,
+        limit: "100",
+        sortOrder: "Desc",
+      });
       let resp;
       try {
-        resp = await fetch(`https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`, { credentials: "include" });
+        resp = await fetch(
+          `https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`,
+          { credentials: "include" },
+        );
       } catch {
         return null;
       }
@@ -9014,7 +11342,11 @@
       if (!resp.ok) return null;
       let json = await resp.json().catch(() => null);
       if (!json) return null;
-      let page_items = Array.isArray(json?.items) ? json.items : Array.isArray(json?.data) ? json.data : [];
+      let page_items = Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data)
+          ? json.data
+          : [];
       for (let item of page_items) {
         for (let inst of get_owned_item_instances(item)) {
           add_owned_item_state(owned, item, inst);
@@ -9030,13 +11362,19 @@
 
   async function fetch_asset_owned_items(user_id, wanted_offers = null) {
     let owned = create_owned_item_state();
-    let wanted = Array.isArray(wanted_offers) ? wanted_offers.filter((offer) => offer?.target_id) : [];
+    let wanted = Array.isArray(wanted_offers)
+      ? wanted_offers.filter((offer) => offer?.target_id)
+      : [];
     if (!wanted.length) {
       owned.is_complete = true;
       return owned;
     }
     let target_counts = new Map();
-    for (let offer of wanted) target_counts.set(offer.target_id, (target_counts.get(offer.target_id) || 0) + 1);
+    for (let offer of wanted)
+      target_counts.set(
+        offer.target_id,
+        (target_counts.get(offer.target_id) || 0) + 1,
+      );
     let failed = false;
     for (let offer of wanted) {
       if ((target_counts.get(offer.target_id) || 0) > 1) {
@@ -9045,13 +11383,19 @@
       }
       let is_owned = null;
       try {
-        let resp = await fetch(`https://inventory.roblox.com/v1/users/${user_id}/items/Asset/${offer.target_id}/is-owned`, { credentials: "include" });
+        let resp = await fetch(
+          `https://inventory.roblox.com/v1/users/${user_id}/items/Asset/${offer.target_id}/is-owned`,
+          { credentials: "include" },
+        );
         if (!resp.ok) {
           failed = true;
           continue;
         }
         let value = await resp.json().catch(() => null);
-        is_owned = typeof value === "boolean" ? value : !!(value?.isOwned ?? value?.owned);
+        is_owned =
+          typeof value === "boolean"
+            ? value
+            : !!(value?.isOwned ?? value?.owned);
       } catch {
         failed = true;
       }
@@ -9067,7 +11411,10 @@
   function ownership_wanted_key(wanted_offers) {
     if (!Array.isArray(wanted_offers) || !wanted_offers.length) return "all";
     return wanted_offers
-      .map((offer) => `${offer.instance_id || ""}:${offer.target_id || ""}:${offer.name || ""}`)
+      .map(
+        (offer) =>
+          `${offer.instance_id || ""}:${offer.target_id || ""}:${offer.name || ""}`,
+      )
       .join("|");
   }
 
@@ -9077,29 +11424,62 @@
     if (!/^\d+$/.test(id)) return null;
     if (is_ownership_fetch_backed_off(id)) return null;
     let cache = ownership_cache[id];
-    if (cache && cache.ts > Date.now() - 600000 && cache.complete) return cache.ids;
+    if (cache && cache.ts > Date.now() - 600000 && cache.complete)
+      return cache.ids;
     let pending_key = `${id}:prewarm`;
     if (ownership_pending[pending_key]) return ownership_pending[pending_key];
     ownership_pending[pending_key] = (async () => {
       let owned = create_owned_item_state();
-      let params = new URLSearchParams({ sortBy: "CreationTime", cursor: "", limit: "100", sortOrder: "Desc" });
-      let resp = await fetch(`https://trades.roblox.com/v2/users/${id}/tradableitems?${params.toString()}`, { credentials: "include" }).catch(() => null);
+      let params = new URLSearchParams({
+        sortBy: "CreationTime",
+        cursor: "",
+        limit: "100",
+        sortOrder: "Desc",
+      });
+      let resp = await fetch(
+        `https://trades.roblox.com/v2/users/${id}/tradableitems?${params.toString()}`,
+        { credentials: "include" },
+      ).catch(() => null);
       if (resp?.status === 429) backoff_ownership_fetch(id);
       if (!resp?.ok) return null;
       let json = await resp.json().catch(() => null);
       if (!json) return null;
-      let page_items = Array.isArray(json?.items) ? json.items : Array.isArray(json?.data) ? json.data : [];
+      let page_items = Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data)
+          ? json.data
+          : [];
       for (let item of page_items) {
-        for (let inst of get_owned_item_instances(item)) add_owned_item_state(owned, item, inst);
+        for (let inst of get_owned_item_instances(item))
+          add_owned_item_state(owned, item, inst);
       }
       owned.is_complete = !json?.nextPageCursor;
-      if (!has_owned_item_state(owned)) return owned;
+      if (!has_owned_item_state(owned)) {
+        ownership_cache[id] = {
+          ids: owned,
+          ts: Date.now(),
+          complete: owned.is_complete,
+        };
+        return owned;
+      }
       let merged = cache?.ids || create_owned_item_state();
       for (let value of owned.instance_ids) merged.instance_ids.add(value);
-      for (let [key, value] of owned.target_counts) merged.target_counts.set(key, Math.max(merged.target_counts.get(key) || 0, value));
-      for (let [key, value] of owned.name_counts) merged.name_counts.set(key, Math.max(merged.name_counts.get(key) || 0, value));
+      for (let [key, value] of owned.target_counts)
+        merged.target_counts.set(
+          key,
+          Math.max(merged.target_counts.get(key) || 0, value),
+        );
+      for (let [key, value] of owned.name_counts)
+        merged.name_counts.set(
+          key,
+          Math.max(merged.name_counts.get(key) || 0, value),
+        );
       merged.is_complete = !!owned.is_complete || !!cache?.complete;
-      ownership_cache[id] = { ids: merged, ts: Date.now(), complete: merged.is_complete };
+      ownership_cache[id] = {
+        ids: merged,
+        ts: Date.now(),
+        complete: merged.is_complete,
+      };
       return merged;
     })().finally(() => {
       delete ownership_pending[pending_key];
@@ -9110,18 +11490,33 @@
   async function fetch_user_collectible_ids(user_id, wanted_offers = null) {
     if (!is_ownership_check_allowed()) return null;
     let prewarm_key = `${user_id}:prewarm`;
-    if (ownership_pending[prewarm_key]) await ownership_pending[prewarm_key].catch(() => null);
+    if (ownership_pending[prewarm_key])
+      await ownership_pending[prewarm_key].catch(() => null);
     let cache = ownership_cache[user_id];
     if (cache && cache.ts > Date.now() - 600000) {
-      if (cache.complete || wanted_ownership_met(cache.ids, wanted_offers)) return cache.ids;
+      if (cache.complete || wanted_ownership_met(cache.ids, wanted_offers))
+        return cache.ids;
     }
     let pending_key = `${user_id}:${ownership_wanted_key(wanted_offers)}`;
     if (ownership_pending[pending_key]) return ownership_pending[pending_key];
     ownership_pending[pending_key] = (async () => {
       let owned = await fetch_tradable_owned_items(user_id, wanted_offers);
-      if (!wanted_ownership_met(owned, wanted_offers)) owned = merge_owned_item_state(owned, await fetch_inventory_owned_items(user_id, wanted_offers));
-      if (!wanted_ownership_met(owned, wanted_offers)) owned = merge_owned_item_state(owned, await fetch_asset_owned_items(user_id, wanted_offers));
-      if (owned) ownership_cache[user_id] = { ids: owned, ts: Date.now(), complete: !!owned.is_complete };
+      if (!wanted_ownership_met(owned, wanted_offers))
+        owned = merge_owned_item_state(
+          owned,
+          await fetch_inventory_owned_items(user_id, wanted_offers),
+        );
+      if (!wanted_ownership_met(owned, wanted_offers))
+        owned = merge_owned_item_state(
+          owned,
+          await fetch_asset_owned_items(user_id, wanted_offers),
+        );
+      if (owned)
+        ownership_cache[user_id] = {
+          ids: owned,
+          ts: Date.now(),
+          complete: !!owned.is_complete,
+        };
       return owned;
     })().finally(() => {
       delete ownership_pending[pending_key];
@@ -9130,13 +11525,21 @@
   }
 
   function get_selected_trade_id_sync(row) {
-    return row?.getAttribute("nruTradeId") || row?.getAttribute("nrutradeid") || row?.getAttribute("data-nte-trade-id") || "";
+    return (
+      row?.getAttribute("nruTradeId") ||
+      row?.getAttribute("nrutradeid") ||
+      row?.getAttribute("data-nte-trade-id") ||
+      ""
+    );
   }
 
   function get_selected_trade_partner_id(row) {
     let href =
       row?.querySelector('a[href*="/users/"]')?.getAttribute("href") ||
-      [...document.getElementsByClassName("trades-header-nowrap")].at(-1)?.querySelector(".paired-name")?.getAttribute("href") ||
+      [...document.getElementsByClassName("trades-header-nowrap")]
+        .at(-1)
+        ?.querySelector(".paired-name")
+        ?.getAttribute("href") ||
       "";
     let match = href.match(/\/users\/(\d+)\//);
     return match ? match[1] : "";
@@ -9146,7 +11549,8 @@
     let trade_id = get_selected_trade_id_sync(row);
     if (trade_id) return `trade:${trade_id}`;
     let partner_id = get_selected_trade_partner_id(row);
-    let text = row?.textContent?.replace(/\s+/g, " ").trim().slice(0, 160) || "";
+    let text =
+      row?.textContent?.replace(/\s+/g, " ").trim().slice(0, 160) || "";
     return partner_id || text ? `row:${partner_id}:${text}` : "";
   }
 
@@ -9158,10 +11562,14 @@
   }
 
   function get_selected_trade_partner_name(row) {
-    let paired = [...document.getElementsByClassName("trades-header-nowrap")].at(-1)?.querySelector(".paired-name");
+    let paired = [...document.getElementsByClassName("trades-header-nowrap")]
+      .at(-1)
+      ?.querySelector(".paired-name");
     let username = paired?.children?.[2]?.textContent?.trim() || "";
     if (username) return username.replace(/^@+/, "");
-    let name_el = row?.querySelector(".text-lead") || row?.querySelector("[ng-bind*='nameForDisplay']");
+    let name_el =
+      row?.querySelector(".text-lead") ||
+      row?.querySelector("[ng-bind*='nameForDisplay']");
     return name_el?.textContent?.trim() || "Unknown";
   }
 
@@ -9170,14 +11578,21 @@
   }
 
   function get_trade_offer_header_text(offer_el) {
-    return String(offer_el?.querySelector(".trade-list-detail-offer-header")?.textContent || "");
+    return String(
+      offer_el?.querySelector(".trade-list-detail-offer-header")?.textContent ||
+        "",
+    );
   }
 
   function get_partner_offer_element() {
     let offers = get_trade_offer_elements();
     if (!offers.length) return null;
     return (
-      offers.find((offer) => /would have received|would receive|received/i.test(get_trade_offer_header_text(offer))) ||
+      offers.find((offer) =>
+        /would have received|would receive|received/i.test(
+          get_trade_offer_header_text(offer),
+        ),
+      ) ||
       offers[1] ||
       null
     );
@@ -9188,7 +11603,11 @@
     if (!offers.length) return null;
     let partner_offer = get_partner_offer_element();
     return (
-      offers.find((offer) => /would have given|would give|gave|sent|offered/i.test(get_trade_offer_header_text(offer))) ||
+      offers.find((offer) =>
+        /would have given|would give|gave|sent|offered/i.test(
+          get_trade_offer_header_text(offer),
+        ),
+      ) ||
       offers.find((offer) => offer !== partner_offer) ||
       offers[0] ||
       null
@@ -9196,11 +11615,17 @@
   }
 
   function get_history_offer_element(item_side = "partner") {
-    return item_side === "self" ? get_self_offer_element() : get_partner_offer_element();
+    return item_side === "self"
+      ? get_self_offer_element()
+      : get_partner_offer_element();
   }
 
   function get_offer_collectible_cards(offer_el) {
-    return Array.from(offer_el?.querySelectorAll(".item-card-container[data-collectibleiteminstanceid]") || []);
+    return Array.from(
+      offer_el?.querySelectorAll(
+        ".item-card-container[data-collectibleiteminstanceid]",
+      ) || [],
+    );
   }
 
   function get_offer_card_ownership_data(card) {
@@ -9209,12 +11634,18 @@
       card.querySelector(".item-card-name-link") ||
       card.querySelector(".item-card-name");
     return {
-      instance_id: (card.getAttribute("data-collectibleiteminstanceid") || "").toLowerCase(),
+      instance_id: (
+        card.getAttribute("data-collectibleiteminstanceid") || ""
+      ).toLowerCase(),
       target_id: String(
         c.getItemIdFromElement(card) ||
-          card.querySelector("thumbnail-2d")?.getAttribute("thumbnail-target-id") ||
-          card.querySelector(".thumbnail-2d-container")?.getAttribute("thumbnail-target-id") ||
-          ""
+          card
+            .querySelector("thumbnail-2d")
+            ?.getAttribute("thumbnail-target-id") ||
+          card
+            .querySelector(".thumbnail-2d-container")
+            ?.getAttribute("thumbnail-target-id") ||
+          "",
       ),
       name: normalize_ownership_name(name_el?.textContent),
       display_name: name_el?.textContent?.trim() || "Unknown item",
@@ -9236,27 +11667,41 @@
       consume_ownership_count(owned.name_counts, offer.name);
       return true;
     }
-    if (consume_ownership_count(owned.target_counts, offer.target_id)) return true;
+    if (consume_ownership_count(owned.target_counts, offer.target_id))
+      return true;
     return consume_ownership_count(owned.name_counts, offer.name);
   }
 
   function wanted_ownership_met(owned, wanted_offers) {
-    if (!Array.isArray(wanted_offers) || !wanted_offers.length || !has_owned_item_state(owned)) return false;
+    if (
+      !Array.isArray(wanted_offers) ||
+      !wanted_offers.length ||
+      !has_owned_item_state(owned)
+    )
+      return false;
     let remaining_owned = {
       instance_ids: new Set(owned.instance_ids),
       target_counts: new Map(owned.target_counts),
       name_counts: new Map(owned.name_counts),
     };
-    return wanted_offers.every((offer) => consume_owned_item(remaining_owned, offer));
+    return wanted_offers.every((offer) =>
+      consume_owned_item(remaining_owned, offer),
+    );
   }
 
   function clear_ownership_ui() {
-    document.querySelectorAll(".nte-unowned-badge, .nte-ownership-banner").forEach((el) => el.remove());
-    document.querySelectorAll(".nte-unowned-card").forEach((el) => el.classList.remove("nte-unowned-card"));
+    document
+      .querySelectorAll(".nte-unowned-badge, .nte-ownership-banner")
+      .forEach((el) => el.remove());
+    document
+      .querySelectorAll(".nte-unowned-card")
+      .forEach((el) => el.classList.remove("nte-unowned-card"));
   }
 
   function show_ownership_banner(offer_el, unowned_names) {
-    offer_el.querySelectorAll(".nte-ownership-banner").forEach((el) => el.remove());
+    offer_el
+      .querySelectorAll(".nte-ownership-banner")
+      .forEach((el) => el.remove());
     let banner = document.createElement("div");
     banner.className = "nte-ownership-banner";
     banner.textContent = `They no longer own: ${unowned_names.join(", ")}`;
@@ -9266,7 +11711,9 @@
   }
 
   function show_ownership_unknown_banner(offer_el) {
-    offer_el.querySelectorAll(".nte-ownership-banner").forEach((el) => el.remove());
+    offer_el
+      .querySelectorAll(".nte-ownership-banner")
+      .forEach((el) => el.remove());
     let banner = document.createElement("div");
     banner.className = "nte-ownership-banner nte-ownership-unknown";
     banner.textContent = "Could not verify current ownership for this user";
@@ -9286,15 +11733,23 @@
     let cards = get_offer_collectible_cards(offer_el);
     if (!partner_id || !offer_el || !cards.length) return;
 
-    let card_signature = cards.map((card) => card.getAttribute("data-collectibleiteminstanceid") || "").join("|");
+    let card_signature = cards
+      .map((card) => card.getAttribute("data-collectibleiteminstanceid") || "")
+      .join("|");
     let check_key = `${trade_id || "detail"}:${partner_id}:${card_signature}`;
     if (check_key === ownership_last_trade_id) return;
     ownership_last_trade_id = check_key;
     let run_token = ++ownership_run_token;
 
-    let wanted_offers = cards.map((card) => get_offer_card_ownership_data(card));
+    let wanted_offers = cards.map((card) =>
+      get_offer_card_ownership_data(card),
+    );
     let owned = await fetch_user_collectible_ids(partner_id, wanted_offers);
-    if (run_token !== ownership_run_token || ownership_last_trade_id !== check_key) return;
+    if (
+      run_token !== ownership_run_token ||
+      ownership_last_trade_id !== check_key
+    )
+      return;
     if (!has_owned_item_state(owned)) {
       clear_ownership_ui();
       show_ownership_unknown_banner(offer_el);
@@ -9318,7 +11773,8 @@
       show_ownership_unknown_banner(offer_el);
       return;
     }
-    if (unowned_names.length > 0) show_ownership_banner(offer_el, unowned_names);
+    if (unowned_names.length > 0)
+      show_ownership_banner(offer_el, unowned_names);
   }
 
   function schedule_ownership_check(delay = 120) {
@@ -9327,14 +11783,15 @@
     if (ownership_check_timer && due >= ownership_check_due) return;
     clearTimeout(ownership_check_timer);
     ownership_check_due = due;
-    ownership_check_timer = setTimeout(() => {
-      ownership_check_timer = 0;
-      ownership_check_due = 0;
-      run_ownership_check().catch(() => {});
-    }, Math.max(0, due - Date.now()));
+    ownership_check_timer = setTimeout(
+      () => {
+        ownership_check_timer = 0;
+        ownership_check_due = 0;
+        run_ownership_check().catch(() => {});
+      },
+      Math.max(0, due - Date.now()),
+    );
   }
-
-
 
   var nte_history_style_injected = false;
   var nte_history_last_key = "";
@@ -9517,10 +11974,18 @@
   }
 
   function nte_history_is_current_partner(user_id, current_partner_id) {
-    return !!(current_partner_id && user_id && String(current_partner_id) === String(user_id));
+    return !!(
+      current_partner_id &&
+      user_id &&
+      String(current_partner_id) === String(user_id)
+    );
   }
 
-  function nte_history_profile_html(user_id, user_name, current_partner_id = "") {
+  function nte_history_profile_html(
+    user_id,
+    user_name,
+    current_partner_id = "",
+  ) {
     let id = String(user_id || "").trim();
     let label = nte_history_esc(user_name || (id ? `User ${id}` : "Unknown"));
     let name_html = /^\d+$/.test(id)
@@ -9635,8 +12100,14 @@
     let trade = entry?.trade || null;
     let side = String(entry?.side || "");
     if (!trade || (side !== "offer" && side !== "request")) return null;
-    let focus_total = side === "offer" ? Number(trade?.offerTotal || 0) : Number(trade?.requestTotal || 0);
-    let other_total = side === "offer" ? Number(trade?.requestTotal || 0) : Number(trade?.offerTotal || 0);
+    let focus_total =
+      side === "offer"
+        ? Number(trade?.offerTotal || 0)
+        : Number(trade?.requestTotal || 0);
+    let other_total =
+      side === "offer"
+        ? Number(trade?.requestTotal || 0)
+        : Number(trade?.offerTotal || 0);
     return {
       focusTotal: focus_total,
       otherTotal: other_total,
@@ -9649,22 +12120,41 @@
     if (mode === "asset") {
       let market = get_trade_history_market_snapshot(entry);
       if (market) {
-        if (market.delta > 0) pills.push(`<span class="nte-history-pill is-up">${trade_profit_colorblind_mode ? "Gain" : "OP"} +${nte_history_format_number(market.delta)}</span>`);
-        else if (market.delta < 0) pills.push(`<span class="nte-history-pill is-down">${trade_profit_colorblind_mode ? "Loss" : "LB"} -${nte_history_format_number(Math.abs(market.delta))}</span>`);
+        if (market.delta > 0)
+          pills.push(
+            `<span class="nte-history-pill is-up">${trade_profit_colorblind_mode ? "Gain" : "OP"} +${nte_history_format_number(market.delta)}</span>`,
+          );
+        else if (market.delta < 0)
+          pills.push(
+            `<span class="nte-history-pill is-down">${trade_profit_colorblind_mode ? "Loss" : "LB"} -${nte_history_format_number(Math.abs(market.delta))}</span>`,
+          );
         else pills.push('<span class="nte-history-pill is-note">Even</span>');
       }
       let copy_count = Math.max(0, Number(entry?.copyCount || 0));
-      if (copy_count > 1) pills.push(`<span class="nte-history-pill is-note">${copy_count} copies</span>`);
+      if (copy_count > 1)
+        pills.push(
+          `<span class="nte-history-pill is-note">${copy_count} copies</span>`,
+        );
     }
-    return pills.length ? `<div class="nte-history-entry-pills">${pills.join("")}</div>` : "";
+    return pills.length
+      ? `<div class="nte-history-entry-pills">${pills.join("")}</div>`
+      : "";
   }
 
   function is_trade_history_focus_item(item, focus_item, mode) {
     if (!focus_item) return false;
     if (mode === "asset") {
-      return !!(focus_item.assetId && item?.assetId && String(focus_item.assetId) === String(item.assetId));
+      return !!(
+        focus_item.assetId &&
+        item?.assetId &&
+        String(focus_item.assetId) === String(item.assetId)
+      );
     }
-    return !!(focus_item.uaid && item?.uaid && String(focus_item.uaid) === String(item.uaid));
+    return !!(
+      focus_item.uaid &&
+      item?.uaid &&
+      String(focus_item.uaid) === String(item.uaid)
+    );
   }
 
   function render_trade_history_trade_slot(item, focus_item, mode) {
@@ -9689,15 +12179,29 @@
     `;
   }
 
-  function render_trade_history_trade_side(user_id, user_name, items, total, focus_item, current_partner_id, mode) {
+  function render_trade_history_trade_side(
+    user_id,
+    user_name,
+    items,
+    total,
+    focus_item,
+    current_partner_id,
+    mode,
+  ) {
     let list = Array.isArray(items) ? items : [];
     let visible = list.slice(0, 4);
-    let slots_html = visible.map((item) => render_trade_history_trade_slot(item, focus_item, mode)).join("");
+    let slots_html = visible
+      .map((item) => render_trade_history_trade_slot(item, focus_item, mode))
+      .join("");
     let more_html =
       list.length > 4
         ? `<div class="nte-history-trade-more">+${list.length - 4} more item${list.length - 4 === 1 ? "" : "s"}</div>`
         : "";
-    let user_html = nte_history_profile_html(user_id, user_name, current_partner_id);
+    let user_html = nte_history_profile_html(
+      user_id,
+      user_name,
+      current_partner_id,
+    );
     return `
       <div class="nte-history-trade-side">
         <div class="nte-history-trade-side-head">
@@ -9713,13 +12217,22 @@
     `;
   }
 
-  function render_trade_history_trade_card(trade, entry, focus_item, current_partner_id, mode) {
+  function render_trade_history_trade_card(
+    trade,
+    entry,
+    focus_item,
+    current_partner_id,
+    mode,
+  ) {
     let offer = Array.isArray(trade?.offer) ? trade.offer : [];
     let request = Array.isArray(trade?.request) ? trade.request : [];
     let offerer_id = String(entry?.offererId || "");
     let requester_id = String(entry?.requesterId || "");
-    let offerer_name = entry?.offererName || (offerer_id ? `User ${offerer_id}` : "Unknown");
-    let requester_name = entry?.requesterName || (requester_id ? `User ${requester_id}` : "Unknown");
+    let offerer_name =
+      entry?.offererName || (offerer_id ? `User ${offerer_id}` : "Unknown");
+    let requester_name =
+      entry?.requesterName ||
+      (requester_id ? `User ${requester_id}` : "Unknown");
     return `
       <div class="nte-history-entry-expand" hidden>
         <div class="nte-history-trade-card">
@@ -9731,8 +12244,17 @@
     `;
   }
 
-  function attach_trade_history_controls(panel, btn, row, offer_items, mode, item_side) {
-    for (let mode_btn of panel.querySelectorAll(".nte-history-mode-btn[data-mode]")) {
+  function attach_trade_history_controls(
+    panel,
+    btn,
+    row,
+    offer_items,
+    mode,
+    item_side,
+  ) {
+    for (let mode_btn of panel.querySelectorAll(
+      ".nte-history-mode-btn[data-mode]",
+    )) {
       mode_btn.onclick = () => {
         let next_mode = String(mode_btn.getAttribute("data-mode") || "");
         if (!next_mode || next_mode === mode) return;
@@ -9746,26 +12268,42 @@
       };
     }
 
-    for (let side_btn of panel.querySelectorAll(".nte-history-mode-btn[data-item-side]")) {
+    for (let side_btn of panel.querySelectorAll(
+      ".nte-history-mode-btn[data-item-side]",
+    )) {
       side_btn.onclick = () => {
-        let next_side = normalize_trade_history_item_side(side_btn.getAttribute("data-item-side") || "");
+        let next_side = normalize_trade_history_item_side(
+          side_btn.getAttribute("data-item-side") || "",
+        );
         if (!next_side || next_side === item_side) return;
         run_trade_history(btn, {
           mode,
           item_side: next_side,
           close_if_same: false,
           row,
-          offer_items: btn.__nte_history_cache?.offer_items_by_side?.[next_side] || null,
+          offer_items:
+            btn.__nte_history_cache?.offer_items_by_side?.[next_side] || null,
         });
       };
     }
   }
 
-  function attach_trade_history_more_button(panel, btn, row, offer_items, mode, item_side, limit) {
+  function attach_trade_history_more_button(
+    panel,
+    btn,
+    row,
+    offer_items,
+    mode,
+    item_side,
+    limit,
+  ) {
     let more_btn = panel.querySelector(".nte-history-more-btn");
     if (!more_btn) return;
     more_btn.onclick = () => {
-      let next_limit = Math.max(Number(limit) || 6, Number(more_btn.getAttribute("data-next-limit")) || 0);
+      let next_limit = Math.max(
+        Number(limit) || 6,
+        Number(more_btn.getAttribute("data-next-limit")) || 0,
+      );
       if (!(next_limit > (Number(limit) || 0))) return;
       more_btn.disabled = true;
       more_btn.textContent = "Loading more";
@@ -9791,9 +12329,13 @@
       body.hidden = !should_open;
       let toggle_btn = item.querySelector(".nte-history-item-toggle");
       if (toggle_btn) {
-        toggle_btn.setAttribute("aria-expanded", should_open ? "true" : "false");
+        toggle_btn.setAttribute(
+          "aria-expanded",
+          should_open ? "true" : "false",
+        );
         let label = toggle_btn.querySelector(".nte-history-item-toggle-label");
-        if (label) label.textContent = should_open ? "Hide history" : "Show history";
+        if (label)
+          label.textContent = should_open ? "Hide history" : "Show history";
       }
       sync_more_foot();
     }
@@ -9835,8 +12377,10 @@
 
   function get_trade_history_proof_image_button_label(state, count) {
     let image_count = Math.max(0, Number(count || 0));
-    if (state === "loading") return image_count === 1 ? "Loading Image" : "Loading Images";
-    if (state === "open") return image_count === 1 ? "Hide Image" : "Hide Images";
+    if (state === "loading")
+      return image_count === 1 ? "Loading Image" : "Loading Images";
+    if (state === "open")
+      return image_count === 1 ? "Hide Image" : "Hide Images";
     if (image_count <= 1) return "Show Image";
     return `Show Images (${image_count})`;
   }
@@ -9864,8 +12408,13 @@
   }
 
   function render_trade_history_proof_attachments(entry, index) {
-    let attachments = Array.isArray(entry?.attachments) ? entry.attachments : [];
-    let attachment_count = Math.max(Number(entry?.attachmentCount || 0), attachments.length);
+    let attachments = Array.isArray(entry?.attachments)
+      ? entry.attachments
+      : [];
+    let attachment_count = Math.max(
+      Number(entry?.attachmentCount || 0),
+      attachments.length,
+    );
     if (!attachments.length) {
       return '<div class="nte-history-proof-empty-copy">No image attachments on this proof.</div>';
     }
@@ -9896,14 +12445,21 @@
       ? `Showing ${visible.length} of ${count} proof${count === 1 ? "" : "s"} matched by ${response?.searchMode === "asset" ? "asset id" : "item name"}.`
       : "No proof posts found for this item right now.";
     let cards_html = visible
-      .map(
-        (entry, index) => {
-          let attachment_count = Math.max(Number(entry?.attachmentCount || 0), Array.isArray(entry?.attachments) ? entry.attachments.length : 0);
-          let meta_parts = [`${attachment_count} image${attachment_count === 1 ? "" : "s"}`];
-          let proof_age = nte_history_format_age(entry?.timestamp);
-          if (proof_age) meta_parts.push(proof_age);
-          let meta_title = Number(entry?.timestamp) > 0 ? nte_history_format_date(entry.timestamp) : "";
-          return `
+      .map((entry, index) => {
+        let attachment_count = Math.max(
+          Number(entry?.attachmentCount || 0),
+          Array.isArray(entry?.attachments) ? entry.attachments.length : 0,
+        );
+        let meta_parts = [
+          `${attachment_count} image${attachment_count === 1 ? "" : "s"}`,
+        ];
+        let proof_age = nte_history_format_age(entry?.timestamp);
+        if (proof_age) meta_parts.push(proof_age);
+        let meta_title =
+          Number(entry?.timestamp) > 0
+            ? nte_history_format_date(entry.timestamp)
+            : "";
+        return `
           <article class="nte-history-proof-card">
             <div class="nte-history-proof-card-head">
               <div class="nte-history-proof-card-title">Proof ${index + 1}</div>
@@ -9913,8 +12469,7 @@
             ${render_trade_history_proof_attachments(entry, index)}
           </article>
         `;
-        },
-      )
+      })
       .join("");
     return `
       <div class="nte-history-proofs">
@@ -9944,18 +12499,31 @@
     btn.disabled = state === "loading";
     btn.setAttribute("aria-expanded", state === "open" ? "true" : "false");
     btn.setAttribute("aria-busy", state === "loading" ? "true" : "false");
-    if (label) label.textContent = state === "loading" ? "Loading" : state === "open" ? "Hide Proofs" : "View Proofs";
+    if (label)
+      label.textContent =
+        state === "loading"
+          ? "Loading"
+          : state === "open"
+            ? "Hide Proofs"
+            : "View Proofs";
   }
 
   function set_trade_history_proof_images_button_state(btn, state) {
     if (!btn) return;
     let label = btn.querySelector(".nte-history-proof-images-btn-label");
-    let count = Math.max(0, Number(btn.getAttribute("data-attachment-count") || 0));
+    let count = Math.max(
+      0,
+      Number(btn.getAttribute("data-attachment-count") || 0),
+    );
     btn.classList.toggle("is-open", state === "open");
     btn.disabled = state === "loading";
     btn.setAttribute("aria-expanded", state === "open" ? "true" : "false");
     btn.setAttribute("aria-busy", state === "loading" ? "true" : "false");
-    if (label) label.textContent = get_trade_history_proof_image_button_label(state, count);
+    if (label)
+      label.textContent = get_trade_history_proof_image_button_label(
+        state,
+        count,
+      );
   }
 
   function attach_trade_history_proof_image_buttons(scope) {
@@ -9975,11 +12543,17 @@
         }
 
         let proof_index = Number(btn.getAttribute("data-proof-index") || -1);
-        let proofs = Array.isArray(item.__nte_history_proofs_response?.results) ? item.__nte_history_proofs_response.results : [];
+        let proofs = Array.isArray(item.__nte_history_proofs_response?.results)
+          ? item.__nte_history_proofs_response.results
+          : [];
         let entry = proof_index >= 0 ? proofs[proof_index] : null;
-        let attachments = Array.isArray(entry?.attachments) ? entry.attachments : [];
+        let attachments = Array.isArray(entry?.attachments)
+          ? entry.attachments
+          : [];
         if (!attachments.length) {
-          shell.innerHTML = render_trade_history_proof_image_error("No image attachments on this proof.");
+          shell.innerHTML = render_trade_history_proof_image_error(
+            "No image attachments on this proof.",
+          );
           shell.hidden = false;
           set_trade_history_proof_images_button_state(btn, "open");
           return;
@@ -9999,18 +12573,24 @@
         shell.hidden = false;
 
         let response = await new Promise((resolve) => {
-          nte_send_message({ type: "getItemProofImages", attachments }, (value) => resolve(value));
+          nte_send_message(
+            { type: "getItemProofImages", attachments },
+            (value) => resolve(value),
+          );
         });
 
         if (response?.success) {
-          card.__nte_history_proof_images_loaded = render_trade_history_proof_images(response.images);
+          card.__nte_history_proof_images_loaded =
+            render_trade_history_proof_images(response.images);
           shell.innerHTML = card.__nte_history_proof_images_loaded;
           set_trade_history_proof_images_button_state(btn, "open");
           return;
         }
 
         card.__nte_history_proof_images_loaded = "";
-        shell.innerHTML = render_trade_history_proof_image_error(response?.error || "Could not load proof images right now.");
+        shell.innerHTML = render_trade_history_proof_image_error(
+          response?.error || "Could not load proof images right now.",
+        );
         set_trade_history_proof_images_button_state(btn, "open");
       };
     }
@@ -10063,7 +12643,10 @@
 
         if (response?.success) {
           item.__nte_history_proofs_response = response;
-          item.__nte_history_proofs_loaded = render_trade_history_proofs(response, request);
+          item.__nte_history_proofs_loaded = render_trade_history_proofs(
+            response,
+            request,
+          );
           slot.innerHTML = item.__nte_history_proofs_loaded;
           attach_trade_history_proof_image_buttons(slot);
           set_trade_history_proof_button_state(btn, "open");
@@ -10072,7 +12655,9 @@
 
         item.__nte_history_proofs_response = null;
         item.__nte_history_proofs_loaded = "";
-        slot.innerHTML = render_trade_history_proof_error(response?.error || "Could not load proofs right now.");
+        slot.innerHTML = render_trade_history_proof_error(
+          response?.error || "Could not load proofs right now.",
+        );
         set_trade_history_proof_button_state(btn, "open");
       };
     }
@@ -10129,9 +12714,18 @@
 
   function nte_history_parse_timestamp_value(value) {
     if (null == value || "" === value) return 0;
-    let numeric_string = "string" === typeof value && /^\d+(\.\d+)?$/.test(value.trim());
-    let timestamp = "number" === typeof value || numeric_string ? Number(value) : new Date(value).getTime();
-    if (("number" === typeof value || numeric_string) && timestamp > 0 && timestamp < 10000000000) timestamp *= 1000;
+    let numeric_string =
+      "string" === typeof value && /^\d+(\.\d+)?$/.test(value.trim());
+    let timestamp =
+      "number" === typeof value || numeric_string
+        ? Number(value)
+        : new Date(value).getTime();
+    if (
+      ("number" === typeof value || numeric_string) &&
+      timestamp > 0 &&
+      timestamp < 10000000000
+    )
+      timestamp *= 1000;
     return Number.isFinite(timestamp) && timestamp > 0 ? timestamp : 0;
   }
 
@@ -10197,14 +12791,19 @@
   }
 
   function nte_history_owner_name_key(name) {
-    return String(name || "").trim().toLowerCase();
+    return String(name || "")
+      .trim()
+      .toLowerCase();
   }
 
   function get_history_authenticated_owner_context() {
     let meta = document.querySelector('meta[name="user-data"]');
     return {
       id: String(parseInt(meta?.getAttribute("data-userid") || 0, 10) || ""),
-      name: meta?.getAttribute("data-displayname")?.trim() || meta?.getAttribute("data-name")?.trim() || "You",
+      name:
+        meta?.getAttribute("data-displayname")?.trim() ||
+        meta?.getAttribute("data-name")?.trim() ||
+        "You",
       allowHistoryFallback: false,
     };
   }
@@ -10230,7 +12829,10 @@
     if (tab === "inactive") return get_history_blank_owner_context();
     if (normalize_trade_history_item_side(item_side) === "self") {
       if (tab === "completed") return get_history_partner_owner_context(row);
-      return { ...get_history_authenticated_owner_context(), allowHistoryFallback: true };
+      return {
+        ...get_history_authenticated_owner_context(),
+        allowHistoryFallback: true,
+      };
     }
     if (tab === "completed") return get_history_authenticated_owner_context();
     return get_history_partner_owner_context(row);
@@ -10241,14 +12843,18 @@
 
     let owner_id = String(current_owner?.id || "").trim();
     let owner_name = String(current_owner?.name || "").trim();
-    let verified_hold_since = !!item?.holdVerified ? Number(item?.heldSince || 0) : 0;
+    let verified_hold_since = !!item?.holdVerified
+      ? Number(item?.heldSince || 0)
+      : 0;
     if (verified_hold_since > 0 && (owner_id || owner_name)) {
       let age = nte_history_format_age(verified_hold_since);
       let since = nte_history_format_hold_date(verified_hold_since);
       if (age || since) {
         let owner = owner_name || "current owner";
         let full_date = nte_history_format_full_date(verified_hold_since);
-        let title = full_date ? `Held by ${owner} since ${full_date}` : `Held by ${owner}`;
+        let title = full_date
+          ? `Held by ${owner} since ${full_date}`
+          : `Held by ${owner}`;
         return { owner, age, since, title };
       }
     }
@@ -10268,8 +12874,12 @@
         (!owner_id &&
           owner_name &&
           latest_owner_name &&
-          nte_history_owner_name_key(latest_owner_name) === nte_history_owner_name_key(owner_name)));
-    let hold_since = current_owner?.allowHistoryFallback && owner_matches ? Number(latest?.timestamp || 0) : 0;
+          nte_history_owner_name_key(latest_owner_name) ===
+            nte_history_owner_name_key(owner_name)));
+    let hold_since =
+      current_owner?.allowHistoryFallback && owner_matches
+        ? Number(latest?.timestamp || 0)
+        : 0;
     if (!(hold_since > 0)) return null;
 
     let age = nte_history_format_age(hold_since);
@@ -10278,7 +12888,9 @@
 
     let owner = owner_name || latest_owner_name || "current owner";
     let full_date = nte_history_format_full_date(hold_since);
-    let title = full_date ? `Held by ${owner} since ${full_date}` : `Held by ${owner}`;
+    let title = full_date
+      ? `Held by ${owner} since ${full_date}`
+      : `Held by ${owner}`;
     return { owner, age, since, title };
   }
 
@@ -10290,7 +12902,8 @@
       let asset_id = String(item?.assetId || "").trim();
       if (ciiid && !lookup.by_ciiid[ciiid]) lookup.by_ciiid[ciiid] = item;
       if (uaid && !lookup.by_uaid[uaid]) lookup.by_uaid[uaid] = item;
-      if (asset_id && !lookup.by_asset[asset_id]) lookup.by_asset[asset_id] = item;
+      if (asset_id && !lookup.by_asset[asset_id])
+        lookup.by_asset[asset_id] = item;
     }
     return lookup;
   }
@@ -10306,7 +12919,9 @@
         (uaid && lookup.by_uaid[uaid]) ||
         (asset_id && lookup.by_asset[asset_id]) ||
         null;
-      let held_since = nte_history_extract_hold_since(item) || nte_history_extract_hold_since(source);
+      let held_since =
+        nte_history_extract_hold_since(item) ||
+        nte_history_extract_hold_since(source);
       let hold_verified = !!(item?.holdVerified || source?.holdVerified);
       if (held_since > 0 || hold_verified) {
         return { ...item, heldSince: held_since, holdVerified: hold_verified };
@@ -10320,15 +12935,21 @@
   }
 
   function normalize_history_instance_id(value) {
-    return String(value || "").trim().toLowerCase();
+    return String(value || "")
+      .trim()
+      .toLowerCase();
   }
 
   function get_history_item_asset_id(card, cached_item = null) {
     let catalog_href =
-      card?.querySelector('.item-card-caption a[href*="/catalog/"]')?.getAttribute("href") ||
+      card
+        ?.querySelector('.item-card-caption a[href*="/catalog/"]')
+        ?.getAttribute("href") ||
       card?.querySelector('a[href*="/catalog/"]')?.getAttribute("href") ||
       "";
-    let catalog_asset_id = parseInt(String(catalog_href).match(/\/catalog\/(\d+)/i)?.[1] || 0, 10) || 0;
+    let catalog_asset_id =
+      parseInt(String(catalog_href).match(/\/catalog\/(\d+)/i)?.[1] || 0, 10) ||
+      0;
     if (catalog_asset_id > 0) return catalog_asset_id;
 
     let target_id =
@@ -10339,8 +12960,12 @@
           cached_item?.itemId ??
           cached_item?.item?.id ??
           cached_item?.asset?.id ??
-          card?.querySelector("thumbnail-2d")?.getAttribute("thumbnail-target-id") ??
-          card?.querySelector("[thumbnail-target-id]")?.getAttribute("thumbnail-target-id") ??
+          card
+            ?.querySelector("thumbnail-2d")
+            ?.getAttribute("thumbnail-target-id") ??
+          card
+            ?.querySelector("[thumbnail-target-id]")
+            ?.getAttribute("thumbnail-target-id") ??
           0,
         10,
       ) || 0;
@@ -10352,9 +12977,16 @@
     let is_bundle =
       cached_item?.itemType === "Bundle" ||
       cached_item?.itemTarget?.itemType === "Bundle" ||
-      !!(card?.querySelector('a[href*="/bundles/"]') || card?.querySelector('[thumbnail-type="BundleThumbnail"]'));
+      !!(
+        card?.querySelector('a[href*="/bundles/"]') ||
+        card?.querySelector('[thumbnail-type="BundleThumbnail"]')
+      );
     if (target_id > 0 && typeof c?.resolveRolimonsItemId === "function") {
-      let resolved_id = parseInt(c.resolveRolimonsItemId(target_id, item_name, is_bundle) || 0, 10) || 0;
+      let resolved_id =
+        parseInt(
+          c.resolveRolimonsItemId(target_id, item_name, is_bundle) || 0,
+          10,
+        ) || 0;
       if (resolved_id > 0) return resolved_id;
     }
 
@@ -10374,23 +13006,32 @@
     let offer_el = get_history_offer_element(item_side);
     let cards = get_offer_collectible_cards(offer_el);
     let seen = new Set();
-    let hold_verified = get_current_trade_tab() === "inbound" || get_current_trade_tab() === "outbound";
+    let hold_verified =
+      get_current_trade_tab() === "inbound" ||
+      get_current_trade_tab() === "outbound";
 
     for (let card of cards) {
-      let ciiid = normalize_history_instance_id(card.getAttribute("data-collectibleiteminstanceid"));
-      let cached_item = get_cached_search_item_from_el(card) || card.__nte_sales_item || null;
+      let ciiid = normalize_history_instance_id(
+        card.getAttribute("data-collectibleiteminstanceid"),
+      );
+      let cached_item =
+        get_cached_search_item_from_el(card) || card.__nte_sales_item || null;
       let name_el =
         card.querySelector(".item-card-name span") ||
         card.querySelector(".item-card-name-link") ||
         card.querySelector(".item-card-name") ||
         card.querySelector(".text-overflow");
-      let thumb_el = card.querySelector("thumbnail-2d img, .item-card-thumb img, img");
+      let thumb_el = card.querySelector(
+        "thumbnail-2d img, .item-card-thumb img, img",
+      );
       let name = name_el?.textContent?.trim() || "Unknown Item";
       let thumb = thumb_el?.src || "";
       let dedupe_key = ciiid || `${name}|${thumb}`;
       if (seen.has(dedupe_key)) continue;
       seen.add(dedupe_key);
-      let held_since = hold_verified ? nte_history_extract_hold_since(cached_item) : 0;
+      let held_since = hold_verified
+        ? nte_history_extract_hold_since(cached_item)
+        : 0;
       items.push({
         name,
         thumb,
@@ -10413,7 +13054,10 @@
     return items;
   }
 
-  function resolve_history_asset_id_from_trade_item(raw_item, fallback_name = "") {
+  function resolve_history_asset_id_from_trade_item(
+    raw_item,
+    fallback_name = "",
+  ) {
     let item = raw_item?.item || raw_item?.tradableItem || raw_item || null;
     if (!item || "object" !== typeof item) return 0;
 
@@ -10445,7 +13089,15 @@
       "";
 
     if (target_id > 0 && typeof c?.resolveRolimonsItemId === "function") {
-      let resolved_id = parseInt(c.resolveRolimonsItemId(target_id, item_name, item_type === "Bundle") || 0, 10) || 0;
+      let resolved_id =
+        parseInt(
+          c.resolveRolimonsItemId(
+            target_id,
+            item_name,
+            item_type === "Bundle",
+          ) || 0,
+          10,
+        ) || 0;
       if (resolved_id > 0) return resolved_id;
     }
 
@@ -10453,17 +13105,32 @@
     return 0;
   }
 
-  async function fetch_history_user_asset_map_from_tradable(user_id, wanted_instance_ids) {
-    let wanted = new Set((wanted_instance_ids || []).map(normalize_history_instance_id).filter(Boolean));
+  async function fetch_history_user_asset_map_from_tradable(
+    user_id,
+    wanted_instance_ids,
+  ) {
+    let wanted = new Set(
+      (wanted_instance_ids || [])
+        .map(normalize_history_instance_id)
+        .filter(Boolean),
+    );
     let found = {};
     if (!(Number(user_id) > 0) || !wanted.size) return found;
 
     let cursor = "";
     for (let page = 0; page < 40; page++) {
-      let params = new URLSearchParams({ sortBy: "CreationTime", cursor, limit: "100", sortOrder: "Desc" });
+      let params = new URLSearchParams({
+        sortBy: "CreationTime",
+        cursor,
+        limit: "100",
+        sortOrder: "Desc",
+      });
       let resp;
       try {
-        resp = await fetch(`https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`, { credentials: "include" });
+        resp = await fetch(
+          `https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`,
+          { credentials: "include" },
+        );
       } catch {
         break;
       }
@@ -10472,26 +13139,42 @@
       let json = await resp.json().catch(() => null);
       if (!json) break;
 
-      let page_items = Array.isArray(json?.items) ? json.items : Array.isArray(json?.data) ? json.data : [];
+      let page_items = Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data)
+          ? json.data
+          : [];
       for (let item of page_items) {
-        let instances = Array.isArray(item?.instances) && item.instances.length ? item.instances : [item];
+        let instances =
+          Array.isArray(item?.instances) && item.instances.length
+            ? item.instances
+            : [item];
         for (let inst of instances) {
           let instance_id = normalize_history_instance_id(
             inst?.collectibleItemInstanceId ||
-            item?.collectibleItemInstanceId ||
-            inst?.collectibleItemInstance?.collectibleItemInstanceId ||
-            item?.collectibleItemInstance?.collectibleItemInstanceId,
+              item?.collectibleItemInstanceId ||
+              inst?.collectibleItemInstance?.collectibleItemInstanceId ||
+              item?.collectibleItemInstance?.collectibleItemInstanceId,
           );
           if (!instance_id || !wanted.has(instance_id)) continue;
           let user_asset_id =
             parseInt(inst?.userAssetId ?? item?.userAssetId ?? 0, 10) ||
             parseInt(inst?.userAsset?.id ?? item?.userAsset?.id ?? 0, 10) ||
-            parseInt(inst?.userAsset?.userAssetId ?? item?.userAsset?.userAssetId ?? 0, 10) ||
+            parseInt(
+              inst?.userAsset?.userAssetId ?? item?.userAsset?.userAssetId ?? 0,
+              10,
+            ) ||
             parseInt(inst?.id ?? item?.id ?? 0, 10) ||
             0;
-          let held_since = nte_history_extract_hold_since(inst) || nte_history_extract_hold_since(item);
+          let held_since =
+            nte_history_extract_hold_since(inst) ||
+            nte_history_extract_hold_since(item);
           if (user_asset_id > 0 || held_since > 0)
-            found[instance_id] = { userAssetId: user_asset_id, heldSince: held_since, holdVerified: held_since > 0 };
+            found[instance_id] = {
+              userAssetId: user_asset_id,
+              heldSince: held_since,
+              holdVerified: held_since > 0,
+            };
         }
       }
 
@@ -10504,7 +13187,11 @@
   }
 
   async function fetch_history_bridge_asset_map(wanted_instance_ids) {
-    let wanted = new Set((wanted_instance_ids || []).map(normalize_history_instance_id).filter(Boolean));
+    let wanted = new Set(
+      (wanted_instance_ids || [])
+        .map(normalize_history_instance_id)
+        .filter(Boolean),
+    );
     let found = {};
     if (!wanted.size) return found;
 
@@ -10515,8 +13202,8 @@
     for (let entry of Array.isArray(result?.items) ? result.items : []) {
       let instance_id = normalize_history_instance_id(
         entry?.collectibleItemInstanceId ||
-        entry?.item?.collectibleItemInstanceId ||
-        entry?.item?.collectibleItemInstance?.collectibleItemInstanceId,
+          entry?.item?.collectibleItemInstanceId ||
+          entry?.item?.collectibleItemInstance?.collectibleItemInstanceId,
       );
       if (!instance_id || !wanted.has(instance_id)) continue;
 
@@ -10535,7 +13222,11 @@
   }
 
   async function fetch_history_bridge_item_map(wanted_instance_ids) {
-    let wanted = new Set((wanted_instance_ids || []).map(normalize_history_instance_id).filter(Boolean));
+    let wanted = new Set(
+      (wanted_instance_ids || [])
+        .map(normalize_history_instance_id)
+        .filter(Boolean),
+    );
     let found = {};
     if (!wanted.size) return found;
 
@@ -10546,8 +13237,8 @@
     for (let entry of Array.isArray(result?.items) ? result.items : []) {
       let instance_id = normalize_history_instance_id(
         entry?.collectibleItemInstanceId ||
-        entry?.item?.collectibleItemInstanceId ||
-        entry?.item?.collectibleItemInstance?.collectibleItemInstanceId,
+          entry?.item?.collectibleItemInstanceId ||
+          entry?.item?.collectibleItemInstance?.collectibleItemInstanceId,
       );
       if (!instance_id || !wanted.has(instance_id)) continue;
 
@@ -10562,17 +13253,31 @@
 
       found[instance_id] = {
         userAssetId: user_asset_id,
-        assetId: resolve_history_asset_id_from_trade_item(entry, entry?.item?.itemName || entry?.item?.name || ""),
-        heldSince: nte_history_extract_hold_since(entry) || nte_history_extract_hold_since(entry?.item),
-        holdVerified: get_current_trade_tab() === "inbound" || get_current_trade_tab() === "outbound",
+        assetId: resolve_history_asset_id_from_trade_item(
+          entry,
+          entry?.item?.itemName || entry?.item?.name || "",
+        ),
+        heldSince:
+          nte_history_extract_hold_since(entry) ||
+          nte_history_extract_hold_since(entry?.item),
+        holdVerified:
+          get_current_trade_tab() === "inbound" ||
+          get_current_trade_tab() === "outbound",
       };
     }
 
     return found;
   }
 
-  async function fetch_history_user_asset_map_from_inventory(user_id, wanted_instance_ids) {
-    let wanted = new Set((wanted_instance_ids || []).map(normalize_history_instance_id).filter(Boolean));
+  async function fetch_history_user_asset_map_from_inventory(
+    user_id,
+    wanted_instance_ids,
+  ) {
+    let wanted = new Set(
+      (wanted_instance_ids || [])
+        .map(normalize_history_instance_id)
+        .filter(Boolean),
+    );
     let found = {};
     if (!(Number(user_id) > 0) || !wanted.size) return found;
 
@@ -10594,8 +13299,8 @@
       for (let item of Array.isArray(json?.data) ? json.data : []) {
         let instance_id = normalize_history_instance_id(
           item?.collectibleItemInstanceId ||
-          item?.collectibleItemInstance?.collectibleItemInstanceId ||
-          item?.collectibleItemInstance?.id,
+            item?.collectibleItemInstance?.collectibleItemInstanceId ||
+            item?.collectibleItemInstance?.id,
         );
         if (!instance_id || !wanted.has(instance_id)) continue;
         let user_asset_id =
@@ -10606,7 +13311,11 @@
           0;
         let held_since = nte_history_extract_hold_since(item);
         if (user_asset_id > 0 || held_since > 0)
-          found[instance_id] = { userAssetId: user_asset_id, heldSince: held_since, holdVerified: held_since > 0 };
+          found[instance_id] = {
+            userAssetId: user_asset_id,
+            heldSince: held_since,
+            holdVerified: held_since > 0,
+          };
       }
 
       if (wanted.size === Object.keys(found).length) break;
@@ -10619,24 +13328,36 @@
 
   async function fetch_history_owner_asset_map(user_id, instance_ids) {
     let owner_id = String(user_id || "").trim();
-    let wanted = [...new Set((instance_ids || []).map(normalize_history_instance_id).filter(Boolean))];
+    let wanted = [
+      ...new Set(
+        (instance_ids || []).map(normalize_history_instance_id).filter(Boolean),
+      ),
+    ];
     if (!/^\d+$/.test(owner_id) || !wanted.length) return {};
 
     let cache = nte_history_owner_asset_cache[owner_id];
     if (cache && cache.ts > Date.now() - 120000) {
       let cached_hits = {};
       for (let instance_id of wanted) {
-        if (cache.map?.[instance_id]) cached_hits[instance_id] = cache.map[instance_id];
+        if (cache.map?.[instance_id])
+          cached_hits[instance_id] = cache.map[instance_id];
       }
-      if (cache.complete || Object.keys(cached_hits).length === wanted.length) return cached_hits;
+      if (cache.complete || Object.keys(cached_hits).length === wanted.length)
+        return cached_hits;
     }
 
     let merged = { ...(cache?.map || {}) };
-    Object.assign(merged, await fetch_history_user_asset_map_from_tradable(owner_id, wanted));
+    Object.assign(
+      merged,
+      await fetch_history_user_asset_map_from_tradable(owner_id, wanted),
+    );
 
     let missing = wanted.filter((instance_id) => !merged[instance_id]);
     if (missing.length) {
-      Object.assign(merged, await fetch_history_user_asset_map_from_inventory(owner_id, missing));
+      Object.assign(
+        merged,
+        await fetch_history_user_asset_map_from_inventory(owner_id, missing),
+      );
     }
 
     nte_history_owner_asset_cache[owner_id] = {
@@ -10661,30 +13382,40 @@
     return (await J(row, 40)) || "";
   }
 
-  async function get_history_offer_items_enriched(row = document.querySelector(".trade-row.selected"), item_side = "partner") {
+  async function get_history_offer_items_enriched(
+    row = document.querySelector(".trade-row.selected"),
+    item_side = "partner",
+  ) {
     let items = get_history_offer_items(item_side);
     if (!items.length) return items;
 
     let instance_ids = items.map((item) => item.ciiid).filter(Boolean);
     if (instance_ids.length) {
-      let bridge_item_map = await fetch_history_bridge_item_map(instance_ids).catch(() => ({}));
-      let bridge_asset_map = await fetch_history_bridge_asset_map(instance_ids).catch(() => ({}));
+      let bridge_item_map = await fetch_history_bridge_item_map(
+        instance_ids,
+      ).catch(() => ({}));
+      let bridge_asset_map = await fetch_history_bridge_asset_map(
+        instance_ids,
+      ).catch(() => ({}));
       items = items.map((item) => ({
         ...item,
         heldSince:
           item.heldSince ||
-          bridge_item_map[normalize_history_instance_id(item.ciiid)]?.heldSince ||
+          bridge_item_map[normalize_history_instance_id(item.ciiid)]
+            ?.heldSince ||
           0,
         holdVerified:
           item.holdVerified ||
-          bridge_item_map[normalize_history_instance_id(item.ciiid)]?.holdVerified ||
+          bridge_item_map[normalize_history_instance_id(item.ciiid)]
+            ?.holdVerified ||
           false,
       }));
       items = items.map((item) => ({
         ...item,
         userAssetId:
           item.userAssetId ||
-          bridge_item_map[normalize_history_instance_id(item.ciiid)]?.userAssetId ||
+          bridge_item_map[normalize_history_instance_id(item.ciiid)]
+            ?.userAssetId ||
           bridge_asset_map[normalize_history_instance_id(item.ciiid)] ||
           0,
         assetId:
@@ -10692,19 +13423,42 @@
           bridge_item_map[normalize_history_instance_id(item.ciiid)]?.assetId ||
           0,
       }));
-      if (items.every((item) => !item.ciiid || (Number(item.userAssetId) > 0 && Number(item.assetId) > 0))) return items;
+      if (
+        items.every(
+          (item) =>
+            !item.ciiid ||
+            (Number(item.userAssetId) > 0 && Number(item.assetId) > 0),
+        )
+      )
+        return items;
     }
 
     let owner_id = get_history_current_item_owner_context(row, item_side).id;
     if (owner_id && instance_ids.length) {
-      let owner_asset_map = await fetch_history_owner_asset_map(owner_id, instance_ids).catch(() => ({}));
+      let owner_asset_map = await fetch_history_owner_asset_map(
+        owner_id,
+        instance_ids,
+      ).catch(() => ({}));
       items = items.map((item) => ({
         ...item,
-        heldSince: item.heldSince || owner_asset_map[normalize_history_instance_id(item.ciiid)]?.heldSince || 0,
-        holdVerified: item.holdVerified || owner_asset_map[normalize_history_instance_id(item.ciiid)]?.holdVerified || false,
-        userAssetId: item.userAssetId || owner_asset_map[normalize_history_instance_id(item.ciiid)]?.userAssetId || 0,
+        heldSince:
+          item.heldSince ||
+          owner_asset_map[normalize_history_instance_id(item.ciiid)]
+            ?.heldSince ||
+          0,
+        holdVerified:
+          item.holdVerified ||
+          owner_asset_map[normalize_history_instance_id(item.ciiid)]
+            ?.holdVerified ||
+          false,
+        userAssetId:
+          item.userAssetId ||
+          owner_asset_map[normalize_history_instance_id(item.ciiid)]
+            ?.userAssetId ||
+          0,
       }));
-      if (items.every((item) => !item.ciiid || Number(item.userAssetId) > 0)) return items;
+      if (items.every((item) => !item.ciiid || Number(item.userAssetId) > 0))
+        return items;
     }
 
     let trade_id = await get_history_trade_id();
@@ -10721,10 +13475,16 @@
     if (!flat.length) {
       let raw = null;
       try {
-        let resp = await fetch_trade_api(`https://trades.roblox.com/v2/trades/${trade_id}`, { credentials: "include" });
+        let resp = await fetch_trade_api(
+          `https://trades.roblox.com/v2/trades/${trade_id}`,
+          { credentials: "include" },
+        );
         if (resp.ok) raw = await resp.json();
         if (!raw) {
-          let fallback = await fetch_trade_api(`https://trades.roblox.com/v1/trades/${trade_id}`, { credentials: "include" });
+          let fallback = await fetch_trade_api(
+            `https://trades.roblox.com/v1/trades/${trade_id}`,
+            { credentials: "include" },
+          );
           if (fallback.ok) raw = await fallback.json();
         }
       } catch {}
@@ -10740,7 +13500,8 @@
     let by_ciiid = new Map();
     for (let entry of flat) {
       let ciiid = normalize_history_instance_id(
-        entry.collectibleItemInstanceId || entry.collectibleItemInstance?.collectibleItemInstanceId,
+        entry.collectibleItemInstanceId ||
+          entry.collectibleItemInstance?.collectibleItemInstanceId,
       );
       if (!ciiid) continue;
       let user_asset_id =
@@ -10750,7 +13511,10 @@
         parseInt(entry.id, 10) ||
         0;
       let current = by_ciiid.get(String(ciiid)) || {};
-      let asset_id = resolve_history_asset_id_from_trade_item(entry, entry?.itemName || entry?.name || "");
+      let asset_id = resolve_history_asset_id_from_trade_item(
+        entry,
+        entry?.itemName || entry?.name || "",
+      );
       if (user_asset_id > 0 || asset_id > 0) {
         by_ciiid.set(String(ciiid), {
           userAssetId: user_asset_id || current.userAssetId || 0,
@@ -10763,10 +13527,16 @@
       ...item,
       userAssetId:
         item.userAssetId ||
-        (item.ciiid ? by_ciiid.get(normalize_history_instance_id(item.ciiid))?.userAssetId || 0 : 0),
+        (item.ciiid
+          ? by_ciiid.get(normalize_history_instance_id(item.ciiid))
+              ?.userAssetId || 0
+          : 0),
       assetId:
         item.assetId ||
-        (item.ciiid ? by_ciiid.get(normalize_history_instance_id(item.ciiid))?.assetId || 0 : 0),
+        (item.ciiid
+          ? by_ciiid.get(normalize_history_instance_id(item.ciiid))?.assetId ||
+            0
+          : 0),
     }));
   }
 
@@ -10775,14 +13545,25 @@
     let trade_id = get_selected_trade_id_sync(row) || "";
     let partner_id =
       get_selected_trade_partner_id(row) ||
-      String(typeof get_trade_partner_id === "function" ? get_trade_partner_id() || "" : "");
-    let their_card_signature = get_offer_collectible_cards(get_history_offer_element("partner"))
+      String(
+        typeof get_trade_partner_id === "function"
+          ? get_trade_partner_id() || ""
+          : "",
+      );
+    let their_card_signature = get_offer_collectible_cards(
+      get_history_offer_element("partner"),
+    )
       .map((card) => card.getAttribute("data-collectibleiteminstanceid") || "")
       .join("|");
-    let your_card_signature = get_offer_collectible_cards(get_history_offer_element("self"))
+    let your_card_signature = get_offer_collectible_cards(
+      get_history_offer_element("self"),
+    )
       .map((card) => card.getAttribute("data-collectibleiteminstanceid") || "")
       .join("|");
-    let trade_tab = typeof get_trade_tab === "function" ? get_trade_tab() || "trade" : "trade";
+    let trade_tab =
+      typeof get_trade_tab === "function"
+        ? get_trade_tab() || "trade"
+        : "trade";
     return `${trade_tab}:${trade_id}:${partner_id}:${their_card_signature}:${your_card_signature}`;
   }
 
@@ -10791,7 +13572,11 @@
   }
 
   function ensure_trade_history_container() {
-    for (let sel of ['[ng-click="acceptTrade(data.trade)"]', '[ng-click="counterTrade(data.trade)"]', '[ng-click="declineTrade(data.trade)"]']) {
+    for (let sel of [
+      '[ng-click="acceptTrade(data.trade)"]',
+      '[ng-click="counterTrade(data.trade)"]',
+      '[ng-click="declineTrade(data.trade)"]',
+    ]) {
       let el = document.querySelector(sel);
       if (nte_history_action_visible(el)) {
         let row = el.closest(".trade-buttons");
@@ -10799,20 +13584,28 @@
       }
     }
 
-    let shared_poison_row = document.querySelector(".trades-container .nte-poison-fallback-row");
+    let shared_poison_row = document.querySelector(
+      ".trades-container .nte-poison-fallback-row",
+    );
     if (shared_poison_row) {
       return { el: shared_poison_row, synthetic: true };
     }
 
     if (!document.querySelector(".trade-row.selected")) return null;
-    let offers = document.querySelectorAll(".trades-container .trade-list-detail-offer");
-    if (offers.length < 2) offers = document.querySelectorAll(".trade-list-detail-offer");
+    let offers = document.querySelectorAll(
+      ".trades-container .trade-list-detail-offer",
+    );
+    if (offers.length < 2)
+      offers = document.querySelectorAll(".trade-list-detail-offer");
     if (offers.length < 2) return null;
 
     let last = offers[offers.length - 1];
-    let existing = document.querySelector(".trades-container .nte-history-fallback-row");
+    let existing = document.querySelector(
+      ".trades-container .nte-history-fallback-row",
+    );
     if (existing) {
-      if (last.nextElementSibling !== existing) last.insertAdjacentElement("afterend", existing);
+      if (last.nextElementSibling !== existing)
+        last.insertAdjacentElement("afterend", existing);
       return { el: existing, synthetic: true };
     }
 
@@ -10825,18 +13618,24 @@
 
   function find_trade_history_reference_button(container) {
     let buttons = [
-      container?.querySelector('button.btn-control-md[ng-click*="declineTrade"]'),
+      container?.querySelector(
+        'button.btn-control-md[ng-click*="declineTrade"]',
+      ),
       container?.querySelector("button.btn-control-md"),
       container?.querySelector("button.btn-cta-md"),
       document.querySelector('button.btn-control-md[ng-click*="declineTrade"]'),
       document.querySelector(".trade-buttons button.btn-control-md"),
       document.querySelector(".trade-buttons button.btn-cta-md"),
     ];
-    return buttons.find((btn) => btn && !btn.classList.contains("ng-hide")) || null;
+    return (
+      buttons.find((btn) => btn && !btn.classList.contains("ng-hide")) || null
+    );
   }
 
   function create_trade_history_button(reference) {
-    let btn = reference ? reference.cloneNode(true) : document.createElement("button");
+    let btn = reference
+      ? reference.cloneNode(true)
+      : document.createElement("button");
     btn.type = "button";
     btn.removeAttribute("ng-bind");
     btn.removeAttribute("ng-click");
@@ -10857,7 +13656,8 @@
     btn.disabled = false;
     btn.__nte_history_open = false;
     btn.classList.remove("nte-history-btn--loading", "nte-history-btn--active");
-    btn.innerHTML = '<span class="nte-history-btn-inner"><span class="nte-history-btn-label">History</span></span>';
+    btn.innerHTML =
+      '<span class="nte-history-btn-inner"><span class="nte-history-btn-label">History</span></span>';
     btn.setAttribute("aria-label", "View item trade history");
     btn.title = "View item trade history";
   }
@@ -10866,7 +13666,8 @@
     btn.disabled = true;
     btn.classList.remove("nte-history-btn--active");
     btn.classList.add("nte-history-btn--loading");
-    btn.innerHTML = '<span class="nte-history-btn-inner"><span class="nte-history-btn-spinner"></span><span class="nte-history-btn-label">Thinking</span></span>';
+    btn.innerHTML =
+      '<span class="nte-history-btn-inner"><span class="nte-history-btn-spinner"></span><span class="nte-history-btn-label">Thinking</span></span>';
     btn.setAttribute("aria-label", "Loading item trade history");
     btn.title = "Loading item trade history";
   }
@@ -10876,14 +13677,16 @@
     btn.__nte_history_open = true;
     btn.classList.remove("nte-history-btn--loading");
     btn.classList.add("nte-history-btn--active");
-    btn.innerHTML = '<span class="nte-history-btn-inner"><span class="nte-history-btn-label">History</span></span>';
+    btn.innerHTML =
+      '<span class="nte-history-btn-inner"><span class="nte-history-btn-label">History</span></span>';
     btn.setAttribute("aria-label", "Hide item trade history");
     btn.title = "Hide item trade history";
   }
 
   function get_analyze_trade_feature() {
     if (nte_analyze_trade_feature) return nte_analyze_trade_feature;
-    if (typeof window.nte_create_analyze_trade_feature !== "function") return null;
+    if (typeof window.nte_create_analyze_trade_feature !== "function")
+      return null;
     nte_analyze_trade_feature = window.nte_create_analyze_trade_feature({
       esc: nte_history_esc,
       attr_esc: nte_history_attr_esc,
@@ -10913,16 +13716,26 @@
 
   function clear_trade_history_ui(remove_buttons = true) {
     close_analyze_trade_modal(null);
-    document.querySelectorAll(".nte-history-panel").forEach((el) => el.remove());
+    document
+      .querySelectorAll(".nte-history-panel")
+      .forEach((el) => el.remove());
     if (remove_buttons) {
-      document.querySelectorAll(".nte-history-btn").forEach((el) => el.remove());
-      document.querySelectorAll(".nte-analyze-trade-btn").forEach((el) => el.remove());
-      document.querySelectorAll(".nte-history-fallback-row").forEach((el) => el.remove());
+      document
+        .querySelectorAll(".nte-history-btn")
+        .forEach((el) => el.remove());
+      document
+        .querySelectorAll(".nte-analyze-trade-btn")
+        .forEach((el) => el.remove());
+      document
+        .querySelectorAll(".nte-history-fallback-row")
+        .forEach((el) => el.remove());
     }
   }
 
   function get_trade_history_container_from_button(btn) {
-    let container = btn?.closest?.(".trade-buttons, .nte-history-fallback-row, .nte-poison-fallback-row");
+    let container = btn?.closest?.(
+      ".trade-buttons, .nte-history-fallback-row, .nte-poison-fallback-row",
+    );
     if (!container) return ensure_trade_history_container();
     return {
       el: container,
@@ -10932,7 +13745,9 @@
 
   function get_trade_history_panel(container_info) {
     close_analyze_trade_modal(null);
-    document.querySelectorAll(".nte-history-panel").forEach((el) => el.remove());
+    document
+      .querySelectorAll(".nte-history-panel")
+      .forEach((el) => el.remove());
     let panel = document.createElement("div");
     panel.className = "nte-history-panel";
     container_info.el.insertAdjacentElement("afterend", panel);
@@ -10948,11 +13763,17 @@
   }
 
   function get_trade_history_panel_title(row, item_side = "partner") {
-    if (normalize_trade_history_item_side(item_side) === "self") return "History for your items";
+    if (normalize_trade_history_item_side(item_side) === "self")
+      return "History for your items";
     return `History for ${get_history_trade_partner_name(row)}`;
   }
 
-  function get_trade_history_result_copy(mode, item_side, found_count, total_count) {
+  function get_trade_history_result_copy(
+    mode,
+    item_side,
+    found_count,
+    total_count,
+  ) {
     let side_copy = get_trade_history_side_copy(item_side);
     let count_copy = `${found_count}/${total_count || 0} item${total_count === 1 ? "" : "s"}`;
     return mode === "asset"
@@ -10960,7 +13781,12 @@
       : `Found database matches for ${count_copy} on ${side_copy.scope_label} in this trade.`;
   }
 
-  function render_trade_history_loading(panel, items, mode = "uaid", item_side = "partner") {
+  function render_trade_history_loading(
+    panel,
+    items,
+    mode = "uaid",
+    item_side = "partner",
+  ) {
     let cards = (items || []).slice(0, 3);
     if (!cards.length) cards = [{}];
     panel.className = "nte-history-panel";
@@ -11012,10 +13838,18 @@
     nte_history_set_btn_active(btn);
   }
 
-  function render_trade_history_entry(entry, focus_item, current_partner_id, mode) {
+  function render_trade_history_entry(
+    entry,
+    focus_item,
+    current_partner_id,
+    mode,
+  ) {
     let flow = `${nte_history_profile_html(entry.ownerBeforeId, entry.ownerBeforeName, current_partner_id)}<span class="nte-history-arrow">&rarr;</span>${nte_history_profile_html(entry.ownerAfterId, entry.ownerAfterName, current_partner_id)}`;
     let meta = `Trade completed &bull; Trade #${nte_history_esc(entry.tradeId)}`;
-    let has_trade = !!(entry?.trade && (Array.isArray(entry.trade.offer) || Array.isArray(entry.trade.request)));
+    let has_trade = !!(
+      entry?.trade &&
+      (Array.isArray(entry.trade.offer) || Array.isArray(entry.trade.request))
+    );
     let pills_html = render_trade_history_entry_pills(entry, mode);
     let toggle_html = has_trade
       ? `<button type="button" class="nte-history-entry-toggle" aria-expanded="false"><span class="nte-history-entry-toggle-label">Show trade</span><span class="nte-history-entry-toggle-chevron">&rsaquo;</span></button>`
@@ -11037,7 +13871,13 @@
     `;
   }
 
-  function render_trade_history_item(item, current_partner_id, current_owner, use_item_toggle, mode) {
+  function render_trade_history_item(
+    item,
+    current_partner_id,
+    current_owner,
+    use_item_toggle,
+    mode,
+  ) {
     let proof_name = String(item?.name || "").trim();
     let proof_asset_id = String(item?.assetId || "").trim();
     let can_view_proofs = !!(proof_name || /^\d+$/.test(proof_asset_id));
@@ -11047,29 +13887,43 @@
       : `<div class="nte-history-thumb nte-history-thumb--empty">?</div>`;
     let trade_count = Number(item.tradeCount || 0);
     let pills = [];
-    pills.push(`<span class="nte-history-pill">${trade_count} trade${trade_count === 1 ? "" : "s"}</span>`);
+    pills.push(
+      `<span class="nte-history-pill">${trade_count} trade${trade_count === 1 ? "" : "s"}</span>`,
+    );
     if (mode === "asset") {
       pills.push('<span class="nte-history-pill is-note">All copies</span>');
       if (Number(item.tradeItemCount || 0) > 1) {
-        pills.push(`<span class="nte-history-pill is-note">${nte_history_esc(item.tradeItemCount)} in this trade</span>`);
+        pills.push(
+          `<span class="nte-history-pill is-note">${nte_history_esc(item.tradeItemCount)} in this trade</span>`,
+        );
       }
-      if (item.missingAssetId) pills.push('<span class="nte-history-pill is-muted">Asset id missing</span>');
+      if (item.missingAssetId)
+        pills.push(
+          '<span class="nte-history-pill is-muted">Asset id missing</span>',
+        );
     } else {
-      if (item.known) pills.push('<span class="nte-history-pill is-good">Known UAID</span>');
-      if (item.missingUaid) pills.push('<span class="nte-history-pill is-muted">UAID missing</span>');
+      if (item.known)
+        pills.push('<span class="nte-history-pill is-good">Known UAID</span>');
+      if (item.missingUaid)
+        pills.push(
+          '<span class="nte-history-pill is-muted">UAID missing</span>',
+        );
     }
-    let link_html = mode === "asset"
-      ? item.assetId
-        ? `<div class="nte-history-item-link"><a href="https://www.rolimons.com/item/${nte_history_esc(item.assetId)}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>`
-        : ""
-      : item.uaid
-        ? `<div class="nte-history-item-link"><a href="https://www.rolimons.com/uaid/${nte_history_esc(item.uaid)}" target="_blank" rel="noopener noreferrer">Open UAID on Rolimons</a></div>`
-        : "";
+    let link_html =
+      mode === "asset"
+        ? item.assetId
+          ? `<div class="nte-history-item-link"><a href="https://www.rolimons.com/item/${nte_history_esc(item.assetId)}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>`
+          : ""
+        : item.uaid
+          ? `<div class="nte-history-item-link"><a href="https://www.rolimons.com/uaid/${nte_history_esc(item.uaid)}" target="_blank" rel="noopener noreferrer">Open UAID on Rolimons</a></div>`
+          : "";
     let body_html = "";
     if (mode === "asset" && item.missingAssetId) {
-      body_html = '<div class="nte-history-empty">Could not resolve this item asset id from Roblox trade data yet, so all-copy history cannot be searched.</div>';
+      body_html =
+        '<div class="nte-history-empty">Could not resolve this item asset id from Roblox trade data yet, so all-copy history cannot be searched.</div>';
     } else if (mode !== "asset" && item.missingUaid) {
-      body_html = '<div class="nte-history-empty">Could not resolve this item instance from Roblox trade data, so there is nothing reliable to search yet.</div>';
+      body_html =
+        '<div class="nte-history-empty">Could not resolve this item instance from Roblox trade data, so there is nothing reliable to search yet.</div>';
     } else if (!trade_count) {
       body_html = `<div class="nte-history-empty">${mode === "asset" ? "No recorded trade history for this item across all copies in the local database yet." : "No recorded trade history for this UAID in the local database yet."}</div>`;
     } else {
@@ -11109,14 +13963,30 @@
     `;
   }
 
-  function render_trade_history_panel(panel, btn, data, row, mode, item_side, offer_items, limit) {
+  function render_trade_history_panel(
+    panel,
+    btn,
+    data,
+    row,
+    mode,
+    item_side,
+    offer_items,
+    limit,
+  ) {
     let items = merge_trade_history_offer_item_state(data?.items, offer_items);
     let current_partner_id = get_selected_trade_partner_id(row) || "";
     let current_owner = get_history_current_item_owner_context(row, item_side);
     let side_copy = get_trade_history_side_copy(item_side);
     let use_item_toggle = items.length > 1;
-    let found_count = items.filter((item) => Number(item.tradeCount || 0) > 0).length;
-    let sub_text = get_trade_history_result_copy(mode, item_side, found_count, items.length);
+    let found_count = items.filter(
+      (item) => Number(item.tradeCount || 0) > 0,
+    ).length;
+    let sub_text = get_trade_history_result_copy(
+      mode,
+      item_side,
+      found_count,
+      items.length,
+    );
     let empty_text = `No collectible items found on ${side_copy.scope_label} of this trade.`;
     panel.className = "nte-history-panel";
     panel.dataset.nteHistoryMultiItem = use_item_toggle ? "1" : "0";
@@ -11141,8 +14011,23 @@
         nte_history_set_btn_idle(btn);
       };
     }
-    attach_trade_history_controls(panel, btn, row, offer_items, mode, item_side);
-    attach_trade_history_more_button(panel, btn, row, offer_items, mode, item_side, limit);
+    attach_trade_history_controls(
+      panel,
+      btn,
+      row,
+      offer_items,
+      mode,
+      item_side,
+    );
+    attach_trade_history_more_button(
+      panel,
+      btn,
+      row,
+      offer_items,
+      mode,
+      item_side,
+      limit,
+    );
     attach_trade_history_item_toggles(panel);
     attach_trade_history_proof_buttons(panel);
     attach_trade_history_entry_toggles(panel);
@@ -11155,7 +14040,8 @@
     let container_info = get_trade_history_container_from_button(btn);
     if (!container_info) return;
 
-    let requested_row = options?.row || document.querySelector(".trade-row.selected");
+    let requested_row =
+      options?.row || document.querySelector(".trade-row.selected");
     let state_key = nte_history_state_key();
     let cache = btn.__nte_history_cache;
     if (!cache || cache.key !== state_key) {
@@ -11175,10 +14061,23 @@
       btn.__nte_history_item_side = "partner";
     }
 
-    let item_side = normalize_trade_history_item_side(options?.item_side || btn.__nte_history_item_side || "partner");
-    let mode = options?.mode === "asset" ? "asset" : options?.mode === "uaid" ? "uaid" : btn.__nte_history_mode || "uaid";
+    let item_side = normalize_trade_history_item_side(
+      options?.item_side || btn.__nte_history_item_side || "partner",
+    );
+    let mode =
+      options?.mode === "asset"
+        ? "asset"
+        : options?.mode === "uaid"
+          ? "uaid"
+          : btn.__nte_history_mode || "uaid";
     let limit_key = `${item_side}:${mode}`;
-    let limit = Math.max(1, Math.min(20, Number(options?.limit) || Number(cache.limit_by_key?.[limit_key]) || 6));
+    let limit = Math.max(
+      1,
+      Math.min(
+        20,
+        Number(options?.limit) || Number(cache.limit_by_key?.[limit_key]) || 6,
+      ),
+    );
     let current_panel = document.querySelector(".nte-history-panel");
     if (
       (options?.close_if_same ?? true) &&
@@ -11205,10 +14104,16 @@
 
     try {
       let row = requested_row || document.querySelector(".trade-row.selected");
-      let offer_items = Array.isArray(options?.offer_items) ? options.offer_items : cache.offer_items_by_side?.[item_side];
-      if (Array.isArray(options?.offer_items)) cache.offer_items_by_side[item_side] = options.offer_items;
+      let offer_items = Array.isArray(options?.offer_items)
+        ? options.offer_items
+        : cache.offer_items_by_side?.[item_side];
+      if (Array.isArray(options?.offer_items))
+        cache.offer_items_by_side[item_side] = options.offer_items;
       if (!offer_items) {
-        offer_items = await get_history_offer_items_enriched(row, item_side).catch(() => get_history_offer_items(item_side));
+        offer_items = await get_history_offer_items_enriched(
+          row,
+          item_side,
+        ).catch(() => get_history_offer_items(item_side));
         cache.offer_items_by_side[item_side] = offer_items;
       }
       if (request_token !== nte_history_request_token) return;
@@ -11231,13 +14136,30 @@
       }
       if (request_token !== nte_history_request_token) return;
       if (!data || !data.success) {
-        render_trade_history_error(panel, btn, data?.error || "Could not load trade history right now.");
+        render_trade_history_error(
+          panel,
+          btn,
+          data?.error || "Could not load trade history right now.",
+        );
         return;
       }
-      render_trade_history_panel(panel, btn, data, row, mode, item_side, offer_items, limit);
+      render_trade_history_panel(
+        panel,
+        btn,
+        data,
+        row,
+        mode,
+        item_side,
+        offer_items,
+        limit,
+      );
     } catch (err) {
       if (request_token !== nte_history_request_token) return;
-      render_trade_history_error(panel, btn, err?.message || "Could not load trade history right now.");
+      render_trade_history_error(
+        panel,
+        btn,
+        err?.message || "Could not load trade history right now.",
+      );
     }
   }
 
@@ -11256,15 +14178,23 @@
     }
 
     if (!container_info.synthetic) {
-      document.querySelectorAll(".nte-history-fallback-row").forEach((el) => el.remove());
+      document
+        .querySelectorAll(".nte-history-fallback-row")
+        .forEach((el) => el.remove());
     }
 
     let key = nte_history_state_key();
     if (key !== nte_history_last_key) {
       nte_history_last_key = key;
-      document.querySelectorAll(".nte-history-btn").forEach((el) => el.remove());
-      document.querySelectorAll(".nte-analyze-trade-btn").forEach((el) => el.remove());
-      document.querySelectorAll(".nte-history-panel").forEach((el) => el.remove());
+      document
+        .querySelectorAll(".nte-history-btn")
+        .forEach((el) => el.remove());
+      document
+        .querySelectorAll(".nte-analyze-trade-btn")
+        .forEach((el) => el.remove());
+      document
+        .querySelectorAll(".nte-history-panel")
+        .forEach((el) => el.remove());
       close_analyze_trade_modal(null);
     }
 
@@ -11278,7 +14208,9 @@
 
     let analyze_enabled = false !== (await c.getOption("Analyze Trade"));
     if (!analyze_enabled) {
-      container.querySelectorAll(".nte-analyze-trade-btn").forEach((el) => el.remove());
+      container
+        .querySelectorAll(".nte-analyze-trade-btn")
+        .forEach((el) => el.remove());
       close_analyze_trade_modal(null);
       assert_trade_page_dominance();
       return;
@@ -11291,7 +14223,11 @@
         sync_trade_button_position(btn);
       }
     }
-    container.querySelectorAll(".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn").forEach((btn) => sync_trade_button_position(btn));
+    container
+      .querySelectorAll(
+        ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn",
+      )
+      .forEach((btn) => sync_trade_button_position(btn));
     assert_trade_page_dominance();
   }
 
@@ -11332,11 +14268,18 @@
     }
 
     function get_logo_url() {
-      try { return chrome.runtime.getURL("assets/icons/logo.png"); } catch { return ""; }
+      try {
+        return chrome.runtime.getURL("assets/icons/logo.png");
+      } catch {
+        return "";
+      }
     }
 
     function close_modal() {
-      if (modal_el) { modal_el.remove(); modal_el = null; }
+      if (modal_el) {
+        modal_el.remove();
+        modal_el = null;
+      }
       document.documentElement.classList.remove("nte-counter-prompt-open");
       if (escape_handler) {
         document.removeEventListener("keydown", escape_handler, true);
@@ -11376,12 +14319,16 @@
       document.documentElement.classList.add("nte-counter-prompt-open");
 
       modal.querySelector(".nte-counter-prompt-close").onclick = close_modal;
-      modal.addEventListener("mousedown", (event) => { if (event.target === modal) close_modal(); });
+      modal.addEventListener("mousedown", (event) => {
+        if (event.target === modal) close_modal();
+      });
 
       modal.querySelector('[data-action="counter"]').onclick = () => {
         close_modal();
         counter_btn.__nte_counter_bypass = true;
-        try { counter_btn.click(); } catch {}
+        try {
+          counter_btn.click();
+        } catch {}
       };
       modal.querySelector('[data-action="send"]').onclick = () => {
         close_modal();
@@ -11390,7 +14337,9 @@
         if (partner_id) location.href = `/users/${partner_id}/trade`;
       };
 
-      escape_handler = (event) => { if (event.key === "Escape") close_modal(); };
+      escape_handler = (event) => {
+        if (event.key === "Escape") close_modal();
+      };
       document.addEventListener("keydown", escape_handler, true);
     }
 
@@ -11407,7 +14356,9 @@
       let enabled = false !== (await c.getOption("Counter Trade Prompt"));
       if (!enabled) {
         btn.__nte_counter_bypass = true;
-        try { btn.click(); } catch {}
+        try {
+          btn.click();
+        } catch {}
         return;
       }
       show_prompt(btn);
@@ -11415,5 +14366,4 @@
 
     document.addEventListener("click", on_doc_click, true);
   })();
-
 })();

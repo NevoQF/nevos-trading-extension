@@ -1,4 +1,7 @@
-if ("undefined" === typeof globalThis.chrome && "undefined" !== typeof globalThis.browser) {
+if (
+  "undefined" === typeof globalThis.chrome &&
+  "undefined" !== typeof globalThis.browser
+) {
   globalThis.chrome = globalThis.browser;
 }
 
@@ -34,15 +37,21 @@ const chevron_svg =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 
 const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]'
+  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]',
 );
 
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
-    document.querySelectorAll(".panel").forEach((panel) => panel.classList.add("hidden"));
+    document
+      .querySelectorAll(".tab")
+      .forEach((item) => item.classList.remove("active"));
+    document
+      .querySelectorAll(".panel")
+      .forEach((panel) => panel.classList.add("hidden"));
     tab.classList.add("active");
-    document.getElementById(`panel-${tab.dataset.tab}`).classList.remove("hidden");
+    document
+      .getElementById(`panel-${tab.dataset.tab}`)
+      .classList.remove("hidden");
     if (tab.dataset.tab === "tradeactions") {
       render_trade_actions_tab();
     }
@@ -50,12 +59,21 @@ document.querySelectorAll(".tab").forEach((tab) => {
 });
 
 function escape_html(value) {
-  const map = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#x27;", "/": "&#x2F;" };
+  const map = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#x27;",
+    "/": "&#x2F;",
+  };
   return String(value).replace(/[&<>"'/]/g, (match) => map[match]);
 }
 
 function get_option_names() {
-  return option_groups.filter((entry) => typeof entry !== "string").map((entry) => entry.name);
+  return option_groups
+    .filter((entry) => typeof entry !== "string")
+    .map((entry) => entry.name);
 }
 
 function get_storage(keys) {
@@ -84,19 +102,25 @@ function normalize_profile_value_display_mode(value) {
   return String(value || "").toLowerCase() === "value" ? "value" : "rap";
 }
 
-const nte_roblox_tab_url_query_patterns = ["https://*.roblox.com/*", "https://roblox.com/*"];
+const nte_roblox_tab_url_query_patterns = [
+  "https://*.roblox.com/*",
+  "https://roblox.com/*",
+];
 const extension_update_state_key = "nte_extension_update_state";
 const extension_update_last_check_key = "nte_extension_update_last_check";
 const extension_update_check_cooldown_ms = 4 * 60 * 60 * 1000;
-const chrome_web_store_item_url = "https://chromewebstore.google.com/detail/dmgmmbmbfdgkdeacblplamhipbgjfidl";
-const firefox_addons_item_url = "https://addons.mozilla.org/firefox/addon/nevos-trading-extension/";
+const chrome_web_store_item_url =
+  "https://chromewebstore.google.com/detail/dmgmmbmbfdgkdeacblplamhipbgjfidl";
+const firefox_addons_item_url =
+  "https://addons.mozilla.org/firefox/addon/nevos-trading-extension/";
 const popup_theme_storage_key = "popup_theme";
 const popup_theme_default = "modern";
 const trade_page_theme_enabled_key = "trade_page_theme_enabled";
 const trade_page_theme_key = "trade_page_theme";
 const trade_page_custom_themes_key = "trade_page_custom_themes";
 const trade_page_theme_default_image_overlay = 72;
-const inbound_trade_notification_min_gain_key = "inbound_trade_notification_min_gain_percent";
+const inbound_trade_notification_min_gain_key =
+  "inbound_trade_notification_min_gain_percent";
 const inbound_trade_notification_min_gain_default = 0;
 const duplicate_trade_warning_hours_key = "duplicate_trade_warning_hours";
 const duplicate_trade_warning_hours_default = 24;
@@ -150,13 +174,6 @@ const trade_page_theme_presets = {
     accent2: "#a78bfa",
     effect: "aurora",
   },
-  emberstorm: {
-    name: "Emberstorm",
-    background: "#1f1011",
-    accent: "#f97362",
-    accent2: "#fbbf24",
-    effect: "ember",
-  },
   frostbyte: {
     name: "Frostbyte",
     background: "#071827",
@@ -192,9 +209,76 @@ const trade_page_theme_presets = {
     accent2: "#8b949e",
     effect: "sheen",
   },
+  storm: {
+    name: "Storm",
+    background: "#0a1020",
+    accent: "#38bdf8",
+    accent2: "#facc15",
+    effect: "lightning",
+  },
+  solar: {
+    name: "Solar",
+    background: "#281a0a",
+    accent: "#f59e0b",
+    accent2: "#fef3c7",
+    effect: "ember",
+  },
+  meadow: {
+    name: "Meadow",
+    background: "#0f2618",
+    accent: "#34d399",
+    accent2: "#a7f3d0",
+    effect: "aurora",
+  },
+  glacier: {
+    name: "Glacier",
+    background: "#0a1a2e",
+    accent: "#7dd3fc",
+    accent2: "#f0f9ff",
+    effect: "frost",
+  },
+  neon: {
+    name: "Neon",
+    background: "#1a0a1f",
+    accent: "#e879f9",
+    accent2: "#22d3ee",
+    effect: "circuit",
+  },
+  void: {
+    name: "Void",
+    background: "#08080f",
+    accent: "#8b5cf6",
+    accent2: "#4f46e5",
+    effect: "nebula",
+  },
+  volcano: {
+    name: "Volcano",
+    background: "#1f0a0a",
+    accent: "#dc2626",
+    accent2: "#fb923c",
+    effect: "ember",
+  },
+  tide: {
+    name: "Tide",
+    background: "#0a1f2e",
+    accent: "#0ea5e9",
+    accent2: "#2dd4bf",
+    effect: "nebula",
+  },
 };
 const trade_page_theme_default = trade_page_theme_presets.obsidian;
-const trade_page_theme_effects = new Set(["nebula", "lightning", "aurora", "ember", "frost", "petals", "circuit", "royal", "sheen", "image"]);
+const trade_page_theme_effects = new Set([
+  "nebula",
+  "lightning",
+  "aurora",
+  "ember",
+  "frost",
+  "petals",
+  "circuit",
+  "royal",
+  "sheen",
+  "image",
+]);
 
 function normalize_hex_color(value, fallback) {
   let color = String(value || "").trim();
@@ -210,8 +294,12 @@ function is_complete_hex_color(value) {
 }
 
 function normalize_trade_page_effect(value) {
-  let effect = String(value || "").trim().toLowerCase();
-  return trade_page_theme_effects.has(effect) ? effect : trade_page_theme_default.effect;
+  let effect = String(value || "")
+    .trim()
+    .toLowerCase();
+  return trade_page_theme_effects.has(effect)
+    ? effect
+    : trade_page_theme_default.effect;
 }
 
 function normalize_theme_image(value) {
@@ -221,7 +309,9 @@ function normalize_theme_image(value) {
 
 function normalize_image_overlay(value) {
   let amount = Number(value);
-  return Number.isFinite(amount) ? Math.max(0, Math.min(90, Math.round(amount))) : trade_page_theme_default_image_overlay;
+  return Number.isFinite(amount)
+    ? Math.max(0, Math.min(90, Math.round(amount)))
+    : trade_page_theme_default_image_overlay;
 }
 
 function hex_to_rgba(hex, alpha) {
@@ -234,38 +324,64 @@ function hex_to_rgba(hex, alpha) {
 
 function hex_to_rgb_tuple(hex) {
   let color = normalize_hex_color(hex, "#000000").slice(1);
-  return [parseInt(color.slice(0, 2), 16), parseInt(color.slice(2, 4), 16), parseInt(color.slice(4, 6), 16)];
+  return [
+    parseInt(color.slice(0, 2), 16),
+    parseInt(color.slice(2, 4), 16),
+    parseInt(color.slice(4, 6), 16),
+  ];
 }
 
 function rgb_tuple_to_hex(parts) {
-  return `#${parts.map((part) => Math.max(0, Math.min(255, Math.round(part))).toString(16).padStart(2, "0")).join("")}`;
+  return `#${parts
+    .map((part) =>
+      Math.max(0, Math.min(255, Math.round(part)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("")}`;
 }
 
 function mix_hex_color(from, to, weight) {
   let a = hex_to_rgb_tuple(from);
   let b = hex_to_rgb_tuple(to);
-  return rgb_tuple_to_hex(a.map((part, index) => part + (b[index] - part) * weight));
+  return rgb_tuple_to_hex(
+    a.map((part, index) => part + (b[index] - part) * weight),
+  );
 }
 
 function get_color_luma(hex) {
   let [r, g, b] = hex_to_rgb_tuple(hex).map((part) => {
     let channel = part / 255;
-    return channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+    return channel <= 0.03928
+      ? channel / 12.92
+      : ((channel + 0.055) / 1.055) ** 2.4;
   });
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 
 function build_trade_page_theme(source) {
-  let background = normalize_hex_color(source.background, trade_page_theme_default.background);
-  let accent = normalize_hex_color(source.accent, trade_page_theme_default.accent);
-  let accent2 = normalize_hex_color(source.accent2, mix_hex_color(accent, background, 0.35));
+  let background = normalize_hex_color(
+    source.background,
+    trade_page_theme_default.background,
+  );
+  let accent = normalize_hex_color(
+    source.accent,
+    trade_page_theme_default.accent,
+  );
+  let accent2 = normalize_hex_color(
+    source.accent2,
+    mix_hex_color(accent, background, 0.35),
+  );
   let image = normalize_theme_image(source.image);
   let effect = image ? "image" : normalize_trade_page_effect(source.effect);
   let is_dark = get_color_luma(background) < 0.45;
   let shade = is_dark ? "#ffffff" : "#000000";
   let text = is_dark ? "#f8fafc" : "#111827";
   return {
-    name: String(source.name || trade_page_theme_default.name).trim().slice(0, 32) || trade_page_theme_default.name,
+    name:
+      String(source.name || trade_page_theme_default.name)
+        .trim()
+        .slice(0, 32) || trade_page_theme_default.name,
     background,
     surface: mix_hex_color(background, shade, is_dark ? 0.08 : 0.035),
     surface2: mix_hex_color(background, shade, is_dark ? 0.14 : 0.07),
@@ -276,7 +392,9 @@ function build_trade_page_theme(source) {
     border: mix_hex_color(background, shade, is_dark ? 0.22 : 0.14),
     effect,
     image,
-    image_overlay: image ? normalize_image_overlay(source.image_overlay) : trade_page_theme_default_image_overlay,
+    image_overlay: image
+      ? normalize_image_overlay(source.image_overlay)
+      : trade_page_theme_default_image_overlay,
   };
 }
 
@@ -306,14 +424,19 @@ function normalize_custom_trade_page_themes(value) {
 }
 
 function normalize_colorblind_mode_profile(value) {
-  let normalized = String(value || "").trim().toLowerCase();
-  if (colorblind_mode_profiles.some((profile) => profile.value === normalized)) return normalized;
+  let normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (colorblind_mode_profiles.some((profile) => profile.value === normalized))
+    return normalized;
   return colorblind_mode_profile_default;
 }
 
 function get_saved_colorblind_mode_value(saved) {
-  if (saved[colorblind_mode_option_name] !== undefined) return !!saved[colorblind_mode_option_name];
-  if (saved[legacy_colorblind_mode_option_name] !== undefined) return !!saved[legacy_colorblind_mode_option_name];
+  if (saved[colorblind_mode_option_name] !== undefined)
+    return !!saved[colorblind_mode_option_name];
+  if (saved[legacy_colorblind_mode_option_name] !== undefined)
+    return !!saved[legacy_colorblind_mode_option_name];
   return false;
 }
 
@@ -327,12 +450,17 @@ async function ensure_colorblind_mode_settings(saved = null) {
     ]));
 
   let enabled = get_saved_colorblind_mode_value(snapshot);
-  let profile = normalize_colorblind_mode_profile(snapshot[colorblind_mode_profile_key]);
+  let profile = normalize_colorblind_mode_profile(
+    snapshot[colorblind_mode_profile_key],
+  );
   let updates = {};
 
-  if (snapshot[colorblind_mode_option_name] !== enabled) updates[colorblind_mode_option_name] = enabled;
-  if (snapshot[legacy_colorblind_mode_option_name] !== enabled) updates[legacy_colorblind_mode_option_name] = enabled;
-  if (snapshot[colorblind_mode_profile_key] !== profile) updates[colorblind_mode_profile_key] = profile;
+  if (snapshot[colorblind_mode_option_name] !== enabled)
+    updates[colorblind_mode_option_name] = enabled;
+  if (snapshot[legacy_colorblind_mode_option_name] !== enabled)
+    updates[legacy_colorblind_mode_option_name] = enabled;
+  if (snapshot[colorblind_mode_profile_key] !== profile)
+    updates[colorblind_mode_profile_key] = profile;
 
   if (Object.keys(updates).length) {
     await set_storage(updates);
@@ -343,8 +471,13 @@ async function ensure_colorblind_mode_settings(saved = null) {
 }
 
 function normalize_inbound_trade_notification_min_gain(value) {
-  let parsed = Number(String(value ?? "").replace(/%/g, "").trim());
-  if (!Number.isFinite(parsed)) parsed = inbound_trade_notification_min_gain_default;
+  let parsed = Number(
+    String(value ?? "")
+      .replace(/%/g, "")
+      .trim(),
+  );
+  if (!Number.isFinite(parsed))
+    parsed = inbound_trade_notification_min_gain_default;
   parsed = Math.max(0, parsed);
   return Math.round(parsed * 100) / 100;
 }
@@ -358,12 +491,17 @@ function format_inbound_trade_notification_min_gain(value) {
 
 function get_inbound_trade_notification_note(value) {
   let normalized = normalize_inbound_trade_notification_min_gain(value);
-  if (normalized > 0) return `Min alert gain: +${format_inbound_trade_notification_min_gain(normalized)}%. Click to edit.`;
+  if (normalized > 0)
+    return `Min alert gain: +${format_inbound_trade_notification_min_gain(normalized)}%. Click to edit.`;
   return "Min alert gain: any inbound trade. Click to edit.";
 }
 
 function normalize_duplicate_trade_warning_hours(value) {
-  let parsed = Number(String(value ?? "").replace(/h/gi, "").trim());
+  let parsed = Number(
+    String(value ?? "")
+      .replace(/h/gi, "")
+      .trim(),
+  );
   if (!Number.isFinite(parsed)) parsed = duplicate_trade_warning_hours_default;
   parsed = Math.round(parsed);
   return Math.max(1, Math.min(168, parsed));
@@ -380,7 +518,9 @@ function get_duplicate_trade_warning_note(value) {
 
 async function prompt_inbound_trade_notification_min_gain() {
   let saved = await get_storage([inbound_trade_notification_min_gain_key]);
-  let current = normalize_inbound_trade_notification_min_gain(saved[inbound_trade_notification_min_gain_key]);
+  let current = normalize_inbound_trade_notification_min_gain(
+    saved[inbound_trade_notification_min_gain_key],
+  );
 
   while (true) {
     let response = window.prompt(
@@ -412,7 +552,9 @@ async function prompt_inbound_trade_notification_min_gain() {
 
 async function prompt_duplicate_trade_warning_hours() {
   let saved = await get_storage([duplicate_trade_warning_hours_key]);
-  let current = normalize_duplicate_trade_warning_hours(saved[duplicate_trade_warning_hours_key]);
+  let current = normalize_duplicate_trade_warning_hours(
+    saved[duplicate_trade_warning_hours_key],
+  );
 
   while (true) {
     let response = window.prompt(
@@ -443,14 +585,21 @@ async function prompt_duplicate_trade_warning_hours() {
 }
 
 function normalize_popup_theme(value) {
-  return String(value || "").trim().toLowerCase() === "retro" ? "retro" : popup_theme_default;
+  return String(value || "")
+    .trim()
+    .toLowerCase() === "retro"
+    ? "retro"
+    : popup_theme_default;
 }
 
 function apply_popup_theme(theme) {
   let normalized = normalize_popup_theme(theme);
   document.body.classList.toggle("theme-retro", normalized === "retro");
   document.querySelectorAll(".about-style-btn").forEach((btn) => {
-    btn.classList.toggle("active", String(btn.getAttribute("data-popup-theme") || "").trim() === normalized);
+    btn.classList.toggle(
+      "active",
+      String(btn.getAttribute("data-popup-theme") || "").trim() === normalized,
+    );
   });
   return normalized;
 }
@@ -463,7 +612,9 @@ async function init_popup_theme_switcher() {
   apply_popup_theme(saved[popup_theme_storage_key]);
   buttons.forEach((btn) => {
     btn.addEventListener("click", async () => {
-      let next_theme = normalize_popup_theme(btn.getAttribute("data-popup-theme"));
+      let next_theme = normalize_popup_theme(
+        btn.getAttribute("data-popup-theme"),
+      );
       apply_popup_theme(next_theme);
       await set_storage({ [popup_theme_storage_key]: next_theme });
     });
@@ -471,13 +622,16 @@ async function init_popup_theme_switcher() {
 }
 
 function send_option_update(name) {
-  chrome.tabs.query({ url: nte_roblox_tab_url_query_patterns }, (tabs_result) => {
-    tabs_result.forEach((tab) => {
-      chrome.tabs.sendMessage(tab.id, name, {}, () => {
-        chrome.runtime.lastError;
+  chrome.tabs.query(
+    { url: nte_roblox_tab_url_query_patterns },
+    (tabs_result) => {
+      tabs_result.forEach((tab) => {
+        chrome.tabs.sendMessage(tab.id, name, {}, () => {
+          chrome.runtime.lastError;
+        });
       });
-    });
-  });
+    },
+  );
 }
 
 function send_colorblind_mode_update() {
@@ -504,7 +658,10 @@ function compare_extension_versions(a, b) {
       continue;
     }
 
-    let cmp = a_part.localeCompare(b_part, undefined, { numeric: true, sensitivity: "base" });
+    let cmp = a_part.localeCompare(b_part, undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
     if (cmp !== 0) return cmp;
   }
 
@@ -561,9 +718,17 @@ function get_update_notice_copy(next_version = "") {
 function paint_about_update_status(state) {
   let status_el = document.getElementById("aboutUpdateStatus");
   if (!status_el) return;
-  let current_version = String(chrome.runtime.getManifest()?.version || "").trim();
-  let current_label = current_version ? `v${escape_html(current_version)}` : "this build";
-  if (state?.version && (!current_version || compare_extension_versions(state.version, current_version) > 0)) {
+  let current_version = String(
+    chrome.runtime.getManifest()?.version || "",
+  ).trim();
+  let current_label = current_version
+    ? `v${escape_html(current_version)}`
+    : "this build";
+  if (
+    state?.version &&
+    (!current_version ||
+      compare_extension_versions(state.version, current_version) > 0)
+  ) {
     let next_label = `v${escape_html(state.version)}`;
     status_el.innerHTML = is_firefox_extension_runtime()
       ? `Current version ${current_label}.<br>Firefox has a newer store build queued: ${next_label}.`
@@ -603,7 +768,9 @@ function render_about_review_cta() {
 }
 
 function bind_popup_external_links() {
-  let links = document.querySelectorAll('[data-open-new-tab="true"], .discord-btn');
+  let links = document.querySelectorAll(
+    '[data-open-new-tab="true"], .discord-btn',
+  );
   for (let link of links) {
     if (link.dataset.new_tab_bound === "true") continue;
     link.dataset.new_tab_bound = "true";
@@ -638,7 +805,9 @@ function open_extension_popup(path = "popup/popup.html") {
   let options = { url, type: "popup", width: 430, height: 720 };
   try {
     if (globalThis.browser?.windows?.create) {
-      globalThis.browser.windows.create(options).catch(() => open_extension_tab(path));
+      globalThis.browser.windows
+        .create(options)
+        .catch(() => open_extension_tab(path));
     } else if (chrome.windows?.create) {
       chrome.windows.create(options, () => {
         if (chrome.runtime.lastError) open_extension_tab(path);
@@ -659,8 +828,19 @@ function get_theme_upload_target_tab_id() {
         return;
       }
       chrome.tabs.query({ currentWindow: true }, (tabs) => {
-        let trade_tab = (tabs || []).find((tab) => tab.active && /^https:\/\/(?:www\.)?roblox\.com\/(?:[a-z]{2}\/)?trades/i.test(tab.url || ""));
-        if (!trade_tab) trade_tab = (tabs || []).find((tab) => /^https:\/\/(?:www\.)?roblox\.com\/(?:[a-z]{2}\/)?trades/i.test(tab.url || ""));
+        let trade_tab = (tabs || []).find(
+          (tab) =>
+            tab.active &&
+            /^https:\/\/(?:www\.)?roblox\.com\/(?:[a-z]{2}\/)?trades/i.test(
+              tab.url || "",
+            ),
+        );
+        if (!trade_tab)
+          trade_tab = (tabs || []).find((tab) =>
+            /^https:\/\/(?:www\.)?roblox\.com\/(?:[a-z]{2}\/)?trades/i.test(
+              tab.url || "",
+            ),
+          );
         resolve(trade_tab?.id ? String(trade_tab.id) : "");
       });
     } catch {
@@ -674,9 +854,13 @@ async function send_theme_upload_to_active_page(payload) {
   if (!tab_id) return false;
   return new Promise((resolve) => {
     try {
-      chrome.tabs.sendMessage(Number(tab_id), { type: "nte_open_trade_theme_upload", ...payload }, (response) => {
-        resolve(!chrome.runtime.lastError && response?.ok === true);
-      });
+      chrome.tabs.sendMessage(
+        Number(tab_id),
+        { type: "nte_open_trade_theme_upload", ...payload },
+        (response) => {
+          resolve(!chrome.runtime.lastError && response?.ok === true);
+        },
+      );
     } catch {
       resolve(false);
     }
@@ -745,7 +929,11 @@ function paint_update_banner(state) {
   if (!root) return;
 
   let current_version = String(chrome.runtime.getManifest()?.version || "");
-  if (!state?.version || (current_version && compare_extension_versions(state.version, current_version) <= 0)) {
+  if (
+    !state?.version ||
+    (current_version &&
+      compare_extension_versions(state.version, current_version) <= 0)
+  ) {
     paint_about_update_status(null);
     root.innerHTML = "";
     return;
@@ -753,7 +941,9 @@ function paint_update_banner(state) {
 
   paint_about_update_status(state);
   let next_version = escape_html(state.version);
-  let current_version_label = current_version ? `v${escape_html(current_version)}` : "your current build";
+  let current_version_label = current_version
+    ? `v${escape_html(current_version)}`
+    : "your current build";
   let copy = get_update_notice_copy(state.version);
 
   root.innerHTML = `
@@ -775,17 +965,28 @@ function paint_update_banner(state) {
     </div>
   `;
 
-  root.querySelector('[data-update-action="dismiss"]')?.addEventListener("click", () => {
-    root.innerHTML = "";
-  });
+  root
+    .querySelector('[data-update-action="dismiss"]')
+    ?.addEventListener("click", () => {
+      root.innerHTML = "";
+    });
 }
 
 async function render_update_banner(force_check = false) {
   let current_version = String(chrome.runtime.getManifest()?.version || "");
-  let stored = await get_storage([extension_update_state_key, extension_update_last_check_key]);
-  let cached = normalize_extension_update_state(stored[extension_update_state_key]);
+  let stored = await get_storage([
+    extension_update_state_key,
+    extension_update_last_check_key,
+  ]);
+  let cached = normalize_extension_update_state(
+    stored[extension_update_state_key],
+  );
 
-  if (cached && current_version && compare_extension_versions(cached.version, current_version) <= 0) {
+  if (
+    cached &&
+    current_version &&
+    compare_extension_versions(cached.version, current_version) <= 0
+  ) {
     cached = null;
     await clear_extension_update_state_popup();
   }
@@ -793,7 +994,12 @@ async function render_update_banner(force_check = false) {
   paint_update_banner(cached);
 
   let last_check = Number(stored[extension_update_last_check_key]) || 0;
-  if (!force_check && last_check && Date.now() - last_check < extension_update_check_cooldown_ms) return;
+  if (
+    !force_check &&
+    last_check &&
+    Date.now() - last_check < extension_update_check_cooldown_ms
+  )
+    return;
 
   let result = await request_extension_update_check();
   if (result?.status) {
@@ -802,7 +1008,11 @@ async function render_update_banner(force_check = false) {
 
   if (result?.status === "update_available") {
     let next_version = String(result.version || cached?.version || "").trim();
-    if (next_version && (!current_version || compare_extension_versions(next_version, current_version) > 0)) {
+    if (
+      next_version &&
+      (!current_version ||
+        compare_extension_versions(next_version, current_version) > 0)
+    ) {
       let detected_at = Date.now();
       await set_extension_update_state_popup(next_version, detected_at);
       paint_update_banner({ version: next_version, detected_at });
@@ -818,17 +1028,24 @@ async function render_update_banner(force_check = false) {
 
 function show_test_notification(name) {
   if (!chrome.notifications?.create) return;
-  chrome.notifications.create(`nru_test_notification_${Date.now()}`, {
-    type: "basic",
-    iconUrl: chrome.runtime.getURL("assets/icons/logo128.png"),
-    title: "Nevos Trading Extension",
-    message: `${name} enabled`,
-    priority: 2,
-  }, () => {
-    if (chrome.runtime.lastError) {
-      console.info("Nevos Trading Extension: notification create failed", chrome.runtime.lastError);
-    }
-  });
+  chrome.notifications.create(
+    `nru_test_notification_${Date.now()}`,
+    {
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("assets/icons/logo128.png"),
+      title: "Nevos Trading Extension",
+      message: `${name} enabled`,
+      priority: 2,
+    },
+    () => {
+      if (chrome.runtime.lastError) {
+        console.info(
+          "Nevos Trading Extension: notification create failed",
+          chrome.runtime.lastError,
+        );
+      }
+    },
+  );
 }
 
 function is_mobile_browser() {
@@ -845,14 +1062,21 @@ function sync_mobile_popup_class() {
 async function maybe_request_notifications() {
   if (!chrome.notifications?.create) return false;
   let manifest_permissions = chrome.runtime?.getManifest?.()?.permissions;
-  if (Array.isArray(manifest_permissions) && manifest_permissions.includes("notifications")) {
+  if (
+    Array.isArray(manifest_permissions) &&
+    manifest_permissions.includes("notifications")
+  ) {
     return true;
   }
-  if (!chrome.permissions?.contains || !chrome.permissions?.request) return true;
+  if (!chrome.permissions?.contains || !chrome.permissions?.request)
+    return true;
   return new Promise((resolve) => {
     chrome.permissions.contains({ permissions: ["notifications"] }, (has) => {
       if (chrome.runtime.lastError) {
-        console.info("Nevos Trading Extension: notifications permission check failed", chrome.runtime.lastError);
+        console.info(
+          "Nevos Trading Extension: notifications permission check failed",
+          chrome.runtime.lastError,
+        );
         resolve(false);
         return;
       }
@@ -861,14 +1085,20 @@ async function maybe_request_notifications() {
         return;
       }
 
-      chrome.permissions.request({ permissions: ["notifications"] }, (granted) => {
-        if (chrome.runtime.lastError) {
-          console.info("Nevos Trading Extension: notifications permission request failed", chrome.runtime.lastError);
-          resolve(false);
-          return;
-        }
-        resolve(!!granted);
-      });
+      chrome.permissions.request(
+        { permissions: ["notifications"] },
+        (granted) => {
+          if (chrome.runtime.lastError) {
+            console.info(
+              "Nevos Trading Extension: notifications permission request failed",
+              chrome.runtime.lastError,
+            );
+            resolve(false);
+            return;
+          }
+          resolve(!!granted);
+        },
+      );
     });
   });
 }
@@ -894,7 +1124,9 @@ function create_toggle(option, checked) {
   input.addEventListener("change", async () => {
     if (option.name === colorblind_mode_option_name) {
       let saved = await ensure_colorblind_mode_settings();
-      let profile = normalize_colorblind_mode_profile(saved[colorblind_mode_profile_key]);
+      let profile = normalize_colorblind_mode_profile(
+        saved[colorblind_mode_profile_key],
+      );
       await set_storage({
         [colorblind_mode_option_name]: input.checked,
         [legacy_colorblind_mode_option_name]: input.checked,
@@ -962,7 +1194,10 @@ function create_colorblind_mode_selector(current_profile) {
 
   function sync_active_state() {
     grid.querySelectorAll(".colorblind-profile-btn").forEach((button) => {
-      button.classList.toggle("is-active", button.dataset.profile === active_profile);
+      button.classList.toggle(
+        "is-active",
+        button.dataset.profile === active_profile,
+      );
     });
   }
 
@@ -1015,14 +1250,18 @@ function create_option_row(option, checked, extra = {}) {
 
   if (option.name === colorblind_mode_option_name && checked) {
     row.classList.add("option-row--stacked");
-    label_el.append(create_colorblind_mode_selector(extra.colorblind_mode_profile));
+    label_el.append(
+      create_colorblind_mode_selector(extra.colorblind_mode_profile),
+    );
   }
 
   if (option.name === "Inbound Trade Notifications") {
     let note_btn = document.createElement("button");
     note_btn.type = "button";
     note_btn.className = "option-note-btn";
-    note_btn.textContent = get_inbound_trade_notification_note(extra.inbound_trade_min_gain);
+    note_btn.textContent = get_inbound_trade_notification_note(
+      extra.inbound_trade_min_gain,
+    );
     note_btn.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1036,7 +1275,9 @@ function create_option_row(option, checked, extra = {}) {
     let note_btn = document.createElement("button");
     note_btn.type = "button";
     note_btn.className = "option-note-btn";
-    note_btn.textContent = get_duplicate_trade_warning_note(extra.duplicate_trade_warning_hours);
+    note_btn.textContent = get_duplicate_trade_warning_note(
+      extra.duplicate_trade_warning_hours,
+    );
     note_btn.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1051,7 +1292,10 @@ function create_option_row(option, checked, extra = {}) {
     row.classList.add("profile-value-option-row");
     const controls = document.createElement("div");
     controls.className = "profile-value-option-controls";
-    controls.append(create_profile_value_display_toggle(extra.profile_value_display_mode), create_toggle(option, checked));
+    controls.append(
+      create_profile_value_display_toggle(extra.profile_value_display_mode),
+      create_toggle(option, checked),
+    );
     row.append(label_el, controls);
     return row;
   }
@@ -1125,9 +1369,20 @@ function totp_b64_to_bytes(s) {
 
 async function totp_derive_aes_key(password, salt_bytes, usages) {
   const enc = new TextEncoder();
-  const key_material = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+  const key_material = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt: salt_bytes, iterations: ROBLOX_TOTP_PBKDF2_ITER, hash: "SHA-256" },
+    {
+      name: "PBKDF2",
+      salt: salt_bytes,
+      iterations: ROBLOX_TOTP_PBKDF2_ITER,
+      hash: "SHA-256",
+    },
     key_material,
     { name: "AES-GCM", length: 256 },
     false,
@@ -1140,7 +1395,11 @@ async function totp_encrypt_secret(plain_secret, password) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const aes_key = await totp_derive_aes_key(password, salt, ["encrypt"]);
-  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aes_key, enc.encode(String(plain_secret).trim()));
+  const ct = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    aes_key,
+    enc.encode(String(plain_secret).trim()),
+  );
   return {
     v: ROBLOX_TOTP_ENC_VERSION,
     saltB64: totp_bytes_to_b64(salt),
@@ -1150,7 +1409,14 @@ async function totp_encrypt_secret(plain_secret, password) {
 }
 
 async function totp_decrypt_secret(blob, password) {
-  if (!blob || blob.v !== ROBLOX_TOTP_ENC_VERSION || !blob.saltB64 || !blob.ivB64 || !blob.ctB64) throw new Error("bad blob");
+  if (
+    !blob ||
+    blob.v !== ROBLOX_TOTP_ENC_VERSION ||
+    !blob.saltB64 ||
+    !blob.ivB64 ||
+    !blob.ctB64
+  )
+    throw new Error("bad blob");
   const salt = totp_b64_to_bytes(blob.saltB64);
   const iv = totp_b64_to_bytes(blob.ivB64);
   const ct = totp_b64_to_bytes(blob.ctB64);
@@ -1162,7 +1428,13 @@ async function totp_decrypt_secret(blob, password) {
 function totp_snapshot_is_encrypted(snap) {
   const b = snap[ROBLOX_TOTP_ENC_KEY];
   if (snap[ROBLOX_TOTP_MODE_KEY] === "encrypted") return true;
-  return !!(b && b.v === ROBLOX_TOTP_ENC_VERSION && b.saltB64 && b.ivB64 && b.ctB64);
+  return !!(
+    b &&
+    b.v === ROBLOX_TOTP_ENC_VERSION &&
+    b.saltB64 &&
+    b.ivB64 &&
+    b.ctB64
+  );
 }
 
 async function render_options() {
@@ -1184,7 +1456,12 @@ async function render_options() {
   saved = await ensure_colorblind_mode_settings(saved);
   const totp_snapshot = await new Promise((resolve) => {
     chrome.storage.local.get(
-      [ROBLOX_TOTP_ENABLED_KEY, ROBLOX_TOTP_SECRET_KEY, ROBLOX_TOTP_MODE_KEY, ROBLOX_TOTP_ENC_KEY],
+      [
+        ROBLOX_TOTP_ENABLED_KEY,
+        ROBLOX_TOTP_SECRET_KEY,
+        ROBLOX_TOTP_MODE_KEY,
+        ROBLOX_TOTP_ENC_KEY,
+      ],
       (r) => {
         resolve(r && typeof r === "object" ? r : {});
       },
@@ -1231,8 +1508,12 @@ async function render_options() {
       continue;
     }
 
-    if (item.name === "Mobile Trade Items Button" && !is_mobile_browser()) continue;
-    let value = item.name === colorblind_mode_option_name ? get_saved_colorblind_mode_value(saved) : saved[item.name];
+    if (item.name === "Mobile Trade Items Button" && !is_mobile_browser())
+      continue;
+    let value =
+      item.name === colorblind_mode_option_name
+        ? get_saved_colorblind_mode_value(saved)
+        : saved[item.name];
     if (
       item.name === post_tax_trade_values_option_name &&
       value === undefined &&
@@ -1345,7 +1626,8 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   let is_encrypted = totp_snapshot_is_encrypted(totp_snapshot);
 
   let has_plain =
-    typeof totp_snapshot[ROBLOX_TOTP_SECRET_KEY] === "string" && totp_snapshot[ROBLOX_TOTP_SECRET_KEY].trim().length > 0;
+    typeof totp_snapshot[ROBLOX_TOTP_SECRET_KEY] === "string" &&
+    totp_snapshot[ROBLOX_TOTP_SECRET_KEY].trim().length > 0;
   const has_secret = has_plain || is_encrypted;
   const stored_on = totp_snapshot[ROBLOX_TOTP_ENABLED_KEY] === true;
   const stored_off = totp_snapshot[ROBLOX_TOTP_ENABLED_KEY] === false;
@@ -1354,13 +1636,16 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   function update_pw_copy() {
     if (pending_encrypt) {
       pw_reveal_label.textContent = "Set lock password";
-      pw_reveal_hint.textContent = "Enter a password, then Save to store encrypted";
+      pw_reveal_hint.textContent =
+        "Enter a password, then Save to store encrypted";
     } else if (is_encrypted) {
       pw_reveal_label.textContent = "Change lock password";
-      pw_reveal_hint.textContent = "Open to enter current password and a new one, or replace the 2FA secret";
+      pw_reveal_hint.textContent =
+        "Open to enter current password and a new one, or replace the 2FA secret";
     } else {
       pw_reveal_label.textContent = "Set lock password";
-      pw_reveal_hint.textContent = "Open to choose a password - it is never stored by the extension";
+      pw_reveal_hint.textContent =
+        "Open to choose a password - it is never stored by the extension";
     }
   }
 
@@ -1373,8 +1658,14 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
     cur_pw_wrap.hidden = !is_encrypted || pending_encrypt;
     new_pw_wrap.hidden = !need_pw_ui;
     pw_panel.hidden = !need_pw_ui || !pw_panel_open;
-    pw_toggle_btn.setAttribute("aria-expanded", pw_panel_open ? "true" : "false");
-    pw_toggle_btn.classList.toggle("nte-totp-pw-reveal-btn-open", pw_panel_open);
+    pw_toggle_btn.setAttribute(
+      "aria-expanded",
+      pw_panel_open ? "true" : "false",
+    );
+    pw_toggle_btn.classList.toggle(
+      "nte-totp-pw-reveal-btn-open",
+      pw_panel_open,
+    );
     update_pw_copy();
   }
 
@@ -1399,7 +1690,8 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
 
   function refresh_hints() {
     if (is_encrypted) {
-      secret_el.placeholder = "Optional: type a new secret to replace the encrypted one";
+      secret_el.placeholder =
+        "Optional: type a new secret to replace the encrypted one";
     } else if (has_plain) {
       secret_el.placeholder = "Leave blank to keep current secret";
     } else {
@@ -1409,7 +1701,11 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
 
   refresh_hints();
   sync_pw_ui();
-  status_el.textContent = is_encrypted ? "Secret is saved encrypted (password-protected)." : has_plain ? "A secret is saved." : "";
+  status_el.textContent = is_encrypted
+    ? "Secret is saved encrypted (password-protected)."
+    : has_plain
+      ? "A secret is saved."
+      : "";
 
   function set_status(msg) {
     status_el.textContent = msg || "";
@@ -1441,45 +1737,56 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   function save_plain_secret(secret, enabled, message = "Saved.") {
     const patch = { [ROBLOX_TOTP_ENABLED_KEY]: enabled };
     if (secret) patch[ROBLOX_TOTP_SECRET_KEY] = secret;
-    chrome.storage.local.remove([ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY], () => {
-      if (chrome.runtime.lastError) {
-        set_status("Could not save.");
-        return;
-      }
-      chrome.storage.local.set(patch, () => {
+    chrome.storage.local.remove(
+      [ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY],
+      () => {
         if (chrome.runtime.lastError) {
           set_status("Could not save.");
           return;
         }
-        enabled_el.checked = enabled;
-        secret_el.value = "";
-        wipe_pw_fields();
-        clear_protect_prompt();
-        close_pw_panel();
-        set_status(message);
-        after_save_reload_state();
-      });
-    });
+        chrome.storage.local.set(patch, () => {
+          if (chrome.runtime.lastError) {
+            set_status("Could not save.");
+            return;
+          }
+          enabled_el.checked = enabled;
+          secret_el.value = "";
+          wipe_pw_fields();
+          clear_protect_prompt();
+          close_pw_panel();
+          set_status(message);
+          after_save_reload_state();
+        });
+      },
+    );
   }
 
   function after_save_reload_state() {
     chrome.storage.local.get(
-      [ROBLOX_TOTP_ENABLED_KEY, ROBLOX_TOTP_SECRET_KEY, ROBLOX_TOTP_MODE_KEY, ROBLOX_TOTP_ENC_KEY],
+      [
+        ROBLOX_TOTP_ENABLED_KEY,
+        ROBLOX_TOTP_SECRET_KEY,
+        ROBLOX_TOTP_MODE_KEY,
+        ROBLOX_TOTP_ENC_KEY,
+      ],
       (r2) => {
         if (chrome.runtime.lastError) return;
         const snap = r2 && typeof r2 === "object" ? r2 : {};
         enc_blob = snap[ROBLOX_TOTP_ENC_KEY];
         is_encrypted = totp_snapshot_is_encrypted(snap);
         has_plain =
-          typeof snap[ROBLOX_TOTP_SECRET_KEY] === "string" && snap[ROBLOX_TOTP_SECRET_KEY].trim().length > 0;
+          typeof snap[ROBLOX_TOTP_SECRET_KEY] === "string" &&
+          snap[ROBLOX_TOTP_SECRET_KEY].trim().length > 0;
         clear_protect_prompt();
         close_pw_panel();
         sync_pw_ui();
         refresh_hints();
         setTimeout(() => {
-          if (is_encrypted) set_status("Secret is saved encrypted (password-protected).");
+          if (is_encrypted)
+            set_status("Secret is saved encrypted (password-protected).");
           else if (has_plain) set_status("A secret is saved.");
-          else if (snap[ROBLOX_TOTP_ENABLED_KEY]) set_status("Enabled. Add a secret to autofill.");
+          else if (snap[ROBLOX_TOTP_ENABLED_KEY])
+            set_status("Enabled. Add a secret to autofill.");
           else set_status("");
         }, 1600);
       },
@@ -1496,7 +1803,11 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
 
   protect_no_btn.addEventListener("click", () => {
     if (!pending_secret) return;
-    save_plain_secret(pending_secret, pending_protect, "Saved without password.");
+    save_plain_secret(
+      pending_secret,
+      pending_protect,
+      "Saved without password.",
+    );
   });
 
   secret_el.addEventListener("input", () => {
@@ -1575,15 +1886,18 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
 
       if (is_encrypted) {
         if (!cur_pw && !new_pw && !new_pw2) {
-          chrome.storage.local.set({ [ROBLOX_TOTP_ENABLED_KEY]: enabled }, () => {
-            if (chrome.runtime.lastError) {
-              set_status("Could not save.");
-              return;
-            }
-            enabled_el.checked = enabled;
-            set_status("Saved.");
-            after_save_reload_state();
-          });
+          chrome.storage.local.set(
+            { [ROBLOX_TOTP_ENABLED_KEY]: enabled },
+            () => {
+              if (chrome.runtime.lastError) {
+                set_status("Could not save.");
+                return;
+              }
+              enabled_el.checked = enabled;
+              set_status("Saved.");
+              after_save_reload_state();
+            },
+          );
           return;
         }
         if (new_pw !== new_pw2) {
@@ -1593,13 +1907,17 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
         }
         if (!new_pw) {
           open_pw_panel();
-          set_status("Open above and enter a new lock password (you can reuse the same one).");
+          set_status(
+            "Open above and enter a new lock password (you can reuse the same one).",
+          );
           return;
         }
         let plain;
         if (!cur_pw) {
           open_pw_panel();
-          set_status("Open above and enter your current lock password to change the lock.");
+          set_status(
+            "Open above and enter your current lock password to change the lock.",
+          );
           return;
         }
         try {
@@ -1638,26 +1956,29 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   });
 
   clear_btn.addEventListener("click", () => {
-    chrome.storage.local.remove([ROBLOX_TOTP_SECRET_KEY, ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY], () => {
-      chrome.storage.local.set({ [ROBLOX_TOTP_ENABLED_KEY]: false }, () => {
-        if (chrome.runtime.lastError) {
-          set_status("Could not clear.");
-          return;
-        }
-        secret_el.value = "";
-        wipe_pw_fields();
-        enabled_el.checked = false;
-        enc_blob = null;
-        is_encrypted = false;
-        has_plain = false;
-        clear_protect_prompt();
-        close_pw_panel();
-        sync_pw_ui();
-        refresh_hints();
-        set_status("Secret removed.");
-        setTimeout(() => set_status(""), 2000);
-      });
-    });
+    chrome.storage.local.remove(
+      [ROBLOX_TOTP_SECRET_KEY, ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY],
+      () => {
+        chrome.storage.local.set({ [ROBLOX_TOTP_ENABLED_KEY]: false }, () => {
+          if (chrome.runtime.lastError) {
+            set_status("Could not clear.");
+            return;
+          }
+          secret_el.value = "";
+          wipe_pw_fields();
+          enabled_el.checked = false;
+          enc_blob = null;
+          is_encrypted = false;
+          has_plain = false;
+          clear_protect_prompt();
+          close_pw_panel();
+          sync_pw_ui();
+          refresh_hints();
+          set_status("Secret removed.");
+          setTimeout(() => set_status(""), 2000);
+        });
+      },
+    );
   });
 }
 
@@ -1667,7 +1988,9 @@ function append_trade_page_theme_card(container, snapshot = {}) {
 
   let theme = normalize_trade_page_theme(snapshot.theme);
   let enabled = snapshot.enabled === true;
-  let custom_themes = normalize_custom_trade_page_themes(snapshot.custom_themes);
+  let custom_themes = normalize_custom_trade_page_themes(
+    snapshot.custom_themes,
+  );
   let force_theme_upload_page = location.hash === "#theme-upload";
   let color_fields = [
     ["background", "Base"],
@@ -1764,13 +2087,21 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   const name_input = card.querySelector("#nte-theme-name-input");
   const name_save_btn = card.querySelector("#nte-theme-name-save");
   const name_cancel_btn = card.querySelector("#nte-theme-name-cancel");
-  const image_overlay_wrap = card.querySelector("#nte-theme-image-overlay-wrap");
+  const image_overlay_wrap = card.querySelector(
+    "#nte-theme-image-overlay-wrap",
+  );
   const image_overlay_input = card.querySelector("#nte-theme-image-overlay");
-  const image_overlay_value = card.querySelector("#nte-theme-image-overlay-value");
+  const image_overlay_value = card.querySelector(
+    "#nte-theme-image-overlay-value",
+  );
   const picker_buttons = [...card.querySelectorAll("[data-theme-picker]")];
   const color_picker = card.querySelector("#nte-theme-color-picker");
-  const color_picker_title = card.querySelector("#nte-theme-color-picker-title");
-  const color_picker_close = card.querySelector("#nte-theme-color-picker-close");
+  const color_picker_title = card.querySelector(
+    "#nte-theme-color-picker-title",
+  );
+  const color_picker_close = card.querySelector(
+    "#nte-theme-color-picker-close",
+  );
   const color_sample = card.querySelector("#nte-theme-color-sample");
   const picker_sliders = [...card.querySelectorAll("[data-picker-slider]")];
   const picker_values = [...card.querySelectorAll("[data-picker-value]")];
@@ -1786,23 +2117,37 @@ function append_trade_page_theme_card(container, snapshot = {}) {
 
   function get_preset_button_html(key, preset, custom_index = null) {
     let theme = normalize_trade_page_theme(preset);
-    let image_style = theme.image ? `background-image:url(&quot;${escape_html(theme.image)}&quot;);background-size:cover;background-position:center;` : "";
+    let image_style = theme.image
+      ? `background-image:url(&quot;${escape_html(theme.image)}&quot;);background-size:cover;background-position:center;`
+      : "";
+    let gradient_style = `background: linear-gradient(135deg, ${escape_html(theme.background)} 0%, ${escape_html(theme.accent)} 50%, ${escape_html(theme.accent2)} 100%);`;
     if (custom_index === null) {
-      return `<button type="button" class="nte-theme-preset" data-theme-preset="${escape_html(key)}"><span class="nte-theme-preset-swatch" style="--swatch:${escape_html(theme.accent)};--swatch-bg:${escape_html(theme.background)};${image_style}"></span><span class="nte-theme-preset-name">${escape_html(theme.name)}</span></button>`;
+      return `<button type="button" class="nte-theme-preset" data-theme-preset="${escape_html(key)}" title="${escape_html(theme.name)}"><span class="nte-theme-preset-swatch" style="${gradient_style}${image_style}"></span></button>`;
     }
-    return `<button type="button" class="nte-theme-preset is-custom" data-custom-theme="${custom_index}"><span class="nte-theme-preset-swatch" style="--swatch:${escape_html(theme.accent)};--swatch-bg:${escape_html(theme.background)};${image_style}"></span><span class="nte-theme-preset-name">${escape_html(theme.name)}</span><span class="nte-theme-preset-delete" data-delete-custom-theme="${custom_index}" title="Delete theme" aria-label="Delete ${escape_html(theme.name)} theme">x</span></button>`;
+    return `<button type="button" class="nte-theme-preset is-custom" data-custom-theme="${custom_index}" title="${escape_html(theme.name)}"><span class="nte-theme-preset-swatch" style="${gradient_style}${image_style}"></span><span class="nte-theme-preset-delete" data-delete-custom-theme="${custom_index}" title="Delete theme" aria-label="Delete ${escape_html(theme.name)} theme">x</span></button>`;
   }
 
   function is_same_theme(left, right) {
     let a = pack_trade_page_theme(left);
     let b = pack_trade_page_theme(right);
-    return ["background", "accent", "accent2", "effect", "image", "image_overlay"].every((key) => (a[key] || "") === (b[key] || ""));
+    return [
+      "background",
+      "accent",
+      "accent2",
+      "effect",
+      "image",
+      "image_overlay",
+    ].every((key) => (a[key] || "") === (b[key] || ""));
   }
 
   function render_presets() {
     presets_el.innerHTML = [
-      ...Object.entries(trade_page_theme_presets).map(([key, preset]) => get_preset_button_html(key, preset)),
-      ...custom_themes.map((preset, index) => get_preset_button_html("", preset, index)),
+      ...Object.entries(trade_page_theme_presets).map(([key, preset]) =>
+        get_preset_button_html(key, preset),
+      ),
+      ...custom_themes.map((preset, index) =>
+        get_preset_button_html("", preset, index),
+      ),
     ].join("");
   }
 
@@ -1813,7 +2158,8 @@ function append_trade_page_theme_card(container, snapshot = {}) {
       if (!is_complete_hex_color(input.value)) continue;
       next[key] = normalize_hex_color(input.value, next[key]);
     }
-    if (next.image) next.image_overlay = normalize_image_overlay(image_overlay_input.value);
+    if (next.image)
+      next.image_overlay = normalize_image_overlay(image_overlay_input.value);
     return normalize_trade_page_theme(next);
   }
 
@@ -1840,7 +2186,9 @@ function append_trade_page_theme_card(container, snapshot = {}) {
 
   function get_picker_rgb() {
     let parts = {};
-    for (let input of picker_sliders) parts[input.getAttribute("data-picker-slider")] = Number(input.value) || 0;
+    for (let input of picker_sliders)
+      parts[input.getAttribute("data-picker-slider")] =
+        Number(input.value) || 0;
     return [parts.r || 0, parts.g || 0, parts.b || 0];
   }
 
@@ -1892,7 +2240,10 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     for (let button of picker_buttons) {
       let key = button.getAttribute("data-theme-picker");
       button.style.setProperty("--picked", theme[key]);
-      button.classList.toggle("is-active", key === active_color_key && !color_picker.hidden);
+      button.classList.toggle(
+        "is-active",
+        key === active_color_key && !color_picker.hidden,
+      );
     }
     for (let input of hex_inputs) {
       let key = input.getAttribute("data-theme-hex");
@@ -1905,10 +2256,28 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     preview_el.style.setProperty("--theme-muted", theme.muted);
     preview_el.style.setProperty("--theme-accent", theme.accent);
     preview_el.style.setProperty("--theme-accent2", theme.accent2);
-    preview_el.style.setProperty("--theme-image", theme.image ? `url("${theme.image}")` : "none");
-    preview_el.style.setProperty("--theme-image-tint", hex_to_rgba(theme.background, theme.image_overlay / 100));
-    preview_el.style.setProperty("--theme-image-tint-strong", hex_to_rgba(theme.background, Math.min(0.96, (theme.image_overlay / 100) * 1.22)));
-    preview_el.style.setProperty("--theme-image-accent-soft", hex_to_rgba(theme.accent, Math.min(0.24, (theme.image_overlay / 100) * 0.2)));
+    preview_el.style.setProperty(
+      "--theme-image",
+      theme.image ? `url("${theme.image}")` : "none",
+    );
+    preview_el.style.setProperty(
+      "--theme-image-tint",
+      hex_to_rgba(theme.background, theme.image_overlay / 100),
+    );
+    preview_el.style.setProperty(
+      "--theme-image-tint-strong",
+      hex_to_rgba(
+        theme.background,
+        Math.min(0.96, (theme.image_overlay / 100) * 1.22),
+      ),
+    );
+    preview_el.style.setProperty(
+      "--theme-image-accent-soft",
+      hex_to_rgba(
+        theme.accent,
+        Math.min(0.24, (theme.image_overlay / 100) * 0.2),
+      ),
+    );
     preview_el.style.setProperty("--theme-border", theme.border);
     preview_el.dataset.themeEffect = theme.effect;
     image_overlay_wrap.hidden = theme.effect !== "image" || !theme.image;
@@ -1916,15 +2285,21 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     image_overlay_value.textContent = `${theme.image_overlay}%`;
     sync_color_picker();
     for (let button of card.querySelectorAll(".nte-theme-preset")) {
-      let preset =
-        button.hasAttribute("data-theme-preset")
-          ? trade_page_theme_presets[button.getAttribute("data-theme-preset")]
-          : custom_themes[Number(button.getAttribute("data-custom-theme"))];
-      button.classList.toggle("is-active", !!preset && is_same_theme(preset, theme));
+      let preset = button.hasAttribute("data-theme-preset")
+        ? trade_page_theme_presets[button.getAttribute("data-theme-preset")]
+        : custom_themes[Number(button.getAttribute("data-custom-theme"))];
+      button.classList.toggle(
+        "is-active",
+        !!preset && is_same_theme(preset, theme),
+      );
     }
   }
 
-  function save_theme(next_theme = read_theme_from_inputs(), next_enabled = enabled_el.checked, message = "Theme saved.") {
+  function save_theme(
+    next_theme = read_theme_from_inputs(),
+    next_enabled = enabled_el.checked,
+    message = "Theme saved.",
+  ) {
     theme = normalize_trade_page_theme(next_theme);
     enabled = !!next_enabled;
     paint_inputs(theme);
@@ -1936,7 +2311,10 @@ function append_trade_page_theme_card(container, snapshot = {}) {
 
   function queue_theme_save() {
     clearTimeout(save_timer);
-    save_timer = setTimeout(() => save_theme(read_theme_from_inputs(), enabled_el.checked, ""), 120);
+    save_timer = setTimeout(
+      () => save_theme(read_theme_from_inputs(), enabled_el.checked, ""),
+      120,
+    );
   }
 
   enabled_el.addEventListener("change", () => {
@@ -1955,7 +2333,9 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   });
 
   for (let button of picker_buttons) {
-    button.addEventListener("click", () => open_color_picker(button.getAttribute("data-theme-picker")));
+    button.addEventListener("click", () =>
+      open_color_picker(button.getAttribute("data-theme-picker")),
+    );
   }
 
   color_picker_close.addEventListener("click", close_color_picker);
@@ -1973,7 +2353,8 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     });
     input.addEventListener("change", () => {
       clearTimeout(save_timer);
-      if (is_complete_hex_color(input.value)) update_theme_color(input.getAttribute("data-theme-hex"), input.value);
+      if (is_complete_hex_color(input.value))
+        update_theme_color(input.getAttribute("data-theme-hex"), input.value);
       else paint_inputs(theme);
       save_theme(theme, enabled_el.checked, "");
     });
@@ -1985,12 +2366,17 @@ function append_trade_page_theme_card(container, snapshot = {}) {
       let index = Number(delete_btn.getAttribute("data-delete-custom-theme"));
       let removed = custom_themes[index];
       if (!removed) return;
-      custom_themes = custom_themes.filter((_, theme_index) => theme_index !== index);
+      custom_themes = custom_themes.filter(
+        (_, theme_index) => theme_index !== index,
+      );
       let deleted_active = is_same_theme(removed, theme);
-      if (deleted_active) theme = normalize_trade_page_theme(trade_page_theme_default);
+      if (deleted_active)
+        theme = normalize_trade_page_theme(trade_page_theme_default);
       set_storage({
         [trade_page_custom_themes_key]: custom_themes,
-        ...(deleted_active ? { [trade_page_theme_key]: pack_trade_page_theme(theme) } : {}),
+        ...(deleted_active
+          ? { [trade_page_theme_key]: pack_trade_page_theme(theme) }
+          : {}),
       }).then(() => {
         render_presets();
         paint_inputs(theme);
@@ -2000,10 +2386,9 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     }
     let button = event.target.closest(".nte-theme-preset");
     if (!button) return;
-    let preset =
-      button.hasAttribute("data-theme-preset")
-        ? trade_page_theme_presets[button.getAttribute("data-theme-preset")]
-        : custom_themes[Number(button.getAttribute("data-custom-theme"))];
+    let preset = button.hasAttribute("data-theme-preset")
+      ? trade_page_theme_presets[button.getAttribute("data-theme-preset")]
+      : custom_themes[Number(button.getAttribute("data-custom-theme"))];
     if (!preset) return;
     save_theme(preset, true, "");
   });
@@ -2033,7 +2418,11 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   }
 
   function show_name_panel(uploaded, file) {
-    let fallback_name = String(uploaded.name || file.name.replace(/\.[^.]+$/, "") || "Custom theme").trim().slice(0, 32);
+    let fallback_name = String(
+      uploaded.name || file.name.replace(/\.[^.]+$/, "") || "Custom theme",
+    )
+      .trim()
+      .slice(0, 32);
     pending_upload = uploaded;
     name_input.value = fallback_name;
     name_panel.hidden = false;
@@ -2051,7 +2440,12 @@ function append_trade_page_theme_card(container, snapshot = {}) {
       return;
     }
     let packed = pack_trade_page_theme({ ...pending_upload, name });
-    custom_themes = [packed, ...custom_themes.filter((item) => item.name.toLowerCase() !== packed.name.toLowerCase())].slice(0, 16);
+    custom_themes = [
+      packed,
+      ...custom_themes.filter(
+        (item) => item.name.toLowerCase() !== packed.name.toLowerCase(),
+      ),
+    ].slice(0, 16);
     set_storage({ [trade_page_custom_themes_key]: custom_themes }).then(() => {
       render_presets();
       save_theme(packed, true, `${packed.name} saved.`);
@@ -2069,7 +2463,8 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   upload_el.addEventListener("change", () => {
     let file = upload_el.files?.[0];
     if (!file) return;
-    let is_image = file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(file.name);
+    let is_image =
+      file.type.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(file.name);
     if (is_image && file.size > 3 * 1024 * 1024) {
       set_status("Theme image must be under 3 MB.");
       upload_el.value = "";
@@ -2078,18 +2473,17 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     let reader = new FileReader();
     reader.onload = () => {
       try {
-        let uploaded =
-          is_image
-            ? {
-                name: "",
-                background: theme.background,
-                accent: theme.accent,
-                accent2: theme.accent2,
-                effect: "image",
-                image: String(reader.result || ""),
-                image_overlay: trade_page_theme_default_image_overlay,
-              }
-            : JSON.parse(String(reader.result || "{}"));
+        let uploaded = is_image
+          ? {
+              name: "",
+              background: theme.background,
+              accent: theme.accent,
+              accent2: theme.accent2,
+              effect: "image",
+              image: String(reader.result || ""),
+              image_overlay: trade_page_theme_default_image_overlay,
+            }
+          : JSON.parse(String(reader.result || "{}"));
         if (is_image && !normalize_theme_image(uploaded.image)) {
           set_status("Theme image must be PNG, JPG, or WebP.");
           upload_el.value = "";
@@ -2127,21 +2521,27 @@ function restore_defaults() {
     });
     updates[legacy_colorblind_mode_option_name] = false;
     updates[colorblind_mode_profile_key] = colorblind_mode_profile_default;
-    updates[inbound_trade_notification_min_gain_key] = inbound_trade_notification_min_gain_default;
-    updates[duplicate_trade_warning_hours_key] = duplicate_trade_warning_hours_default;
-    updates[profile_value_display_mode_key] = profile_value_display_mode_default;
+    updates[inbound_trade_notification_min_gain_key] =
+      inbound_trade_notification_min_gain_default;
+    updates[duplicate_trade_warning_hours_key] =
+      duplicate_trade_warning_hours_default;
+    updates[profile_value_display_mode_key] =
+      profile_value_display_mode_default;
     updates[ROBLOX_TOTP_ENABLED_KEY] = false;
     updates[ROBLOX_TOTP_SECRET_KEY] = "";
     updates[popup_theme_storage_key] = popup_theme_default;
     updates[trade_page_theme_enabled_key] = false;
     updates[trade_page_theme_key] = { ...trade_page_theme_default };
     updates[trade_page_custom_themes_key] = [];
-    chrome.storage.local.remove([ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY], () => {
-      chrome.storage.local.set(updates, () => {
-        if (chrome.runtime.lastError) console.info(chrome.runtime.lastError);
-        resolve();
-      });
-    });
+    chrome.storage.local.remove(
+      [ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY],
+      () => {
+        chrome.storage.local.set(updates, () => {
+          if (chrome.runtime.lastError) console.info(chrome.runtime.lastError);
+          resolve();
+        });
+      },
+    );
   });
 }
 
@@ -2157,7 +2557,8 @@ restore_btn.addEventListener("click", async () => {
 
   setTimeout(() => {
     restore_btn.classList.remove("btn-restore-done");
-    restore_btn.querySelector(".btn-restore-label").textContent = "Reset to Defaults";
+    restore_btn.querySelector(".btn-restore-label").textContent =
+      "Reset to Defaults";
     restore_btn.disabled = false;
   }, 1400);
 });
@@ -2176,19 +2577,26 @@ const required_origins = [
 ];
 
 function check_host_permissions() {
-  if (!chrome.permissions?.contains || !chrome.permissions?.request) return Promise.resolve(true);
+  if (!chrome.permissions?.contains || !chrome.permissions?.request)
+    return Promise.resolve(true);
   return new Promise((resolve) => {
     try {
       chrome.permissions.contains({ origins: required_origins }, (has) => {
         if (chrome.runtime.lastError) {
-          console.info("Nevos Trading Extension: host permission check failed", chrome.runtime.lastError);
+          console.info(
+            "Nevos Trading Extension: host permission check failed",
+            chrome.runtime.lastError,
+          );
           resolve(false);
           return;
         }
         resolve(!!has);
       });
     } catch (error) {
-      console.info("Nevos Trading Extension: host permission API unavailable", error);
+      console.info(
+        "Nevos Trading Extension: host permission API unavailable",
+        error,
+      );
       resolve(true);
     }
   });
@@ -2224,37 +2632,67 @@ async function render_permissions_banner() {
   let content = document.getElementById("content");
   content.parentNode.insertBefore(banner, content);
 
-  document.getElementById("nte-grant-permissions").addEventListener("click", async () => {
-    let result = await new Promise((resolve) => {
-      try {
-        chrome.permissions.request({ origins: required_origins }, (ok) => {
-          if (chrome.runtime.lastError) {
-            console.info("Nevos Trading Extension: host permission request failed", chrome.runtime.lastError);
-            resolve(false);
-            return;
-          }
-          resolve(!!ok);
-        });
-      } catch (error) {
-        console.info("Nevos Trading Extension: host permission API unavailable", error);
-        resolve(false);
+  document
+    .getElementById("nte-grant-permissions")
+    .addEventListener("click", async () => {
+      let result = await new Promise((resolve) => {
+        try {
+          chrome.permissions.request({ origins: required_origins }, (ok) => {
+            if (chrome.runtime.lastError) {
+              console.info(
+                "Nevos Trading Extension: host permission request failed",
+                chrome.runtime.lastError,
+              );
+              resolve(false);
+              return;
+            }
+            resolve(!!ok);
+          });
+        } catch (error) {
+          console.info(
+            "Nevos Trading Extension: host permission API unavailable",
+            error,
+          );
+          resolve(false);
+        }
+      });
+      if (result) {
+        banner.remove();
       }
     });
-    if (result) {
-      banner.remove();
-    }
-  });
 }
 
-
-
 const ta_actions = [
-  { id: "cancel_inbound_overpaying", label: "Cancel inbound trades you're overpaying in", section: "inbound" },
-  { id: "cancel_inbound_unowned", label: "Cancel inbound trades with unowned items", section: "inbound" },
-  { id: "cancel_inbound_all", label: "Cancel all inbound trades", section: "inbound" },
-  { id: "cancel_outbound_overpaying", label: "Cancel outbound trades you're overpaying in", section: "outbound" },
-  { id: "cancel_outbound_unowned", label: "Cancel outbound trades with unowned items", section: "outbound" },
-  { id: "cancel_outbound_all", label: "Cancel all outbound trades", section: "outbound" },
+  {
+    id: "cancel_inbound_overpaying",
+    label: "Cancel inbound trades you're overpaying in",
+    section: "inbound",
+  },
+  {
+    id: "cancel_inbound_unowned",
+    label: "Cancel inbound trades with unowned items",
+    section: "inbound",
+  },
+  {
+    id: "cancel_inbound_all",
+    label: "Cancel all inbound trades",
+    section: "inbound",
+  },
+  {
+    id: "cancel_outbound_overpaying",
+    label: "Cancel outbound trades you're overpaying in",
+    section: "outbound",
+  },
+  {
+    id: "cancel_outbound_unowned",
+    label: "Cancel outbound trades with unowned items",
+    section: "outbound",
+  },
+  {
+    id: "cancel_outbound_all",
+    label: "Cancel all outbound trades",
+    section: "outbound",
+  },
 ];
 
 let ta_poll_timer = null;
@@ -2286,8 +2724,12 @@ function ta_show_confirm(action_label, on_confirm) {
   `;
   document.body.appendChild(overlay);
 
-  overlay.querySelector(".ta-confirm-cancel").addEventListener("click", () => overlay.remove());
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay
+    .querySelector(".ta-confirm-cancel")
+    .addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
   overlay.querySelector(".ta-confirm-go").addEventListener("click", () => {
     overlay.remove();
     on_confirm();
@@ -2320,11 +2762,17 @@ function ta_show_overpay_config(action_label, on_confirm) {
   document.body.appendChild(overlay);
 
   let input = overlay.querySelector("#ta-pct-input");
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") overlay.querySelector(".ta-confirm-go").click(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") overlay.querySelector(".ta-confirm-go").click();
+  });
   requestAnimationFrame(() => input.focus());
 
-  overlay.querySelector(".ta-confirm-cancel").addEventListener("click", () => overlay.remove());
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay
+    .querySelector(".ta-confirm-cancel")
+    .addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
   overlay.querySelector(".ta-confirm-go").addEventListener("click", () => {
     let pct = Math.max(0, parseFloat(input.value) || 0);
     overlay.remove();
@@ -2349,17 +2797,25 @@ function ta_update_buttons(progress) {
       btn.disabled = false;
       btn.classList.add("ta-running");
       btn.classList.remove("ta-done", "ta-error");
-      let wait_sec = progress.wait_until ? Math.max(0, Math.ceil((progress.wait_until - Date.now()) / 1000)) : 0;
-      let wait_suffix = wait_sec > 0 ? ` \u2014 rate limit, resuming in ${wait_sec}s` : "";
+      let wait_sec = progress.wait_until
+        ? Math.max(0, Math.ceil((progress.wait_until - Date.now()) / 1000))
+        : 0;
+      let wait_suffix =
+        wait_sec > 0 ? ` \u2014 rate limit, resuming in ${wait_sec}s` : "";
       let status_text = "Starting...";
       if (progress.phase === "fetching") {
-        status_text = (progress.total > 0
-          ? `Fetching trades... ${progress.total} found (page ${progress.fetched_pages})`
-          : `Fetching trades... (page ${progress.fetched_pages || 1})`) + wait_suffix;
+        status_text =
+          (progress.total > 0
+            ? `Fetching trades... ${progress.total} found (page ${progress.fetched_pages})`
+            : `Fetching trades... (page ${progress.fetched_pages || 1})`) +
+          wait_suffix;
       } else if (progress.phase === "checking") {
-        status_text = `Checking ${progress.checked}/${progress.total} \u2014 ${progress.done} declined, ${progress.skipped} skipped` + wait_suffix;
+        status_text =
+          `Checking ${progress.checked}/${progress.total} \u2014 ${progress.done} declined, ${progress.skipped} skipped` +
+          wait_suffix;
       } else if (progress.phase === "declining") {
-        status_text = `Declining ${progress.done}/${progress.total}...` + wait_suffix;
+        status_text =
+          `Declining ${progress.done}/${progress.total}...` + wait_suffix;
       }
       status_el.textContent = status_text;
       if (!btn.querySelector(".ta-spinner")) {
@@ -2402,15 +2858,20 @@ function ta_update_buttons(progress) {
         if (svg) svg.style.display = "";
       }
 
-      if (!progress?.running && progress?.action === action.id && (progress?.total > 0 || progress?.error)) {
+      if (
+        !progress?.running &&
+        progress?.action === action.id &&
+        (progress?.total > 0 || progress?.error)
+      ) {
         if (progress.error) {
           btn.classList.add("ta-error");
           status_el.textContent = `Stopped: ${progress.error} (${progress.done}/${progress.total})`;
         } else {
           btn.classList.add("ta-done");
-          status_el.textContent = progress.skipped > 0
-            ? `Done! ${progress.done} declined, ${progress.skipped} skipped.`
-            : `Done! ${progress.done} trades declined.`;
+          status_el.textContent =
+            progress.skipped > 0
+              ? `Done! ${progress.done} declined, ${progress.skipped} skipped.`
+              : `Done! ${progress.done} trades declined.`;
         }
       } else if (!progress?.running && progress?.action !== action.id) {
         status_el.textContent = "";
@@ -2445,9 +2906,12 @@ async function render_trade_actions_tab() {
     return;
   }
 
-  let cancel_icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M7.8 16.2 16.2 7.8"/></svg>';
-  let inbound_icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14l2 10v4.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5V14L5 4Z"/><path d="M3.5 14H8l1.5 2h5l1.5-2h4.5"/><path d="M9 8h6"/><path d="M8 11h8"/></svg>';
-  let outbound_icon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 3.5 11 21l-2.3-7.7L3 10.5l17.5-7Z"/><path d="M8.8 13.2 20.5 3.5"/></svg>';
+  let cancel_icon =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M7.8 16.2 16.2 7.8"/></svg>';
+  let inbound_icon =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14l2 10v4.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5V14L5 4Z"/><path d="M3.5 14H8l1.5 2h5l1.5-2h4.5"/><path d="M9 8h6"/><path d="M8 11h8"/></svg>';
+  let outbound_icon =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 3.5 11 21l-2.3-7.7L3 10.5l17.5-7Z"/><path d="M8.8 13.2 20.5 3.5"/></svg>';
 
   root.innerHTML = `
     <p class="ta-lede">Bulk decline trades directly from Roblox. Actions run in the background even if you close this popup.</p>
@@ -2457,7 +2921,10 @@ async function render_trade_actions_tab() {
         Inbound Trades
       </div>
       <div class="ta-buttons">
-        ${ta_actions.filter((a) => a.section === "inbound").map((a) => `
+        ${ta_actions
+          .filter((a) => a.section === "inbound")
+          .map(
+            (a) => `
           <button class="ta-btn" data-ta-action="${a.id}">
             <span class="ta-btn-icon">${cancel_icon}</span>
             <span class="ta-btn-text">
@@ -2465,7 +2932,9 @@ async function render_trade_actions_tab() {
               <span class="ta-btn-status"></span>
             </span>
           </button>
-        `).join("")}
+        `,
+          )
+          .join("")}
       </div>
     </div>
     <div class="ta-section ta-section-outbound">
@@ -2474,7 +2943,10 @@ async function render_trade_actions_tab() {
         Outbound Trades
       </div>
       <div class="ta-buttons">
-        ${ta_actions.filter((a) => a.section === "outbound").map((a) => `
+        ${ta_actions
+          .filter((a) => a.section === "outbound")
+          .map(
+            (a) => `
           <button class="ta-btn" data-ta-action="${a.id}">
             <span class="ta-btn-icon">${cancel_icon}</span>
             <span class="ta-btn-text">
@@ -2482,7 +2954,9 @@ async function render_trade_actions_tab() {
               <span class="ta-btn-status"></span>
             </span>
           </button>
-        `).join("")}
+        `,
+          )
+          .join("")}
       </div>
     </div>
   `;
@@ -2510,7 +2984,9 @@ sync_mobile_popup_class();
 init_popup_theme_switcher();
 refresh_all_panels();
 render_permissions_banner();
-document.getElementById("brandImage").src = get_asset_url("assets/icons/logo128.png");
+document.getElementById("brandImage").src = get_asset_url(
+  "assets/icons/logo128.png",
+);
 
 const manifest = chrome.runtime.getManifest();
 const version_el = document.getElementById("extensionVersion");

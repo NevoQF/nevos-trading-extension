@@ -54,7 +54,6 @@
 
   var register = _require.register;
 
-
   register("eFyFE", function (module) {
     let rolimons_data;
     let rolimons_name_cache;
@@ -73,7 +72,8 @@
     function get_url(path) {
       if (window.__NTE_ICONS && window.__NTE_ICONS[path]) {
         var d = window.__NTE_ICONS[path];
-        if (window.__NTE_resolveInlineIcon) d = window.__NTE_resolveInlineIcon(path, d);
+        if (window.__NTE_resolveInlineIcon)
+          d = window.__NTE_resolveInlineIcon(path, d);
         return d;
       }
       return chrome.runtime.getURL(path);
@@ -90,7 +90,10 @@
           }
         }
         let observer = new MutationObserver(check);
-        observer.observe(parent !== undefined ? root : document.body, { childList: true, subtree: true });
+        observer.observe(parent !== undefined ? root : document.body, {
+          childList: true,
+          subtree: true,
+        });
         check();
       });
     }
@@ -116,14 +119,27 @@
     }
 
     function get_page_type() {
-      let trade_el = document.querySelector('[ng-show="layout.view === tradesConstants.views.tradeRequest"]');
-      if (trade_el) return trade_el.classList.contains("ng-hide") ? "details" : "sendOrCounter";
+      let trade_el = document.querySelector(
+        '[ng-show="layout.view === tradesConstants.views.tradeRequest"]',
+      );
+      if (trade_el)
+        return trade_el.classList.contains("ng-hide")
+          ? "details"
+          : "sendOrCounter";
       if (document.querySelector(".results-container")) return "catalog";
-      if (document.querySelector("[data-internal-page-name]")?.getAttribute("data-internal-page-name") === "CatalogItem") return "itemProfile";
+      if (
+        document
+          .querySelector("[data-internal-page-name]")
+          ?.getAttribute("data-internal-page-name") === "CatalogItem"
+      )
+        return "itemProfile";
       if (document.querySelector("[data-profileuserid]")) return "userProfile";
-      if (/\/users\/\d+\/profile/.test(window.location.pathname)) return "userProfile";
-      if (document.querySelector('meta[data-internal-page-name="Inventory"]')) return "userInventory";
-      if (/\/users\/\d+\/inventory/.test(window.location.pathname)) return "userInventory";
+      if (/\/users\/\d+\/profile/.test(window.location.pathname))
+        return "userProfile";
+      if (document.querySelector('meta[data-internal-page-name="Inventory"]'))
+        return "userInventory";
+      if (/\/users\/\d+\/inventory/.test(window.location.pathname))
+        return "userInventory";
       return undefined;
     }
 
@@ -138,10 +154,16 @@
     function ensure_rolimons_name_cache() {
       if (rolimons_name_cache) return rolimons_name_cache;
       rolimons_name_cache = {};
-      for (let [item_id, item_data] of Object.entries(rolimons_data?.items || {})) {
-        if (!Array.isArray(item_data) || typeof item_data[0] !== "string") continue;
+      for (let [item_id, item_data] of Object.entries(
+        rolimons_data?.items || {},
+      )) {
+        if (!Array.isArray(item_data) || typeof item_data[0] !== "string")
+          continue;
         let normalized_name = normalize_rolimons_name(item_data[0]);
-        if (normalized_name && rolimons_name_cache[normalized_name] === undefined) {
+        if (
+          normalized_name &&
+          rolimons_name_cache[normalized_name] === undefined
+        ) {
           rolimons_name_cache[normalized_name] = {
             id: parseInt(item_id, 10),
             item: item_data,
@@ -151,15 +173,25 @@
       return rolimons_name_cache;
     }
 
-    function get_rolimons_item(item_id, item_name, resolve_bundle_by_name_only) {
-      if (!resolve_bundle_by_name_only && rolimons_data?.items?.[item_id]) return rolimons_data.items[item_id];
+    function get_rolimons_item(
+      item_id,
+      item_name,
+      resolve_bundle_by_name_only,
+    ) {
+      if (!resolve_bundle_by_name_only && rolimons_data?.items?.[item_id])
+        return rolimons_data.items[item_id];
       if (!item_name) return null;
       let normalized_name = normalize_rolimons_name(item_name);
       return ensure_rolimons_name_cache()[normalized_name]?.item || null;
     }
 
-    function get_rolimons_item_id(item_id, item_name, resolve_bundle_by_name_only) {
-      if (!resolve_bundle_by_name_only && rolimons_data?.items?.[item_id]) return parseInt(item_id, 10);
+    function get_rolimons_item_id(
+      item_id,
+      item_name,
+      resolve_bundle_by_name_only,
+    ) {
+      if (!resolve_bundle_by_name_only && rolimons_data?.items?.[item_id])
+        return parseInt(item_id, 10);
       if (!item_name) return null;
       let normalized_name = normalize_rolimons_name(item_name);
       return ensure_rolimons_name_cache()[normalized_name]?.id ?? null;
@@ -167,7 +199,10 @@
 
     function is_unsupported_bundle(item_id, item_name) {
       let normalized_name = normalize_rolimons_name(item_name);
-      return normalized_name === "signature kicks" || normalized_name === "the jade catseye";
+      return (
+        normalized_name === "signature kicks" ||
+        normalized_name === "the jade catseye"
+      );
     }
 
     function get_unsupported_bundle_value(item_id, item_name, fallback_rap) {
@@ -179,14 +214,22 @@
     function get_value_or_rap(item_id, item_name, fallback_rap) {
       let item_data = get_rolimons_item(item_id, item_name);
       if (item_data) return item_data[4];
-      let unsupported_value = get_unsupported_bundle_value(item_id, item_name, fallback_rap);
+      let unsupported_value = get_unsupported_bundle_value(
+        item_id,
+        item_name,
+        fallback_rap,
+      );
       return unsupported_value !== null ? unsupported_value : 0;
     }
 
     function get_rap(item_id, item_name, fallback_rap) {
       let item_data = get_rolimons_item(item_id, item_name);
       if (item_data) return item_data[2];
-      let unsupported_value = get_unsupported_bundle_value(item_id, item_name, fallback_rap);
+      let unsupported_value = get_unsupported_bundle_value(
+        item_id,
+        item_name,
+        fallback_rap,
+      );
       return unsupported_value !== null ? unsupported_value : 0;
     }
 
@@ -194,21 +237,42 @@
       let normalized = [];
 
       for (let item of Array.isArray(items) ? items : []) {
-        let instances = Array.isArray(item?.instances) && item.instances.length ? item.instances : [item];
+        let instances =
+          Array.isArray(item?.instances) && item.instances.length
+            ? item.instances
+            : [item];
 
         for (let instance of instances) {
-          let target_id = parseInt(instance?.itemTarget?.targetId ?? item?.itemTarget?.targetId ?? instance?.assetId ?? item?.assetId, 10);
+          let target_id = parseInt(
+            instance?.itemTarget?.targetId ??
+              item?.itemTarget?.targetId ??
+              instance?.assetId ??
+              item?.assetId,
+            10,
+          );
 
           normalized.push({
             assetId: isNaN(target_id) ? undefined : target_id,
-            collectibleItemId: item?.collectibleItemId || instance?.collectibleItemId || null,
-            collectibleItemInstanceId: instance?.collectibleItemInstanceId || null,
-            itemType: instance?.itemTarget?.itemType || item?.itemTarget?.itemType || null,
+            collectibleItemId:
+              item?.collectibleItemId || instance?.collectibleItemId || null,
+            collectibleItemInstanceId:
+              instance?.collectibleItemInstanceId || null,
+            itemType:
+              instance?.itemTarget?.itemType ||
+              item?.itemTarget?.itemType ||
+              null,
             itemTarget: instance?.itemTarget || item?.itemTarget || null,
-            name: instance?.itemName || item?.itemName || instance?.name || item?.name || "Unknown",
+            name:
+              instance?.itemName ||
+              item?.itemName ||
+              instance?.name ||
+              item?.name ||
+              "Unknown",
             serialNumber: instance?.serialNumber ?? null,
-            originalPrice: instance?.originalPrice ?? item?.originalPrice ?? null,
-            recentAveragePrice: instance?.recentAveragePrice ?? item?.recentAveragePrice ?? 0,
+            originalPrice:
+              instance?.originalPrice ?? item?.originalPrice ?? null,
+            recentAveragePrice:
+              instance?.recentAveragePrice ?? item?.recentAveragePrice ?? 0,
             assetStock: instance?.assetStock ?? item?.assetStock ?? null,
             isOnHold: Boolean(instance?.isOnHold),
           });
@@ -219,12 +283,21 @@
     }
 
     function get_extension_title(use_full) {
-      return use_full ? chrome.runtime.getManifest().name : chrome.runtime.getManifest().short_name;
+      return use_full
+        ? chrome.runtime.getManifest().name
+        : chrome.runtime.getManifest().short_name;
     }
 
     function get_color_mode() {
-      if (document.getElementById("rbx-body")?.classList.contains("light-theme")) return "light";
-      if (document.documentElement.classList.contains("light-theme") || document.body?.classList.contains("light-theme")) return "light";
+      if (
+        document.getElementById("rbx-body")?.classList.contains("light-theme")
+      )
+        return "light";
+      if (
+        document.documentElement.classList.contains("light-theme") ||
+        document.body?.classList.contains("light-theme")
+      )
+        return "light";
       return "dark";
     }
 
@@ -256,15 +329,24 @@
           if (resp && resp.status !== 429 && resp.status < 500) break;
           if (attempt < 2) await inventory_fetch_delay(350 * (attempt + 1));
         }
-        if (!resp) return items.length ? normalize_tradeable_inventory_items(items) : null;
+        if (!resp)
+          return items.length
+            ? normalize_tradeable_inventory_items(items)
+            : null;
         if (resp.status === 401 || resp.status === 403) return false;
         if (resp.status === 500 && limit === "100") {
           limit = "50";
           continue;
         }
-        if (resp.status !== 200) return items.length ? normalize_tradeable_inventory_items(items) : null;
+        if (resp.status !== 200)
+          return items.length
+            ? normalize_tradeable_inventory_items(items)
+            : null;
         let data = await resp.json().catch(() => null);
-        if (!data) return items.length ? normalize_tradeable_inventory_items(items) : null;
+        if (!data)
+          return items.length
+            ? normalize_tradeable_inventory_items(items)
+            : null;
         items = items.concat(Array.isArray(data?.items) ? data.items : []);
         cursor = data?.nextPageCursor || "";
         if (!cursor) break;
@@ -274,7 +356,11 @@
     }
 
     async function get_authenticated_user_id() {
-      return parseInt(document.querySelector('meta[name="user-data"]').getAttribute("data-userid"));
+      return parseInt(
+        document
+          .querySelector('meta[name="user-data"]')
+          .getAttribute("data-userid"),
+      );
     }
 
     function add_tooltip(el, text) {
@@ -296,7 +382,8 @@
         let script = document.createElement("script");
         script.id = "nruInitTooltipsScript";
         script.src = get_url("scripts/init_tooltips.js");
-        script.onload = () => document.dispatchEvent(new CustomEvent("nru_init_tooltips"));
+        script.onload = () =>
+          document.dispatchEvent(new CustomEvent("nru_init_tooltips"));
         (document.head || document.documentElement).appendChild(script);
       }
     }
@@ -304,7 +391,8 @@
     function check_if_asset_type_is_on_rolimons(id) {
       return (
         [
-          8, 17, 18, 19, 27, 28, 29, 30, 31, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72,
+          8, 17, 18, 19, 27, 28, 29, 30, 31, 41, 42, 43, 44, 45, 46, 47, 48, 49,
+          50, 51, 52, 53, 54, 55, 56, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72,
           76, 77, 78, 79,
         ].indexOf(id) !== -1
       );
@@ -323,27 +411,47 @@
       await wait_for_elm(".item-card-price");
       let total = 0;
       for (let item of containers) {
-        let p = remove_two_letter_path(item.querySelector(".item-card-price").parentElement.getElementsByTagName("a")[0].pathname);
-        total += get_value_or_rap(parseInt(p.substring(nth_index(p, "/", 2) + 1, nth_index(p, "/", 3))));
+        let p = remove_two_letter_path(
+          item
+            .querySelector(".item-card-price")
+            .parentElement.getElementsByTagName("a")[0].pathname,
+        );
+        total += get_value_or_rap(
+          parseInt(p.substring(nth_index(p, "/", 2) + 1, nth_index(p, "/", 3))),
+        );
       }
       let item_val = total;
-      let robux_val = Math.round((parseInt(element.querySelector(".text-label.robux-line-value").innerText.replace(",", "")) || 0) / 0.7);
+      let robux_val = Math.round(
+        (parseInt(
+          element
+            .querySelector(".text-label.robux-line-value")
+            .innerText.replace(",", ""),
+        ) || 0) / 0.7,
+      );
       total += robux_val;
       return return_detail ? [item_val, robux_val] : total;
     }
 
-    async function calculate_value_total_send_or_counter(element, return_detail) {
+    async function calculate_value_total_send_or_counter(
+      element,
+      return_detail,
+    ) {
       await wait_for_elm('[ng-repeat="slot in offer.slots"]', element);
       let slots = element.querySelectorAll('[ng-repeat="slot in offer.slots"]');
       let total = 0;
       for (let item of slots) {
-        let id = parseInt(item.querySelector('[thumbnail-target-id][thumbnail-type="Asset"]')?.getAttribute("thumbnail-target-id"));
+        let id = parseInt(
+          item
+            .querySelector('[thumbnail-target-id][thumbnail-type="Asset"]')
+            ?.getAttribute("thumbnail-target-id"),
+        );
         if (!isNaN(id)) total += get_value_or_rap(id);
       }
       let item_val = total;
       let robux_input = element.querySelector('[name="robux"]');
       let robux_val = parseInt(robux_input.value) || 0;
-      if (robux_input.parentElement.classList.contains("form-has-error")) robux_val = 0;
+      if (robux_input.parentElement.classList.contains("form-has-error"))
+        robux_val = 0;
       total += robux_val;
       return return_detail ? [item_val, robux_val] : total;
     }
@@ -351,7 +459,9 @@
     function create_values_spans(container, options) {
       function insert(el, parent) {
         let link = parent.querySelector(".icon-link");
-        link ? parent.insertBefore(el, link.parentElement) : parent.appendChild(el);
+        link
+          ? parent.insertBefore(el, link.parentElement)
+          : parent.appendChild(el);
       }
       container.style.height = "44px";
       if (!options?.inline) insert(document.createElement("br"), container);
@@ -366,7 +476,9 @@
       icon.style.marginRight = options?.inline ? "3px" : "6px";
       icon.style.marginLeft = options?.inline ? "5px" : "0px";
       icon.style.verticalAlign = options?.inline && "middle";
-      icon.style.transform = options?.large ? "translateY(4px)" : "translateY(2px)";
+      icon.style.transform = options?.large
+        ? "translateY(4px)"
+        : "translateY(2px)";
       icon.style.backgroundColor = "transparent";
       insert(icon, container);
       let span = document.createElement("span");
@@ -387,7 +499,9 @@
       if (cached && cached.expires_at > now) return cached.value;
       if (cached) delete username_id_cache[key];
       try {
-        cached = JSON.parse(sessionStorage.getItem(username_id_cache_prefix + key) || "null");
+        cached = JSON.parse(
+          sessionStorage.getItem(username_id_cache_prefix + key) || "null",
+        );
         if (cached && cached.expires_at > now) {
           username_id_cache[key] = cached;
           return cached.value;
@@ -400,7 +514,10 @@
       let cached = { value: value || null, expires_at: Date.now() + ttl_ms };
       username_id_cache[key] = cached;
       try {
-        sessionStorage.setItem(username_id_cache_prefix + key, JSON.stringify(cached));
+        sessionStorage.setItem(
+          username_id_cache_prefix + key,
+          JSON.stringify(cached),
+        );
       } catch {}
       return cached.value;
     }
@@ -414,14 +531,28 @@
       username_id_pending[key] = (async () => {
         set_username_id_cache(key, null, username_id_pending_ttl_ms);
         try {
-          let resp = await fetch("https://users.roblox.com/v1/usernames/users", {
-            method: "POST",
-            headers: { Accept: "application/json", "Content-Type": "application/json" },
-            body: JSON.stringify({ usernames: [username], excludeBannedUsers: false }),
-          });
-          if (!resp.ok) return set_username_id_cache(key, null, username_id_miss_ttl_ms);
+          let resp = await fetch(
+            "https://users.roblox.com/v1/usernames/users",
+            {
+              method: "POST",
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                usernames: [username],
+                excludeBannedUsers: false,
+              }),
+            },
+          );
+          if (!resp.ok)
+            return set_username_id_cache(key, null, username_id_miss_ttl_ms);
           let id = ((await resp.json()).data || [])[0]?.id || null;
-          return set_username_id_cache(key, id, id ? username_id_hit_ttl_ms : username_id_miss_ttl_ms);
+          return set_username_id_cache(
+            key,
+            id,
+            id ? username_id_hit_ttl_ms : username_id_miss_ttl_ms,
+          );
         } catch {
           return set_username_id_cache(key, null, username_id_miss_ttl_ms);
         } finally {
@@ -431,7 +562,6 @@
       return username_id_pending[key];
     }
 
-
     define_export(
       module.exports,
       "refreshData",
@@ -439,7 +569,10 @@
         function refresh_data(callback) {
           let msg = "getData";
           if (rolimons_data !== undefined) msg = "getDataPeriodic";
-          let routility_msg = routility_data !== undefined ? "getRoutilityDataPeriodic" : "getRoutilityData";
+          let routility_msg =
+            routility_data !== undefined
+              ? "getRoutilityDataPeriodic"
+              : "getRoutilityData";
           nte_send_message(routility_msg, function (data) {
             if (data) routility_data = data;
           });
@@ -455,8 +588,16 @@
     define_export(module.exports, "getRolimonsData", () => get_rolimons_data);
     define_export(module.exports, "getRoutilityData", () => get_routility_data);
     define_export(module.exports, "getRolimonsItem", () => get_rolimons_item);
-    define_export(module.exports, "getRolimonsItemId", () => get_rolimons_item_id);
-    define_export(module.exports, "isUnsupportedBundle", () => is_unsupported_bundle);
+    define_export(
+      module.exports,
+      "getRolimonsItemId",
+      () => get_rolimons_item_id,
+    );
+    define_export(
+      module.exports,
+      "isUnsupportedBundle",
+      () => is_unsupported_bundle,
+    );
     define_export(module.exports, "getURL", () => get_url);
     define_export(module.exports, "waitForElm", () => wait_for_elm);
     define_export(module.exports, "nthIndex", () => nth_index);
@@ -466,22 +607,53 @@
     define_export(module.exports, "getValueOrRAP", () => get_value_or_rap);
     define_export(module.exports, "getRAP", () => get_rap);
     define_export(module.exports, "getUSD", () => get_usd);
-    define_export(module.exports, "getExtensionTitle", () => get_extension_title);
+    define_export(
+      module.exports,
+      "getExtensionTitle",
+      () => get_extension_title,
+    );
     define_export(module.exports, "getColorMode", () => get_color_mode);
     define_export(module.exports, "getUserInventory", () => get_user_inventory);
-    define_export(module.exports, "getAuthenticatedUserId", () => get_authenticated_user_id);
+    define_export(
+      module.exports,
+      "getAuthenticatedUserId",
+      () => get_authenticated_user_id,
+    );
     define_export(module.exports, "addTooltip", () => add_tooltip);
-    define_export(module.exports, "removeTooltipsFromClass", () => remove_tooltips_from_class);
+    define_export(
+      module.exports,
+      "removeTooltipsFromClass",
+      () => remove_tooltips_from_class,
+    );
     define_export(module.exports, "initTooltips", () => init_tooltips);
-    define_export(module.exports, "checkIfAssetTypeIsOnRolimons", () => check_if_asset_type_is_on_rolimons);
-    define_export(module.exports, "removeTwoLetterPath", () => remove_two_letter_path);
-    define_export(module.exports, "calculateValueTotalDetails", () => calculate_value_total_details);
-    define_export(module.exports, "calculateValueTotalSendOrCounter", () => calculate_value_total_send_or_counter);
-    define_export(module.exports, "createValuesSpans", () => create_values_spans);
+    define_export(
+      module.exports,
+      "checkIfAssetTypeIsOnRolimons",
+      () => check_if_asset_type_is_on_rolimons,
+    );
+    define_export(
+      module.exports,
+      "removeTwoLetterPath",
+      () => remove_two_letter_path,
+    );
+    define_export(
+      module.exports,
+      "calculateValueTotalDetails",
+      () => calculate_value_total_details,
+    );
+    define_export(
+      module.exports,
+      "calculateValueTotalSendOrCounter",
+      () => calculate_value_total_send_or_counter,
+    );
+    define_export(
+      module.exports,
+      "createValuesSpans",
+      () => create_values_spans,
+    );
     define_export(module.exports, "fetchIDFromName", () => fetch_id_from_name);
     _require("8kQ1K");
   });
-
 
   register("8kQ1K", function (module) {
     module.exports = JSON.parse(
@@ -489,23 +661,30 @@
     );
   });
 
-
   register("98F8t", function (module) {
     define_export(module.exports, "default", () => handle_profile_links);
     var utils = _require("eFyFE");
 
     function remove_existing_link() {
-      for (let link of document.querySelectorAll("a.nte-profile-rolimons-link, .user-profile-link")) {
+      for (let link of document.querySelectorAll(
+        "a.nte-profile-rolimons-link, .user-profile-link",
+      )) {
         let anchor = link.tagName === "A" ? link : link.closest("a");
         anchor?.remove();
       }
     }
 
     function remove_stale_profile_links(container, user_id) {
-      for (let link of document.querySelectorAll("a.nte-profile-rolimons-link, .user-profile-link")) {
+      for (let link of document.querySelectorAll(
+        "a.nte-profile-rolimons-link, .user-profile-link",
+      )) {
         let anchor = link.tagName === "A" ? link : link.closest("a");
         if (!anchor) continue;
-        if (anchor.parentElement === container && anchor.dataset.nteUserId === String(user_id)) continue;
+        if (
+          anchor.parentElement === container &&
+          anchor.dataset.nteUserId === String(user_id)
+        )
+          continue;
         anchor.remove();
       }
     }
@@ -531,7 +710,10 @@
     }
 
     function style_profile_icon(icon) {
-      let icon_file = utils.getColorMode() === "dark" ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
+      let icon_file =
+        utils.getColorMode() === "dark"
+          ? "rolimonsLink.svg"
+          : "rolimonsLinkDark.svg";
       icon.style.backgroundImage = `url(${JSON.stringify(utils.getURL("assets/" + icon_file))})`;
       icon.className = "icon icon-link user-profile-link";
       icon.style.display = "inline-block";
@@ -546,14 +728,20 @@
 
     function get_user_id_from_page() {
       return (
-        parseInt(document.querySelector("[data-profileuserid]")?.getAttribute("data-profileuserid")) ||
+        parseInt(
+          document
+            .querySelector("[data-profileuserid]")
+            ?.getAttribute("data-profileuserid"),
+        ) ||
         parseInt(window.location.pathname.match(/\/users\/(\d+)\//)?.[1]) ||
         0
       );
     }
 
     async function add_profile_link() {
-      let name_el = await utils.waitForElm("#profile-header-title-container-name");
+      let name_el = await utils.waitForElm(
+        "#profile-header-title-container-name",
+      );
       if (!name_el) return;
       let container = name_el.parentElement;
       let user_id = get_user_id_from_page();
@@ -561,12 +749,16 @@
 
       remove_stale_profile_links(container, user_id);
 
-      let link = container.querySelector(`a.nte-profile-rolimons-link[data-nte-user-id="${user_id}"]`);
+      let link = container.querySelector(
+        `a.nte-profile-rolimons-link[data-nte-user-id="${user_id}"]`,
+      );
       if (!link) link = document.createElement("a");
 
       style_profile_link(link, user_id);
 
-      let icon = link.querySelector(".user-profile-link") || document.createElement("span");
+      let icon =
+        link.querySelector(".user-profile-link") ||
+        document.createElement("span");
       style_profile_icon(icon);
       link.onmouseenter = () => {
         icon.style.filter = "brightness(50%)";
@@ -582,24 +774,39 @@
 
     async function add_trade_page_link() {
       await utils.waitForElm(".trades-header-nowrap");
-      let paired = [...document.getElementsByClassName("trades-header-nowrap")].at(-1)?.querySelector(".paired-name");
+      let paired = [...document.getElementsByClassName("trades-header-nowrap")]
+        .at(-1)
+        ?.querySelector(".paired-name");
       if (!paired) return;
       let container = paired.parentElement || paired;
       let user_id =
-        parseInt((window.location.pathname.match(/\/users\/(\d+)\/trade/) || [])[1], 10) ||
-        parseInt((String(paired.getAttribute("href") || paired.href || "").match(/\/users\/(\d+)\//) || [])[1], 10) ||
+        parseInt(
+          (window.location.pathname.match(/\/users\/(\d+)\/trade/) || [])[1],
+          10,
+        ) ||
+        parseInt(
+          (String(paired.getAttribute("href") || paired.href || "").match(
+            /\/users\/(\d+)\//,
+          ) || [])[1],
+          10,
+        ) ||
         null;
-      let existing = container.querySelector(".user-profile-link")?.parentElement;
+      let existing =
+        container.querySelector(".user-profile-link")?.parentElement;
       let name = "";
       if (!user_id) {
-        name = paired.querySelector(".connector + .element")?.textContent?.trim() || paired.children?.[2]?.innerText?.trim() || "";
+        name =
+          paired.querySelector(".connector + .element")?.textContent?.trim() ||
+          paired.children?.[2]?.innerText?.trim() ||
+          "";
         if (!name) return;
         if (existing?.getAttribute("data-nte-profile-name") === name) return;
         user_id = await utils.fetchIDFromName(name);
       }
       if (!user_id) return;
       let href = `https://www.rolimons.com/player/${user_id}`;
-      if (existing?.href === href || existing?.getAttribute("href") === href) return;
+      if (existing?.href === href || existing?.getAttribute("href") === href)
+        return;
       container.style.position = "relative";
 
       let link = document.createElement("a");
@@ -619,7 +826,10 @@
       utils.addTooltip(link, "Open Rolimons profile");
 
       let icon = document.createElement("span");
-      let icon_file = utils.getColorMode() === "dark" ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
+      let icon_file =
+        utils.getColorMode() === "dark"
+          ? "rolimonsLink.svg"
+          : "rolimonsLinkDark.svg";
       icon.style.backgroundImage = `url(${JSON.stringify(utils.getURL("assets/" + icon_file))})`;
       icon.className = "icon icon-link user-profile-link";
       icon.style.display = "inline-block";
@@ -645,13 +855,13 @@
     }
 
     var handle_profile_links = async function () {
-      if (!(await utils.getOption("Add User Profile Links"))) return remove_existing_link();
+      if (!(await utils.getOption("Add User Profile Links")))
+        return remove_existing_link();
       let pt = utils.getPageType();
       if (pt === "details" || pt === "sendOrCounter") add_trade_page_link();
       if (pt === "userProfile") add_profile_link();
     };
   });
-
 
   register("8r981", function (module) {
     define_export(module.exports, "default", () => handle_values);
@@ -681,41 +891,63 @@
         "beforeend",
         `<div class="price-info value-price-info"><div class="icon-text-wrapper clearfix icon-robux-price-container"><span style="margin-top:0px;" class="icon-rolimons icon-robux-16x16 wait-for-i18n-format-render"></span><span class="valueSpan text-robux-lg wait-for-i18n-format-render"></span></div></div>`,
       );
-      container.querySelector(".item-info-row-container").style.marginBottom = "5px";
+      container.querySelector(".item-info-row-container").style.marginBottom =
+        "5px";
 
       let icon = container.querySelector(".icon-rolimons");
-      icon.style.setProperty("background-image", `url(${JSON.stringify(utils.getURL("assets/icons/logo48.png"))})`, "important");
+      icon.style.setProperty(
+        "background-image",
+        `url(${JSON.stringify(utils.getURL("assets/icons/logo48.png"))})`,
+        "important",
+      );
       icon.style.backgroundSize = "cover";
       icon.style.backgroundPosition = "center";
-      container.querySelector(".valueSpan").innerText = utils.commafy(utils.getValueOrRAP(item_id));
+      container.querySelector(".valueSpan").innerText = utils.commafy(
+        utils.getValueOrRAP(item_id),
+      );
     }
 
     async function show_catalog_values() {
       await utils.waitForElm(".item-card-price");
       for (let div of document.getElementsByClassName("item-card-price")) {
-        let path = utils.removeTwoLetterPath(div.parentElement.parentElement.pathname || div.parentElement.querySelector("a").pathname);
-        let id = parseInt(path.substring(utils.nthIndex(path, "/", 2) + 1, utils.nthIndex(path, "/", 3)));
+        let path = utils.removeTwoLetterPath(
+          div.parentElement.parentElement.pathname ||
+            div.parentElement.querySelector("a").pathname,
+        );
+        let id = parseInt(
+          path.substring(
+            utils.nthIndex(path, "/", 2) + 1,
+            utils.nthIndex(path, "/", 3),
+          ),
+        );
         if (utils.getRolimonsData().items[id] !== undefined) {
-          if (!div.getElementsByClassName("valueSpan")[0]) utils.createValuesSpans(div);
-          div.getElementsByClassName("valueSpan")[0].innerText = utils.commafy(utils.getValueOrRAP(id));
+          if (!div.getElementsByClassName("valueSpan")[0])
+            utils.createValuesSpans(div);
+          div.getElementsByClassName("valueSpan")[0].innerText = utils.commafy(
+            utils.getValueOrRAP(id),
+          );
         }
       }
-      for (let el of document.getElementsByClassName("list-item")) el.style.marginBottom = "35px";
+      for (let el of document.getElementsByClassName("list-item"))
+        el.style.marginBottom = "35px";
     }
 
     var handle_values = async function () {
       let pt = utils.getPageType();
       if (pt === "catalog" || pt === "itemProfile") {
-        if (!(await utils.getOption("Values on Catalog Pages"))) return remove_values();
-        pt === "itemProfile" ? show_item_profile_value() : show_catalog_values();
+        if (!(await utils.getOption("Values on Catalog Pages")))
+          return remove_values();
+        pt === "itemProfile"
+          ? show_item_profile_value()
+          : show_catalog_values();
       }
       if (pt === "userInventory") {
-        if (!(await utils.getOption("Values on User Pages"))) return remove_values();
+        if (!(await utils.getOption("Values on User Pages")))
+          return remove_values();
         show_catalog_values();
       }
     };
   });
-
 
   register("92Pqq", function (module) {
     let csrf_token;
@@ -724,21 +956,36 @@
 
     async function handle_item_links() {
       if (!(await utils.getOption("Add Item Profile Links"))) {
-        document.querySelectorAll(".icon-link").forEach((el) => el.parentElement.remove());
-        document.querySelectorAll(".hasAssetLink").forEach((el) => el.classList.remove("hasAssetLink"));
+        document
+          .querySelectorAll(".icon-link")
+          .forEach((el) => el.parentElement.remove());
+        document
+          .querySelectorAll(".hasAssetLink")
+          .forEach((el) => el.classList.remove("hasAssetLink"));
         return;
       }
       if (utils.getPageType() === "itemProfile") add_item_page_link();
-      if (["details", "sendOrCounter", "catalog", "userInventory"].indexOf(utils.getPageType()) !== -1) add_catalog_item_links();
+      if (
+        ["details", "sendOrCounter", "catalog", "userInventory"].indexOf(
+          utils.getPageType(),
+        ) !== -1
+      )
+        add_catalog_item_links();
     }
 
     async function add_item_page_link() {
       await utils.waitForElm(".item-name-container");
-      let h1 = document.querySelector(".item-name-container").getElementsByTagName("h1")[0];
+      let h1 = document
+        .querySelector(".item-name-container")
+        .getElementsByTagName("h1")[0];
       if (h1.querySelector(".icon-link") !== null) return;
       h1.style.overflow = "visible";
       let item_id = window.location.pathname.match(/\/catalog\/(\d+)\//)?.[1];
-      let asset_type = parseInt(document.getElementById("asset-resale-data-container").getAttribute("data-asset-type"));
+      let asset_type = parseInt(
+        document
+          .getElementById("asset-resale-data-container")
+          .getAttribute("data-asset-type"),
+      );
       if (!utils.checkIfAssetTypeIsOnRolimons(asset_type)) return;
 
       let link = document.createElement("a");
@@ -751,7 +998,10 @@
       utils.addTooltip(link, "Open item data page");
 
       let icon = document.createElement("span");
-      let icon_file = utils.getColorMode() === "dark" ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
+      let icon_file =
+        utils.getColorMode() === "dark"
+          ? "rolimonsLink.svg"
+          : "rolimonsLinkDark.svg";
       icon.style.backgroundImage = `url(${JSON.stringify(utils.getURL("assets/" + icon_file))})`;
       icon.className = "icon icon-link";
       Object.assign(icon.style, {
@@ -779,15 +1029,33 @@
       fetching = false;
 
     async function add_catalog_item_links() {
-      for (let div of document.querySelectorAll(".item-card-price:not(.hasAssetLink), .item-value")) {
-        for (let old of div.querySelectorAll(".icon-link")) old.parentElement.remove();
+      for (let div of document.querySelectorAll(
+        ".item-card-price:not(.hasAssetLink), .item-value",
+      )) {
+        for (let old of div.querySelectorAll(".icon-link"))
+          old.parentElement.remove();
         let card = div.closest(".item-card-container, .trade-request-item");
-        let path = utils.removeTwoLetterPath(div.parentElement.parentElement.pathname || div.parentElement.querySelector("a").pathname);
-        let roblox_id = parseInt(path.substring(utils.nthIndex(path, "/", 2) + 1, utils.nthIndex(path, "/", 3)));
-        let item_name = card?.querySelector(".item-card-name")?.textContent?.trim() || "";
-        let is_bundle = /\/bundles\//i.test(path) || !!card?.querySelector('[thumbnail-type="BundleThumbnail"]');
+        let path = utils.removeTwoLetterPath(
+          div.parentElement.parentElement.pathname ||
+            div.parentElement.querySelector("a").pathname,
+        );
+        let roblox_id = parseInt(
+          path.substring(
+            utils.nthIndex(path, "/", 2) + 1,
+            utils.nthIndex(path, "/", 3),
+          ),
+        );
+        let item_name =
+          card?.querySelector(".item-card-name")?.textContent?.trim() || "";
+        let is_bundle =
+          /\/bundles\//i.test(path) ||
+          !!card?.querySelector('[thumbnail-type="BundleThumbnail"]');
         if (utils.isUnsupportedBundle(roblox_id, item_name)) continue;
-        let rolimons_id = utils.getRolimonsItemId(roblox_id, item_name, is_bundle);
+        let rolimons_id = utils.getRolimonsItemId(
+          roblox_id,
+          item_name,
+          is_bundle,
+        );
         if (!rolimons_id) continue;
         let roli_row = utils.getRolimonsData()?.items?.[rolimons_id];
         let cached = type_cache[rolimons_id];
@@ -800,10 +1068,17 @@
         let link = document.createElement("a");
         link.href = `https://www.rolimons.com/item/${rolimons_id}`;
         link.target = "_blank";
-        Object.assign(link.style, { display: "inline-block", paddingLeft: "2px", transform: "translateY(-2px)" });
+        Object.assign(link.style, {
+          display: "inline-block",
+          paddingLeft: "2px",
+          transform: "translateY(-2px)",
+        });
         utils.addTooltip(link, "Open item data page");
         let icon = document.createElement("span");
-        let icon_file = utils.getColorMode() === "dark" ? "rolimonsLink.svg" : "rolimonsLinkDark.svg";
+        let icon_file =
+          utils.getColorMode() === "dark"
+            ? "rolimonsLink.svg"
+            : "rolimonsLinkDark.svg";
         icon.style.backgroundImage = `url(${JSON.stringify(utils.getURL("assets/" + icon_file))})`;
         icon.className = "icon icon-link";
         Object.assign(icon.style, {
@@ -848,14 +1123,20 @@
       unknown.forEach((id) => {
         if (body.items.length < 100) body.items.push({ itemType: 1, id: id });
       });
-      if (csrf_token === undefined) csrf_token = document.querySelector('meta[name="csrf-token"]')?.getAttribute("data-token");
+      if (csrf_token === undefined)
+        csrf_token = document
+          .querySelector('meta[name="csrf-token"]')
+          ?.getAttribute("data-token");
 
-      let resp = await fetch("https://catalog.roblox.com/v1/catalog/items/details", {
-        method: "POST",
-        headers: { "X-CSRF-TOKEN": csrf_token },
-        body: JSON.stringify(body),
-        credentials: "include",
-      });
+      let resp = await fetch(
+        "https://catalog.roblox.com/v1/catalog/items/details",
+        {
+          method: "POST",
+          headers: { "X-CSRF-TOKEN": csrf_token },
+          body: JSON.stringify(body),
+          credentials: "include",
+        },
+      );
       if (resp.status === 403 && (await resp.json()).code === 0) {
         csrf_token = resp.headers.get("X-CSRF-TOKEN");
         fetching = false;
@@ -876,7 +1157,6 @@
     }
   });
 
-
   var utils = _require("eFyFE");
   var profile_links_mod = _require("98F8t");
   var catalog_values_mod = _require("8r981");
@@ -896,7 +1176,11 @@
 
   function get_profile_user_id() {
     return (
-      parseInt(document.querySelector("[data-profileuserid]")?.getAttribute("data-profileuserid")) ||
+      parseInt(
+        document
+          .querySelector("[data-profileuserid]")
+          ?.getAttribute("data-profileuserid"),
+      ) ||
       parseInt(window.location.pathname.match(/\/users\/(\d+)\//)?.[1]) ||
       0
     );
@@ -907,11 +1191,15 @@
   }
 
   async function get_profile_value_display_mode() {
-    return normalize_profile_value_display_mode(await utils.getOption(profile_value_display_mode_key));
+    return normalize_profile_value_display_mode(
+      await utils.getOption(profile_value_display_mode_key),
+    );
   }
 
   function find_profile_stats_row() {
-    return document.querySelector(".user-profile-header .flex-nowrap.gap-small.flex");
+    return document.querySelector(
+      ".user-profile-header .flex-nowrap.gap-small.flex",
+    );
   }
 
   function remove_profile_summary() {
@@ -932,7 +1220,8 @@
   function mark_profile_dominant(el, z_index) {
     if (!el?.style) return;
     let position = getComputedStyle(el).position;
-    if (!position || "static" === position) el.style.setProperty("position", "relative", "important");
+    if (!position || "static" === position)
+      el.style.setProperty("position", "relative", "important");
     el.style.setProperty("z-index", String(z_index), "important");
     el.style.setProperty("pointer-events", "auto", "important");
     el.style.setProperty("isolation", "isolate", "important");
@@ -942,16 +1231,25 @@
     profile_dominance_frame = requestAnimationFrame(() => {
       profile_dominance_frame = null;
       ensure_profile_dominance_styles();
-      for (let el of document.querySelectorAll(".nte-profile-rolimons-link,.user-profile-link,#" + PROFILE_SUMMARY_ID + ",.nte-discord-link,.nte-inv-hash-serial-btn")) {
+      for (let el of document.querySelectorAll(
+        ".nte-profile-rolimons-link,.user-profile-link,#" +
+          PROFILE_SUMMARY_ID +
+          ",.nte-discord-link,.nte-inv-hash-serial-btn",
+      )) {
         mark_profile_dominant(el, 2147483600);
         let parent = el.parentElement;
-        parent && el.classList?.contains("nte-profile-rolimons-link") && el !== parent.lastElementChild && parent.appendChild(el);
+        parent &&
+          el.classList?.contains("nte-profile-rolimons-link") &&
+          el !== parent.lastElementChild &&
+          parent.appendChild(el);
       }
       for (let overlay of document.querySelectorAll(".nte-modal-overlay")) {
         mark_profile_dominant(overlay, 2147483646);
-        overlay.parentElement !== document.body && document.body.appendChild(overlay);
+        overlay.parentElement !== document.body &&
+          document.body.appendChild(overlay);
       }
-      for (let modal of document.querySelectorAll(".nte-modal")) mark_profile_dominant(modal, 2147483647);
+      for (let modal of document.querySelectorAll(".nte-modal"))
+        mark_profile_dominant(modal, 2147483647);
     });
   }
 
@@ -982,8 +1280,10 @@
   }
 
   async function get_cached_profile_inventory(user_id) {
-    if (profile_inventory_cache[user_id] !== undefined) return profile_inventory_cache[user_id];
-    if (profile_inventory_pending[user_id]) return profile_inventory_pending[user_id];
+    if (profile_inventory_cache[user_id] !== undefined)
+      return profile_inventory_cache[user_id];
+    if (profile_inventory_pending[user_id])
+      return profile_inventory_pending[user_id];
 
     profile_inventory_pending[user_id] = utils
       .getUserInventory(user_id)
@@ -1003,7 +1303,6 @@
     event.preventDefault();
     window.__nteShowModal?.();
   }
-
 
   async function show_inventory_values(user_id) {
     if (!(await utils.getOption("Values on User Pages"))) {
@@ -1039,13 +1338,21 @@
       let total_rap = 0;
 
       for (let item of inventory) {
-        total_value += utils.getValueOrRAP(item.assetId, item.name, item.recentAveragePrice);
-        total_rap += item.recentAveragePrice || utils.getRAP(item.assetId, item.name, item.recentAveragePrice);
+        total_value += utils.getValueOrRAP(
+          item.assetId,
+          item.name,
+          item.recentAveragePrice,
+        );
+        total_rap +=
+          item.recentAveragePrice ||
+          utils.getRAP(item.assetId, item.name, item.recentAveragePrice);
       }
 
       let display_mode = await get_profile_value_display_mode();
       let display_total = display_mode === "value" ? total_value : total_rap;
-      rap_label.innerText = utils.commafy(display_total) + (display_mode === "value" ? " Value" : " RAP");
+      rap_label.innerText =
+        utils.commafy(display_total) +
+        (display_mode === "value" ? " Value" : " RAP");
       utils.addTooltip(rap_label, "Click to view inventory breakdown");
       window.__nteInvData = {
         items: inventory,
@@ -1058,7 +1365,10 @@
       utils.addTooltip(rap_label, "This user's inventory is private");
     } else {
       rap_label.innerText = "Unavailable";
-      utils.addTooltip(rap_label, "Inventory could not be loaded. Try again in a moment.");
+      utils.addTooltip(
+        rap_label,
+        "Inventory could not be loaded. Try again in a moment.",
+      );
     }
 
     utils.initTooltips();
@@ -1084,7 +1394,6 @@
     profile_observer.observe(document.body, { childList: true, subtree: true });
   }
 
-
   var mobile_trade_check_cache = {};
 
   async function add_mobile_trade_button(user_id) {
@@ -1092,11 +1401,20 @@
     if (!enabled) return;
     let id = String(user_id || "");
     if (mobile_trade_check_cache[id] === undefined) {
-      let viewer_id = parseInt(document.querySelector('meta[name="user-data"]')?.getAttribute("data-userid") || "0", 10) || 0;
+      let viewer_id =
+        parseInt(
+          document
+            .querySelector('meta[name="user-data"]')
+            ?.getAttribute("data-userid") || "0",
+          10,
+        ) || 0;
       if (viewer_id && String(viewer_id) === id) {
         mobile_trade_check_cache[id] = false;
       } else {
-        let resp = await fetch(`https://trades.roblox.com/v1/users/${id}/can-trade-with`, { credentials: "include" }).catch(() => null);
+        let resp = await fetch(
+          `https://trades.roblox.com/v1/users/${id}/can-trade-with`,
+          { credentials: "include" },
+        ).catch(() => null);
         let data = resp?.ok ? await resp.json().catch(() => null) : null;
         mobile_trade_check_cache[id] = !!data?.canTrade;
       }
@@ -1116,7 +1434,6 @@
     let popover = document.getElementById("popover-link");
     if (popover) popover.onclick = () => inject();
   }
-
 
   var BADGE_KEYS = [
     "value_20m",
@@ -1220,28 +1537,32 @@
       document.getElementById("roli-badges-container")?.remove();
       return;
     }
-    nte_send_message({ title: "getUserProfileData", userId: user_id }, async function (resp) {
-      if (!resp || !resp.rolibadges) return;
-      let user_badges = Object.keys(resp.rolibadges);
-      let ref = await utils.waitForElm("#roblox-badges-container");
-      if (document.getElementById("roli-badges-container")) return;
+    nte_send_message(
+      { title: "getUserProfileData", userId: user_id },
+      async function (resp) {
+        if (!resp || !resp.rolibadges) return;
+        let user_badges = Object.keys(resp.rolibadges);
+        let ref = await utils.waitForElm("#roblox-badges-container");
+        if (document.getElementById("roli-badges-container")) return;
 
-      ref.insertAdjacentHTML(
-        "afterend",
-        `<div class="section" id="roli-badges-container"><div class="container-header"><h2>User Badges</h2><a class="btn-fixed-width btn-secondary-xs btn-more see-all-link-icon" href="https://www.rolimons.com/playerrolibadges/${user_id}">See All</a></div><div class="section-content remove-panel"><ul class="hlist badge-list"></ul></div></div>`,
-      );
-      let badge_list = document.querySelector("#roli-badges-container .badge-list");
+        ref.insertAdjacentHTML(
+          "afterend",
+          `<div class="section" id="roli-badges-container"><div class="container-header"><h2>User Badges</h2><a class="btn-fixed-width btn-secondary-xs btn-more see-all-link-icon" href="https://www.rolimons.com/playerrolibadges/${user_id}">See All</a></div><div class="section-content remove-panel"><ul class="hlist badge-list"></ul></div></div>`,
+        );
+        let badge_list = document.querySelector(
+          "#roli-badges-container .badge-list",
+        );
 
-      for (let key of BADGE_KEYS) {
-        if (user_badges.indexOf(key) !== -1) {
-          let svg = utils.getURL(`assets/roliBadges/${key}.svg`);
-          let name = BADGE_NAMES[key];
-          badge_list.innerHTML += `<li class="list-item asset-item"><a href="https://www.rolimons.com/playerrolibadges/${user_id}" title="${name}"><span class="thumbnail-2d-container"><img class="asset-thumb-container" src="${svg}" alt="${name}" title="${name}"></span><span class="font-header-2 text-overflow item-name">${name}</span></a></li>`;
+        for (let key of BADGE_KEYS) {
+          if (user_badges.indexOf(key) !== -1) {
+            let svg = utils.getURL(`assets/roliBadges/${key}.svg`);
+            let name = BADGE_NAMES[key];
+            badge_list.innerHTML += `<li class="list-item asset-item"><a href="https://www.rolimons.com/playerrolibadges/${user_id}" title="${name}"><span class="thumbnail-2d-container"><img class="asset-thumb-container" src="${svg}" alt="${name}" title="${name}"></span><span class="font-header-2 text-overflow item-name">${name}</span></a></li>`;
+          }
         }
-      }
-    });
+      },
+    );
   }
-
 
   async function init() {
     let page_type = utils.getPageType();
@@ -1267,9 +1588,14 @@
     }
   }
 
-
-  console.info(`%c${utils.getExtensionTitle()} v${chrome.runtime.getManifest().version} has started!`, "color: #0084DD");
-  console.info("%cJoin our Discord: discord.gg/4XWE7yy2uE", "color: #5865F2; font-weight: bold");
+  console.info(
+    `%c${utils.getExtensionTitle()} v${chrome.runtime.getManifest().version} has started!`,
+    "color: #0084DD",
+  );
+  console.info(
+    "%cJoin our Discord: discord.gg/4XWE7yy2uE",
+    "color: #5865F2; font-weight: bold",
+  );
   utils.refreshData(init);
 
   if (utils.getPageType() === "userInventory") {
@@ -1282,14 +1608,17 @@
             }
           }
         }
-      }).observe(await utils.waitForElm("#assetsItems"), { attributes: true, childList: true, subtree: true });
+      }).observe(await utils.waitForElm("#assetsItems"), {
+        attributes: true,
+        childList: true,
+        subtree: true,
+      });
     })();
   }
 
   chrome.runtime.onMessage.addListener(function (msg) {
     if (["Values", "Links", "Other"].indexOf(msg) !== -1) init();
   });
-
 
   (function () {
     var style = document.createElement("style");
@@ -1436,6 +1765,25 @@
       .nte-inv-image-prompt-actions button{height:34px;border-radius:10px;border:1px solid rgba(255,255,255,.1);background:linear-gradient(180deg,#24272e,#171a20);color:#f5f6f8;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
       .nte-inv-image-prompt-actions button:hover{border-color:rgba(255,255,255,.18);background:linear-gradient(180deg,#2b3038,#1b1e25)}
       .nte-inv-image-prompt-actions .nte-inv-image-prompt-muted{background:transparent;color:#aab2bf}
+      .nte-inv-image-prompt-style{margin-top:12px}
+      .nte-inv-image-prompt-seg{display:flex;gap:4px;padding:4px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08)}
+      .nte-inv-image-prompt-seg button{flex:1;height:30px;border-radius:9px;border:1px solid transparent;background:transparent;color:#9ca4b2;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit;transition:all .12s}
+      .nte-inv-image-prompt-seg button:hover{color:#d1d5db}
+      .nte-inv-image-prompt-seg button.is-active{background:linear-gradient(180deg,#2b3038,#1f2329);border-color:rgba(255,255,255,.12);color:#f5f6f8;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+      .light-theme .nte-inv-image-prompt-seg{background:rgba(17,24,39,.04);border-color:rgba(17,24,39,.08)}
+      .light-theme .nte-inv-image-prompt-seg button{color:#6b7280}
+      .light-theme .nte-inv-image-prompt-seg button:hover{color:#374151}
+      .light-theme .nte-inv-image-prompt-seg button.is-active{background:linear-gradient(180deg,#ffffff,#f0f1f3);border-color:rgba(17,24,39,.12);color:#111827;box-shadow:0 2px 8px rgba(15,23,42,.1)}
+      .nte-inv-image-prompt-toggle{display:flex;align-items:center;gap:10px;margin-top:12px;cursor:pointer}
+      .nte-inv-image-prompt-toggle input{appearance:none;width:36px;height:20px;border-radius:999px;background:#2a2d35;border:1px solid rgba(255,255,255,.10);position:relative;cursor:pointer;outline:none;transition:background .15s,border-color .15s}
+      .nte-inv-image-prompt-toggle input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:999px;background:#f5f6f8;transition:transform .15s}
+      .nte-inv-image-prompt-toggle input:checked{background:#3b82f6;border-color:#3b82f6}
+      .nte-inv-image-prompt-toggle input:checked::after{transform:translateX(16px)}
+      .nte-inv-image-prompt-toggle span{color:#9ca4b2;font-size:11px;font-weight:700}
+      .light-theme .nte-inv-image-prompt-toggle input{background:#e5e7eb;border-color:rgba(17,24,39,.12)}
+      .light-theme .nte-inv-image-prompt-toggle input::after{background:#fff}
+      .light-theme .nte-inv-image-prompt-toggle input:checked{background:#3b82f6;border-color:#3b82f6}
+      .light-theme .nte-inv-image-prompt-toggle span{color:#6b7280}
       @keyframes nteSpin{to{transform:rotate(360deg)}}
       @keyframes nteSerialPop{0%{transform:scale(.96)}62%{transform:scale(1.045)}100%{transform:scale(1)}}
       .light-theme .nte-modal{background:radial-gradient(circle at top,rgba(255,255,255,.92) 0%,transparent 28%),linear-gradient(180deg,#ffffff 0%,#f3f4f6 100%);box-shadow:0 30px 90px rgba(12,18,34,.12),0 0 0 1px rgba(15,23,42,.08)}
@@ -1542,11 +1890,18 @@
       for (let i = 0; i < ids.length; i += 100) {
         let batch = ids.slice(i, i + 100);
         try {
-          let resp = await fetch(endpoint + batch.join(",") + "&size=" + size + "&format=Png&isCircular=false");
+          let resp = await fetch(
+            endpoint +
+              batch.join(",") +
+              "&size=" +
+              size +
+              "&format=Png&isCircular=false",
+          );
           if (!resp.ok) continue;
           (await resp.json()).data.forEach((d) => {
             if (d.state === "Completed" && d.imageUrl) {
-              thumb_cache[get_thumb_cache_key(item_type, d.targetId)] = d.imageUrl;
+              thumb_cache[get_thumb_cache_key(item_type, d.targetId)] =
+                d.imageUrl;
             }
           });
         } catch (e) {}
@@ -1567,7 +1922,10 @@
         }
       }
 
-      await Promise.all([fetch_thumb_batch("Asset", asset_ids), fetch_thumb_batch("Bundle", bundle_ids)]);
+      await Promise.all([
+        fetch_thumb_batch("Asset", asset_ids),
+        fetch_thumb_batch("Bundle", bundle_ids),
+      ]);
     }
 
     function get_demand(val) {
@@ -1657,7 +2015,10 @@
       if (inv_image_asset_cache[src]) return inv_image_asset_cache[src];
       let data_url = src;
       if (!src.startsWith("data:")) {
-        let result = await inv_image_message({ type: "quickProofFetchImage", url: src }, 7000);
+        let result = await inv_image_message(
+          { type: "quickProofFetchImage", url: src },
+          7000,
+        );
         if (result?.ok && result.dataUrl) data_url = result.dataUrl;
       }
       let image = await inv_image_load_image(data_url);
@@ -1668,9 +2029,17 @@
     function inv_image_canvas_blob(canvas) {
       return new Promise((resolve, reject) => {
         try {
-          canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not create inventory image."))), "image/png");
+          canvas.toBlob(
+            (blob) =>
+              blob
+                ? resolve(blob)
+                : reject(new Error("Could not create inventory image.")),
+            "image/png",
+          );
         } catch (err) {
-          reject(new Error(err?.message || "Could not create inventory image."));
+          reject(
+            new Error(err?.message || "Could not create inventory image."),
+          );
         }
       });
     }
@@ -1686,8 +2055,18 @@
       ctx.closePath();
     }
 
-    function inv_image_text(ctx, text, x, y, max_width, line_height, max_lines) {
-      let words = String(text || "").split(/\s+/).filter(Boolean);
+    function inv_image_text(
+      ctx,
+      text,
+      x,
+      y,
+      max_width,
+      line_height,
+      max_lines,
+    ) {
+      let words = String(text || "")
+        .split(/\s+/)
+        .filter(Boolean);
       let lines = [];
       let line = "";
       let truncated = false;
@@ -1707,31 +2086,50 @@
       }
       if (line && lines.length < max_lines) lines.push(line);
       if (truncated && lines.length === max_lines) {
-        while (ctx.measureText(lines[lines.length - 1] + "...").width > max_width && lines[lines.length - 1].length > 1) {
+        while (
+          ctx.measureText(lines[lines.length - 1] + "...").width > max_width &&
+          lines[lines.length - 1].length > 1
+        ) {
           lines[lines.length - 1] = lines[lines.length - 1].slice(0, -1);
         }
         lines[lines.length - 1] += "...";
       }
-      for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], x, y + i * line_height);
+      for (let i = 0; i < lines.length; i++)
+        ctx.fillText(lines[i], x, y + i * line_height);
       return lines.length * line_height;
     }
 
     function inv_image_compact(n) {
       n = Math.round(Number(n) || 0);
       let abs = Math.abs(n);
-      if (abs >= 1000000) return (n / 1000000).toFixed(abs >= 10000000 ? 1 : 2).replace(/\.0+$/, "") + "M";
-      if (abs >= 1000) return (n / 1000).toFixed(abs >= 100000 ? 0 : 1).replace(/\.0+$/, "") + "K";
+      if (abs >= 1000000)
+        return (
+          (n / 1000000).toFixed(abs >= 10000000 ? 1 : 2).replace(/\.0+$/, "") +
+          "M"
+        );
+      if (abs >= 1000)
+        return (
+          (n / 1000).toFixed(abs >= 100000 ? 0 : 1).replace(/\.0+$/, "") + "K"
+        );
       return String(n);
     }
 
     async function inv_image_profile_name() {
       let user_id =
-        parseInt(document.querySelector("[data-profileuserid]")?.getAttribute("data-profileuserid"), 10) ||
+        parseInt(
+          document
+            .querySelector("[data-profileuserid]")
+            ?.getAttribute("data-profileuserid"),
+          10,
+        ) ||
         parseInt(window.location.pathname.match(/\/users\/(\d+)\//)?.[1], 10) ||
         0;
       if (user_id) {
         try {
-          let resp = await fetch(`https://users.roblox.com/v1/users/${user_id}?NTERequest=1`, { credentials: "include" });
+          let resp = await fetch(
+            `https://users.roblox.com/v1/users/${user_id}?NTERequest=1`,
+            { credentials: "include" },
+          );
           if (resp.ok) {
             let data = await resp.json();
             let name = String(data?.name || "").trim();
@@ -1740,20 +2138,32 @@
         } catch {}
       }
       let username =
-        document.querySelector("[data-profileusername]")?.getAttribute("data-profileusername") ||
-        document.querySelector("#profile-header-title-container-username")?.textContent?.trim() ||
-        document.querySelector(".profile-header-title-container-username")?.textContent?.trim() ||
+        document
+          .querySelector("[data-profileusername]")
+          ?.getAttribute("data-profileusername") ||
+        document
+          .querySelector("#profile-header-title-container-username")
+          ?.textContent?.trim() ||
+        document
+          .querySelector(".profile-header-title-container-username")
+          ?.textContent?.trim() ||
         "";
       username = username.replace(/^@+/, "").trim();
       if (username) return username;
       return (
-        document.querySelector("#profile-header-title-container-name")?.textContent?.trim() ||
-        "Roblox user"
+        document
+          .querySelector("#profile-header-title-container-name")
+          ?.textContent?.trim() || "Roblox user"
       );
     }
 
     function inv_image_filename(name) {
-      return `inventory-${String(name || "user").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "").slice(0, 42) || "user"}.png`;
+      return `inventory-${
+        String(name || "user")
+          .replace(/[^a-z0-9_-]+/gi, "-")
+          .replace(/^-+|-+$/g, "")
+          .slice(0, 42) || "user"
+      }.png`;
     }
 
     function inv_image_badge(ctx, text, x, y, fill, color) {
@@ -1780,7 +2190,7 @@
         ctx.fillStyle = "#eef2ff";
         ctx.fillRect(x, y, size, size);
         ctx.fillStyle = "#315db8";
-        ctx.font = `900 ${Math.round(size * .55)}px Segoe UI, Arial, sans-serif`;
+        ctx.font = `900 ${Math.round(size * 0.55)}px Segoe UI, Arial, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText("N", x + size / 2, y + size / 2 + 1);
@@ -1788,12 +2198,57 @@
       ctx.restore();
     }
 
-    function inv_image_draw_card(ctx, item, image, x, y, w, h, dark) {
+    function inv_image_draw_clock(ctx, x, y, size) {
+      let cx = x + size / 2,
+        cy = y + size / 2,
+        r = size / 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.58)";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r - 1.5, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(255,255,255,0.92)";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(255,255,255,0.92)";
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + r * 0.35, cy);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx, cy - r * 0.45);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function inv_image_draw_card(
+      ctx,
+      item,
+      image,
+      x,
+      y,
+      w,
+      h,
+      dark,
+      projected_icon,
+      show_onhold,
+    ) {
       ctx.save();
       inv_image_round(ctx, x, y, w, h, 16);
       ctx.fillStyle = dark ? "#181a20" : "#ffffff";
       ctx.fill();
-      ctx.strokeStyle = item.rare ? (dark ? "rgba(255,255,255,.28)" : "rgba(15,23,42,.22)") : dark ? "rgba(255,255,255,.10)" : "rgba(15,23,42,.10)";
+      ctx.strokeStyle = item.rare
+        ? dark
+          ? "rgba(255,255,255,.28)"
+          : "rgba(15,23,42,.22)"
+        : dark
+          ? "rgba(255,255,255,.10)"
+          : "rgba(15,23,42,.10)";
       ctx.lineWidth = 1;
       ctx.stroke();
 
@@ -1809,10 +2264,16 @@
         ctx.clip();
         let iw = image.naturalWidth || image.width || thumb;
         let ih = image.naturalHeight || image.height || thumb;
-        let scale = Math.min(thumb / iw, thumb / ih) * .94;
+        let scale = Math.min(thumb / iw, thumb / ih) * 0.94;
         let dw = iw * scale;
         let dh = ih * scale;
-        ctx.drawImage(image, tx + (thumb - dw) / 2, ty + (thumb - dh) / 2, dw, dh);
+        ctx.drawImage(
+          image,
+          tx + (thumb - dw) / 2,
+          ty + (thumb - dh) / 2,
+          dw,
+          dh,
+        );
         ctx.restore();
       }
       ctx.save();
@@ -1825,6 +2286,26 @@
         ctx.textAlign = "right";
         ctx.fillText("x" + item.count, tx + thumb - 8, ty + 8);
       }
+      ctx.textAlign = "left";
+      let indicator_x = tx + 4;
+      if (show_onhold && item.onHoldCount > 0) {
+        inv_image_draw_clock(ctx, indicator_x, ty + 4, 18);
+        if (item.onHoldCount < item.count) {
+          ctx.save();
+          ctx.font = "900 10px Segoe UI, Arial, sans-serif";
+          ctx.textBaseline = "top";
+          ctx.fillStyle = "rgba(255,255,255,0.92)";
+          ctx.shadowColor = "rgba(0,0,0,0.65)";
+          ctx.shadowBlur = 3;
+          let hold_text = "x" + item.onHoldCount;
+          ctx.fillText(hold_text, indicator_x + 18 + 2, ty + 7);
+          indicator_x += 18 + 2 + ctx.measureText(hold_text).width;
+          ctx.restore();
+        } else {
+          indicator_x += 18;
+        }
+        indicator_x += 4;
+      }
       if (item.rare) {
         ctx.save();
         ctx.translate(tx + 17, ty + 17);
@@ -1832,8 +2313,9 @@
         ctx.fillStyle = "#93d7ff";
         ctx.fillRect(-7, -7, 14, 14);
         ctx.restore();
-      } else if (item.proj) {
-        inv_image_badge(ctx, "PROJ", tx + 8, ty + 8, dark ? "rgba(96,64,20,.86)" : "rgba(255,238,204,.95)", dark ? "#ffe1ad" : "#7c5415");
+      } else if (item.proj && projected_icon) {
+        let pi_s = 20;
+        ctx.drawImage(projected_icon, indicator_x, ty + 4, pi_s, pi_s);
       }
       if (item.serial) {
         ctx.textAlign = "left";
@@ -1851,8 +2333,16 @@
       let metric_gap = 8;
       let metric_w = (w - 28 - metric_gap) / 2;
       let metrics = [
-        ["VALUE", inv_image_compact(item.count > 1 ? item.total_val : item.val), "#e8eef9"],
-        ["RAP", inv_image_compact(item.count > 1 ? item.total_rap : item.rap), "#9bd2ff"],
+        [
+          "VALUE",
+          inv_image_compact(item.count > 1 ? item.total_val : item.val),
+          "#e8eef9",
+        ],
+        [
+          "RAP",
+          inv_image_compact(item.count > 1 ? item.total_rap : item.rap),
+          "#9bd2ff",
+        ],
       ];
       for (let i = 0; i < metrics.length; i++) {
         let mx = x + 14 + i * (metric_w + metric_gap);
@@ -1872,15 +2362,22 @@
     }
 
     function inv_image_items_for_output(items, limit) {
-      let out = [...items].sort((a, b) => (b.total_val || b.val) - (a.total_val || a.val) || (b.total_rap || b.rap) - (a.total_rap || a.rap));
-      if (Number(limit) > 0) out = out.slice(0, Math.min(out.length, Math.floor(Number(limit))));
+      let out = [...items].sort(
+        (a, b) =>
+          (b.total_val || b.val) - (a.total_val || a.val) ||
+          (b.total_rap || b.rap) - (a.total_rap || a.rap),
+      );
+      if (Number(limit) > 0)
+        out = out.slice(0, Math.min(out.length, Math.floor(Number(limit))));
       return out;
     }
 
     function inv_image_item_acronym(item) {
       let acronym = String(item?.acronym || "").trim();
       if (!acronym || acronym === "-" || /^n\/?a$/i.test(acronym)) return "";
-      let clean_name = String(item?.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      let clean_name = String(item?.name || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "");
       let clean_acr = acronym.toLowerCase().replace(/[^a-z0-9]+/g, "");
       if (!clean_acr || clean_acr === clean_name) return "";
       return acronym.toUpperCase();
@@ -1912,7 +2409,8 @@
       let header_h = 154;
       let rows = Math.ceil(items.length / cols);
       let width = pad * 2 + cols * card_w + (cols - 1) * gap;
-      let height = header_h + 22 + rows * card_h + Math.max(0, rows - 1) * gap + 58;
+      let height =
+        header_h + 22 + rows * card_h + Math.max(0, rows - 1) * gap + 58;
       let canvas = document.createElement("canvas");
       canvas.width = width;
       canvas.height = height;
@@ -1921,12 +2419,20 @@
       ctx.fillRect(0, 0, width, height);
 
       let grd = ctx.createLinearGradient(0, 0, width, height);
-      grd.addColorStop(0, dark ? "rgba(255,255,255,.06)" : "rgba(255,255,255,.86)");
-      grd.addColorStop(1, dark ? "rgba(255,255,255,0)" : "rgba(226,232,240,.2)");
+      grd.addColorStop(
+        0,
+        dark ? "rgba(255,255,255,.06)" : "rgba(255,255,255,.86)",
+      );
+      grd.addColorStop(
+        1,
+        dark ? "rgba(255,255,255,0)" : "rgba(226,232,240,.2)",
+      );
       ctx.fillStyle = grd;
       ctx.fillRect(0, 0, width, height);
 
-      let logo = await inv_image_safe_image(utils.getURL("assets/icons/logo128.png"));
+      let logo = await inv_image_safe_image(
+        utils.getURL("assets/icons/logo128.png"),
+      );
       inv_image_draw_logo(ctx, logo, pad, 34, 44);
       ctx.textBaseline = "top";
       ctx.fillStyle = dark ? "#ffffff" : "#101318";
@@ -1934,7 +2440,11 @@
       ctx.fillText("Inventory Overview", pad + 58, 30);
       ctx.fillStyle = dark ? "#9ba3b1" : "#667085";
       ctx.font = "700 13px Segoe UI, Arial, sans-serif";
-      ctx.fillText(`${data.username}  |  ${fmt(data.total_count)} items`, pad + 60, 67);
+      ctx.fillText(
+        `${data.username}  |  ${fmt(data.total_count)} items`,
+        pad + 60,
+        67,
+      );
 
       let summary_w = 168;
       let summary_gap = 16;
@@ -1947,7 +2457,9 @@
       for (let i = 0; i < summaries.length; i++) {
         let sx = summary_x + i * (summary_w + summary_gap);
         inv_image_round(ctx, sx, summary_y, summary_w, 48, 14);
-        ctx.fillStyle = dark ? "rgba(255,255,255,.055)" : "rgba(255,255,255,.86)";
+        ctx.fillStyle = dark
+          ? "rgba(255,255,255,.055)"
+          : "rgba(255,255,255,.86)";
         ctx.fill();
         ctx.strokeStyle = dark ? "rgba(255,255,255,.09)" : "rgba(15,23,42,.08)";
         ctx.stroke();
@@ -1965,11 +2477,18 @@
       }
 
       let images = {};
+      let projected_icon = await inv_image_safe_image(
+        utils.getURL("assets/projected.png"),
+      );
       for (let i = 0; i < items.length; i += 12) {
         let chunk = items.slice(i, i + 12);
-        await Promise.all(chunk.map(async (item) => {
-          images[item.thumb_key] = await inv_image_safe_image(thumb_cache[item.thumb_key]);
-        }));
+        await Promise.all(
+          chunk.map(async (item) => {
+            images[item.thumb_key] = await inv_image_safe_image(
+              thumb_cache[item.thumb_key],
+            );
+          }),
+        );
       }
 
       let grid_y = header_h + 22;
@@ -1978,7 +2497,18 @@
         let row = Math.floor(i / cols);
         let x = pad + col * (card_w + gap);
         let y = grid_y + row * (card_h + gap);
-        inv_image_draw_card(ctx, items[i], images[items[i].thumb_key], x, y, card_w, card_h, dark);
+        inv_image_draw_card(
+          ctx,
+          items[i],
+          images[items[i].thumb_key],
+          x,
+          y,
+          card_w,
+          card_h,
+          dark,
+          projected_icon,
+          data.show_onhold,
+        );
       }
 
       ctx.fillStyle = dark ? "rgba(255,255,255,.72)" : "rgba(17,24,39,.62)";
@@ -1999,9 +2529,378 @@
       return inv_image_canvas_blob(canvas);
     }
 
+    async function inv_image_create_blob_v2(data) {
+      let items = inv_image_items_for_output(data.items, data.limit);
+      if (!items.length) throw new Error("No inventory items to image.");
+      let dark = utils.getColorMode() !== "light";
+      let requested_cols = Math.floor(Number(data.items_per_row) || 5);
+      let cols = Math.max(3, Math.min(7, requested_cols));
+      let card_w = cols >= 7 ? 142 : 152;
+      let card_h = cols >= 7 ? 222 : 234;
+      let gap = 16;
+      let pad = 48;
+      let header_h = 168;
+      let rows = Math.ceil(items.length / cols);
+      let width = pad * 2 + cols * card_w + (cols - 1) * gap;
+      let height =
+        header_h + 28 + rows * card_h + Math.max(0, rows - 1) * gap + 64;
+      let canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      let ctx = canvas.getContext("2d");
+
+      ctx.fillStyle = dark ? "#0c0e13" : "#f7f8fa";
+      ctx.fillRect(0, 0, width, height);
+      let bg_grd = ctx.createRadialGradient(
+        width / 2,
+        header_h / 2,
+        0,
+        width / 2,
+        height / 2,
+        Math.max(width, height),
+      );
+      bg_grd.addColorStop(
+        0,
+        dark ? "rgba(255,255,255,.04)" : "rgba(255,255,255,.9)",
+      );
+      bg_grd.addColorStop(
+        1,
+        dark ? "rgba(255,255,255,0)" : "rgba(226,232,240,.25)",
+      );
+      ctx.fillStyle = bg_grd;
+      ctx.fillRect(0, 0, width, height);
+
+      let logo = await inv_image_safe_image(
+        utils.getURL("assets/icons/logo128.png"),
+      );
+      inv_image_draw_logo(ctx, logo, pad, 24, 54);
+      ctx.textBaseline = "top";
+      ctx.fillStyle = dark ? "#ffffff" : "#0f1115";
+      ctx.font = "900 34px Segoe UI, Arial, sans-serif";
+      ctx.fillText("Inventory Overview", pad + 68, 32);
+      ctx.fillStyle = dark ? "#7a8292" : "#6b7280";
+      ctx.font = "700 12px Segoe UI, Arial, sans-serif";
+      ctx.fillText(
+        `${data.username}  ·  ${fmt(data.total_count)} items`,
+        pad + 70,
+        73,
+      );
+
+      let summary_w = 168;
+      let summary_gap = 16;
+      let summary_y = 114;
+      let summary_x = Math.round((width - summary_w * 2 - summary_gap) / 2);
+      let summaries = [
+        ["Total Value", short_num(data.total_value), fmt(data.total_value)],
+        ["Total RAP", short_num(data.total_rap), fmt(data.total_rap)],
+      ];
+      for (let i = 0; i < summaries.length; i++) {
+        let sx = summary_x + i * (summary_w + summary_gap);
+        inv_image_round(ctx, sx, summary_y, summary_w, 48, 14);
+        ctx.fillStyle = dark
+          ? "rgba(255,255,255,.055)"
+          : "rgba(255,255,255,.86)";
+        ctx.fill();
+        ctx.strokeStyle = dark ? "rgba(255,255,255,.09)" : "rgba(15,23,42,.08)";
+        ctx.stroke();
+        ctx.fillStyle = dark ? "#8f97a6" : "#6b7280";
+        ctx.font = "800 9px Segoe UI, Arial, sans-serif";
+        ctx.fillText(summaries[i][0].toUpperCase(), sx + 14, summary_y + 9);
+        ctx.fillStyle = dark ? "#f8fafc" : "#111827";
+        ctx.font = "900 21px Segoe UI, Arial, sans-serif";
+        ctx.fillText(summaries[i][1], sx + 14, summary_y + 21);
+        ctx.fillStyle = dark ? "#818997" : "#707888";
+        ctx.font = "700 10px Segoe UI, Arial, sans-serif";
+        ctx.textAlign = "right";
+        ctx.fillText(summaries[i][2], sx + summary_w - 14, summary_y + 28);
+        ctx.textAlign = "left";
+      }
+
+      let images = {};
+      let rolimons_icon = await inv_image_safe_image(
+        utils.getURL("assets/rolimons.png"),
+      );
+      let projected_icon = await inv_image_safe_image(
+        utils.getURL("assets/projected.png"),
+      );
+      for (let i = 0; i < items.length; i += 12) {
+        let chunk = items.slice(i, i + 12);
+        await Promise.all(
+          chunk.map(async (item) => {
+            images[item.thumb_key] = await inv_image_safe_image(
+              thumb_cache[item.thumb_key],
+            );
+          }),
+        );
+      }
+
+      let grid_y = header_h + 28;
+      for (let i = 0; i < items.length; i++) {
+        let col = i % cols;
+        let row = Math.floor(i / cols);
+        let x = pad + col * (card_w + gap);
+        let y = grid_y + row * (card_h + gap);
+        inv_image_draw_card_v2(
+          ctx,
+          items[i],
+          images[items[i].thumb_key],
+          x,
+          y,
+          card_w,
+          card_h,
+          dark,
+          rolimons_icon,
+          data.show_usd,
+          projected_icon,
+          data.show_onhold,
+        );
+      }
+
+      let mark_logo = 18;
+      let mark_gap = 6;
+      ctx.fillStyle = dark ? "rgba(255,255,255,.55)" : "rgba(17,24,39,.55)";
+      ctx.font = "800 12px Segoe UI, Arial, sans-serif";
+      let mark = "nevos trading extension";
+      let mark_w = ctx.measureText(mark).width;
+      let mark_total_w = mark_logo + mark_gap + mark_w;
+      let mark_x = (width - mark_total_w) / 2;
+      let mark_y = height - 50;
+      inv_image_draw_logo(ctx, logo, mark_x, mark_y - 3, mark_logo);
+      ctx.fillText(mark, mark_x + mark_logo + mark_gap, mark_y);
+      ctx.fillStyle = dark ? "rgba(255,255,255,.42)" : "rgba(17,24,39,.44)";
+      ctx.font = "800 10px Segoe UI, Arial, sans-serif";
+      let site = "nevos-extension.com";
+      let site_w = ctx.measureText(site).width;
+      ctx.fillText(site, (width - site_w) / 2, height - 32);
+      ctx.fillStyle = dark ? "rgba(255,255,255,.30)" : "rgba(17,24,39,.32)";
+      ctx.font = "800 9px Segoe UI, Arial, sans-serif";
+      let invite = "discord.gg/4XWE7yy2uE";
+      let invite_w = ctx.measureText(invite).width;
+      ctx.fillText(invite, (width - invite_w) / 2, height - 18);
+      return inv_image_canvas_blob(canvas);
+    }
+
+    function inv_image_draw_card_v2(
+      ctx,
+      item,
+      image,
+      x,
+      y,
+      w,
+      h,
+      dark,
+      rolimons_icon,
+      show_usd,
+      projected_icon,
+      show_onhold,
+    ) {
+      ctx.save();
+      let cp = 10;
+      let thumb = w - cp * 2;
+      let tx = x + cp;
+      let ty = y + cp;
+
+      inv_image_round(ctx, x, y, w, h, 18);
+      let card_grad = ctx.createLinearGradient(x, y, x, y + h);
+      card_grad.addColorStop(0, dark ? "#1e212b" : "#ffffff");
+      card_grad.addColorStop(1, dark ? "#1a1d27" : "#f9fafb");
+      ctx.fillStyle = card_grad;
+      ctx.fill();
+      ctx.strokeStyle = dark ? "rgba(255,255,255,.12)" : "rgba(15,23,42,.10)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      if (item.rare) {
+        ctx.save();
+        inv_image_round(ctx, tx - 2, ty - 2, thumb + 4, thumb + 4, 15);
+        ctx.fillStyle = dark ? "rgba(147,215,255,.10)" : "rgba(59,130,246,.10)";
+        ctx.fill();
+        ctx.restore();
+      }
+
+      inv_image_round(ctx, tx, ty, thumb, thumb, 14);
+      ctx.fillStyle = dark ? "#252833" : "#eef1f5";
+      ctx.fill();
+      if (image) {
+        ctx.save();
+        inv_image_round(ctx, tx, ty, thumb, thumb, 14);
+        ctx.clip();
+        let iw = image.naturalWidth || image.width || thumb;
+        let ih = image.naturalHeight || image.height || thumb;
+        let scale = Math.min(thumb / iw, thumb / ih) * 0.9;
+        let dw = iw * scale;
+        let dh = ih * scale;
+        ctx.drawImage(
+          image,
+          tx + (thumb - dw) / 2,
+          ty + (thumb - dh) / 2,
+          dw,
+          dh,
+        );
+        ctx.restore();
+      }
+
+      ctx.save();
+      ctx.shadowColor = dark ? "rgba(0,0,0,.6)" : "rgba(255,255,255,.85)";
+      ctx.shadowBlur = 4;
+      ctx.fillStyle = dark ? "#f8fafc" : "#111827";
+      ctx.font = "900 10px Segoe UI, Arial, sans-serif";
+      ctx.textBaseline = "top";
+      if (item.count > 1) {
+        ctx.textAlign = "right";
+        ctx.fillText("x" + item.count, tx + thumb - 6, ty + 6);
+      }
+      ctx.textAlign = "left";
+      let indicator_x = tx + 4;
+      if (show_onhold && item.onHoldCount > 0) {
+        inv_image_draw_clock(ctx, indicator_x, ty + 4, 18);
+        if (item.onHoldCount < item.count) {
+          ctx.save();
+          ctx.font = "900 10px Segoe UI, Arial, sans-serif";
+          ctx.textBaseline = "top";
+          ctx.fillStyle = "rgba(255,255,255,0.92)";
+          ctx.shadowColor = "rgba(0,0,0,0.65)";
+          ctx.shadowBlur = 3;
+          let hold_text = "x" + item.onHoldCount;
+          ctx.fillText(hold_text, indicator_x + 18 + 2, ty + 7);
+          indicator_x += 18 + 2 + ctx.measureText(hold_text).width;
+          ctx.restore();
+        } else {
+          indicator_x += 18;
+        }
+        indicator_x += 4;
+      }
+      if (item.proj && projected_icon) {
+        let pi_s = 20;
+        ctx.drawImage(projected_icon, indicator_x, ty + 4, pi_s, pi_s);
+      }
+      if (item.serial) {
+        ctx.textAlign = "left";
+        ctx.fillText("#" + fmt(item.serial), tx + 7, ty + thumb - 17);
+      }
+      ctx.restore();
+
+      let name_y = ty + thumb + 10;
+      ctx.fillStyle = dark ? "#e8eaed" : "#111318";
+      ctx.font = "800 12px Segoe UI, Arial, sans-serif";
+      ctx.textBaseline = "top";
+      let words = String(item.name || "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      let max_name_w = w - cp * 2;
+      let cx = x + w / 2;
+
+      let line1 = "";
+      let used = 0;
+      for (let i = 0; i < Math.min(3, words.length); i++) {
+        let test = line1 ? line1 + " " + words[i] : words[i];
+        if (ctx.measureText(test).width <= max_name_w || !line1) {
+          line1 = test;
+          used++;
+        } else {
+          break;
+        }
+      }
+      if (line1 && ctx.measureText(line1).width > max_name_w) {
+        while (
+          ctx.measureText(line1 + "...").width > max_name_w &&
+          line1.length > 1
+        )
+          line1 = line1.slice(0, -1);
+        line1 += "...";
+      }
+
+      let line2 = words.slice(used).join(" ");
+      if (line2) {
+        if (ctx.measureText(line2).width > max_name_w) {
+          while (
+            ctx.measureText(line2 + "...").width > max_name_w &&
+            line2.length > 1
+          )
+            line2 = line2.slice(0, -1);
+          line2 += "...";
+        }
+      }
+
+      ctx.textAlign = "center";
+      if (line1) ctx.fillText(line1, cx, name_y);
+      if (line2) ctx.fillText(line2, cx, name_y + 15);
+      ctx.textAlign = "left";
+
+      let has_val = (item.count > 1 ? item.total_val : item.val) > 0;
+      let stat_num = fmt(
+        has_val
+          ? item.count > 1
+            ? item.total_val
+            : item.val
+          : item.count > 1
+            ? item.total_rap
+            : item.rap,
+      );
+      let icon_size = 14;
+      let icon_gap = 6;
+      ctx.font = "900 14px Segoe UI, Arial, sans-serif";
+      let num_w = ctx.measureText(stat_num).width;
+      let pill_w = Math.min(
+        w - cp * 2,
+        Math.max(90, num_w + (rolimons_icon ? icon_size + icon_gap : 0) + 24),
+      );
+      let pill_h = 32;
+      let pill_x = x + (w - pill_w) / 2;
+      let pill_y = y + h - 58;
+
+      inv_image_round(ctx, pill_x, pill_y, pill_w, pill_h, 10);
+      ctx.fillStyle = dark ? "rgba(255,255,255,.06)" : "rgba(15,23,42,.04)";
+      ctx.fill();
+      ctx.strokeStyle = dark ? "rgba(255,255,255,.08)" : "rgba(15,23,42,.06)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      let content_w = num_w + (rolimons_icon ? icon_size + icon_gap : 0);
+      let start_x = pill_x + (pill_w - content_w) / 2;
+      if (rolimons_icon) {
+        ctx.drawImage(
+          rolimons_icon,
+          start_x,
+          pill_y + (pill_h - icon_size) / 2,
+          icon_size,
+          icon_size,
+        );
+      }
+      ctx.font = "900 14px Segoe UI, Arial, sans-serif";
+      ctx.fillStyle = dark ? "#ffffff" : "#0f1117";
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "left";
+      ctx.fillText(
+        stat_num,
+        start_x + (rolimons_icon ? icon_size + icon_gap : 0),
+        pill_y + pill_h / 2 + 1,
+      );
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+
+      let usd_val = show_usd ? (item.count > 1 ? item.total_usd : item.usd) : 0;
+      if (Number(usd_val) > 0) {
+        let usd_text = "$" + Number(usd_val).toFixed(2);
+        ctx.font = "800 11px Segoe UI, Arial, sans-serif";
+        ctx.fillStyle = dark ? "#facc15" : "#a16207";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "top";
+        ctx.fillText(usd_text, x + w / 2, y + h - 19);
+        ctx.textAlign = "left";
+        ctx.textBaseline = "top";
+      }
+
+      ctx.restore();
+    }
+
     async function inv_image_copy_blob(blob) {
-      if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") throw new Error("Image clipboard is not supported here.");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined")
+        throw new Error("Image clipboard is not supported here.");
+      await navigator.clipboard.write([
+        new ClipboardItem({ "image/png": blob }),
+      ]);
     }
 
     async function inv_image_copy_text(text) {
@@ -2021,9 +2920,11 @@
 
     function inv_image_set_button_state(button, text, delay) {
       button.textContent = text;
-      if (delay) setTimeout(() => {
-        if (button?.isConnected) button.textContent = button.getAttribute("data-label") || text;
-      }, delay);
+      if (delay)
+        setTimeout(() => {
+          if (button?.isConnected)
+            button.textContent = button.getAttribute("data-label") || text;
+        }, delay);
     }
 
     function inv_image_close_toast(toast) {
@@ -2039,7 +2940,8 @@
       let toast = document.createElement("div");
       toast.className = "nte-inv-image-toast";
       toast.innerHTML = `<button type="button" class="nte-inv-image-toast-close" aria-label="Close">x</button><div class="nte-inv-image-toast-title">Inventory image failed</div><div class="nte-inv-image-toast-sub">${escape_html(message || "Could not create the image.")}</div>`;
-      toast.querySelector(".nte-inv-image-toast-close").onclick = () => inv_image_close_toast(toast);
+      toast.querySelector(".nte-inv-image-toast-close").onclick = () =>
+        inv_image_close_toast(toast);
       document.body.appendChild(toast);
       requestAnimationFrame(() => toast.classList.add("is-visible"));
     }
@@ -2069,6 +2971,14 @@
                 </select>
               </label>
             </div>
+            <label class="nte-inv-image-prompt-toggle">
+              <input type="checkbox" data-usd-toggle>
+              <span>Show USD values</span>
+            </label>
+            <label class="nte-inv-image-prompt-toggle">
+              <input type="checkbox" data-onhold-toggle>
+              <span>Show on-hold indicator</span>
+            </label>
             <div class="nte-inv-image-prompt-actions">
               <button type="button" class="nte-inv-image-prompt-muted" data-action="cancel">Cancel</button>
               <button type="button" data-action="all">All</button>
@@ -2078,11 +2988,19 @@
         `;
         let input = prompt.querySelector(".nte-inv-image-prompt-input");
         let cols = prompt.querySelector(".nte-inv-image-prompt-cols");
+        let usd_toggle = prompt.querySelector("[data-usd-toggle]");
+        let onhold_toggle = prompt.querySelector("[data-onhold-toggle]");
         let closed = false;
         function value(limit) {
           return {
             limit,
-            items_per_row: Math.max(3, Math.min(7, parseInt(cols.value, 10) || 5)),
+            items_per_row: Math.max(
+              3,
+              Math.min(7, parseInt(cols.value, 10) || 5),
+            ),
+            style: "v2",
+            show_usd: !!(usd_toggle && usd_toggle.checked),
+            show_onhold: !!(onhold_toggle && onhold_toggle.checked),
           };
         }
         function close(value) {
@@ -2098,13 +3016,24 @@
           if (action === "cancel") return close(0);
           if (action === "all") return close(value(max_count));
           if (action === "render") {
-            let count = Math.max(1, Math.min(max_count, parseInt(input.value, 10) || 0));
+            let count = Math.max(
+              1,
+              Math.min(max_count, parseInt(input.value, 10) || 0),
+            );
             return close(value(count));
           }
         });
         input.addEventListener("keydown", (event) => {
           if (event.key === "Escape") close(0);
-          if (event.key === "Enter") close(value(Math.max(1, Math.min(max_count, parseInt(input.value, 10) || 0))));
+          if (event.key === "Enter")
+            close(
+              value(
+                Math.max(
+                  1,
+                  Math.min(max_count, parseInt(input.value, 10) || 0),
+                ),
+              ),
+            );
         });
         document.body.appendChild(prompt);
         requestAnimationFrame(() => {
@@ -2121,7 +3050,9 @@
       let toast = document.createElement("div");
       toast.className = "nte-inv-image-toast";
       toast.__nte_cleanup = () => URL.revokeObjectURL(url);
-      item_names_items = Array.isArray(item_names_items) ? item_names_items : [];
+      item_names_items = Array.isArray(item_names_items)
+        ? item_names_items
+        : [];
       let item_names_text = inv_image_item_names_text(item_names_items, "both");
       let list_html = item_names_items.length
         ? `<details class="nte-inv-image-list"><summary>Item names</summary><div class="nte-inv-image-list-mode" role="group" aria-label="Item name format"><button type="button" data-mode="full">Full</button><button type="button" data-mode="acronym">Acronyms</button><button type="button" data-mode="both" class="is-active">Both</button></div><div class="nte-inv-image-list-text">${escape_html(item_names_text)}</div><button type="button" class="nte-inv-image-list-copy" data-label="Copy Item Names">Copy Item Names</button></details>`
@@ -2141,15 +3072,22 @@
       let buttons = toast.querySelectorAll(".nte-inv-image-toast-copy");
       let list_copy = toast.querySelector(".nte-inv-image-list-copy");
       let list_text = toast.querySelector(".nte-inv-image-list-text");
-      let list_modes = toast.querySelectorAll(".nte-inv-image-list-mode button");
+      let list_modes = toast.querySelectorAll(
+        ".nte-inv-image-list-mode button",
+      );
       let current_names_text = item_names_text;
       close.onclick = () => inv_image_close_toast(toast);
       list_modes.forEach((button) => {
         button.onclick = () => {
           let mode = button.getAttribute("data-mode") || "both";
-          current_names_text = inv_image_item_names_text(item_names_items, mode);
+          current_names_text = inv_image_item_names_text(
+            item_names_items,
+            mode,
+          );
           if (list_text) list_text.textContent = current_names_text;
-          list_modes.forEach((el) => el.classList.toggle("is-active", el === button));
+          list_modes.forEach((el) =>
+            el.classList.toggle("is-active", el === button),
+          );
         };
       });
       if (list_copy) {
@@ -2211,7 +3149,6 @@
 
       var { items, totalValue: total_value, totalRAP: total_rap } = data;
 
-
       var overlay = document.createElement("div");
       overlay.id = "nte-inv-modal";
       overlay.className = "nte-modal-overlay";
@@ -2226,7 +3163,9 @@
         overlay.classList.remove("active");
         setTimeout(() => overlay.remove(), 250);
       }
-      overlay.querySelector(".nte-modal-close").addEventListener("click", close_modal);
+      overlay
+        .querySelector(".nte-modal-close")
+        .addEventListener("click", close_modal);
       overlay.addEventListener("click", (ev) => {
         if (ev.target === overlay) close_modal();
       });
@@ -2237,25 +3176,43 @@
         }
       });
 
-
       var enriched = [],
         seen = {};
       for (let item of items) {
         let is_bundle = item.itemType === "Bundle";
-        let rolimons_item = utils.getRolimonsItem(item.assetId, item.name, is_bundle);
-        let rolimons_item_id = utils.getRolimonsItemId(item.assetId, item.name, is_bundle);
+        let rolimons_item = utils.getRolimonsItem(
+          item.assetId,
+          item.name,
+          is_bundle,
+        );
+        let rolimons_item_id = utils.getRolimonsItemId(
+          item.assetId,
+          item.name,
+          is_bundle,
+        );
         if (!rolimons_item_id && !is_bundle) rolimons_item_id = item.assetId;
         let val = 0;
         let rap = 0;
 
-        val = utils.getValueOrRAP(item.assetId, item.name, item.recentAveragePrice);
-        rap = item.recentAveragePrice || utils.getRAP(item.assetId, item.name, item.recentAveragePrice);
+        val = utils.getValueOrRAP(
+          item.assetId,
+          item.name,
+          item.recentAveragePrice,
+        );
+        rap =
+          item.recentAveragePrice ||
+          utils.getRAP(item.assetId, item.name, item.recentAveragePrice);
 
         if (seen[item.assetId]) {
           seen[item.assetId].count++;
           seen[item.assetId].total_val += val;
           seen[item.assetId].total_rap += rap;
-          if (item.serialNumber && (!seen[item.assetId].serial || item.serialNumber < seen[item.assetId].serial))
+          if (item.isOnHold) seen[item.assetId].onHoldCount++;
+          if (
+            item.serialNumber &&
+            (!seen[item.assetId].serial ||
+              item.serialNumber < seen[item.assetId].serial)
+          )
             seen[item.assetId].serial = item.serialNumber;
           continue;
         }
@@ -2264,7 +3221,10 @@
           id: item.assetId,
           rolimons_id: rolimons_item_id,
           item_type: item.itemType || "Asset",
-          thumb_key: get_thumb_cache_key(item.itemType || "Asset", item.assetId),
+          thumb_key: get_thumb_cache_key(
+            item.itemType || "Asset",
+            item.assetId,
+          ),
           name: item.name || "Unknown",
           acronym: rolimons_item ? rolimons_item[1] : "",
           val: val,
@@ -2276,17 +3236,21 @@
           count: 1,
           total_val: val,
           total_rap: rap,
+          onHoldCount: item.isOnHold ? 1 : 0,
         };
         seen[item.assetId] = entry;
         enriched.push(entry);
       }
 
-
       await fetch_thumbs(enriched);
 
-
-      var show_routility_usd = !!(await utils.getOption("Show Routility USD Values"));
-      var routility_snapshot = typeof utils.getRoutilityData === "function" ? utils.getRoutilityData() : null;
+      var show_routility_usd = !!(await utils.getOption(
+        "Show Routility USD Values",
+      ));
+      var routility_snapshot =
+        typeof utils.getRoutilityData === "function"
+          ? utils.getRoutilityData()
+          : null;
       if (show_routility_usd && !routility_snapshot) {
         routility_snapshot = await new Promise((resolve) => {
           nte_send_message("getRoutilityData", function (data) {
@@ -2295,9 +3259,13 @@
         });
       }
       function get_entry_routility_usd(entry) {
-        let direct = Number(routility_snapshot?.items?.[String(entry.id)]?.usd || 0);
+        let direct = Number(
+          routility_snapshot?.items?.[String(entry.id)]?.usd || 0,
+        );
         if (direct > 0) return direct;
-        let fallback = Number(routility_snapshot?.items?.[String(entry.rolimons_id)]?.usd || 0);
+        let fallback = Number(
+          routility_snapshot?.items?.[String(entry.rolimons_id)]?.usd || 0,
+        );
         if (fallback > 0) return fallback;
         if (typeof utils.getUSD === "function") {
           direct = Number(utils.getUSD(entry.id) || 0);
@@ -2309,7 +3277,10 @@
       }
       var unique_count = enriched.length;
       var total_count = items.length;
-      var top_item = enriched.length > 0 ? [...enriched].sort((a, b) => b.val - a.val)[0] : null;
+      var top_item =
+        enriched.length > 0
+          ? [...enriched].sort((a, b) => b.val - a.val)[0]
+          : null;
       var rare_count = enriched.filter((i) => i.rare).length;
       var proj_count = enriched.filter((i) => i.proj).length;
       var worth_source_total = total_value > 0 ? total_value : total_rap;
@@ -2324,8 +3295,12 @@
           routility_priced_count += entry.count;
         }
       }
-      var estimated_usd_worth = show_routility_usd ? routility_total_usd : (worth_source_total / 1000) * 3;
-      var estimated_usd_card_class = show_routility_usd ? "nte-stat-card routility-usd-card" : "nte-stat-card usd-card";
+      var estimated_usd_worth = show_routility_usd
+        ? routility_total_usd
+        : (worth_source_total / 1000) * 3;
+      var estimated_usd_card_class = show_routility_usd
+        ? "nte-stat-card routility-usd-card"
+        : "nte-stat-card usd-card";
       var estimated_usd_label_html = show_routility_usd
         ? '<div class="nte-stat-label has-logo"><img class="nte-stat-label-logo" src="' +
           escape_html(utils.getURL("assets/routility.png")) +
@@ -2336,14 +3311,20 @@
           ? `Based on Routility.io\n${fmt(routility_priced_count)}/${fmt(total_count)} copies priced`
           : "Routility.io values unavailable"
         : "Based on $3.00 / 1k";
-      var estimated_usd_sub_html = escape_html(estimated_usd_sub).replace(/\n/g, "<br>");
-
+      var estimated_usd_sub_html = escape_html(estimated_usd_sub).replace(
+        /\n/g,
+        "<br>",
+      );
 
       var modal = overlay.querySelector(".nte-modal");
       modal.innerHTML =
         '<div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://discord.gg/4XWE7yy2uE" target="_blank" rel="noopener noreferrer">discord.gg/4XWE7yy2uE</a></div></div><button class="nte-modal-close">\u00d7</button></div>' +
         '<div class="nte-stats">' +
-        '<div class="' + estimated_usd_card_class + '">' + estimated_usd_label_html + '<div class="nte-stat-value usd-color">' +
+        '<div class="' +
+        estimated_usd_card_class +
+        '">' +
+        estimated_usd_label_html +
+        '<div class="nte-stat-value usd-color">' +
         fmt_usd(estimated_usd_worth) +
         '</div><div class="nte-stat-sub">' +
         estimated_usd_sub_html +
@@ -2377,7 +3358,9 @@
 
       attach_modal_logo(overlay);
 
-      overlay.querySelector(".nte-modal-close").addEventListener("click", close_modal);
+      overlay
+        .querySelector(".nte-modal-close")
+        .addEventListener("click", close_modal);
 
       var inv_serial_blur_on = false;
       var update_inv_serial_blur = function () {};
@@ -2387,19 +3370,39 @@
         inv_hash_btn.type = "button";
         inv_hash_btn.className = "nte-inv-hash-serial-btn";
         inv_hash_btn.textContent = "#";
-        inv_hash_btn.setAttribute("aria-label", "Blur serial numbers in this list");
+        inv_hash_btn.setAttribute(
+          "aria-label",
+          "Blur serial numbers in this list",
+        );
         inv_hash_btn.title = "Blur Serials";
         function set_inv_hash_btn_state() {
-          inv_hash_btn.classList.toggle("nte-inv-hash-serial-active", inv_serial_blur_on);
-          inv_hash_btn.setAttribute("aria-pressed", inv_serial_blur_on ? "true" : "false");
-          inv_hash_btn.setAttribute("aria-label", inv_serial_blur_on ? "Unblur serial numbers in this list" : "Blur serial numbers in this list");
-          inv_hash_btn.title = inv_serial_blur_on ? "Unblur Serials" : "Blur Serials";
+          inv_hash_btn.classList.toggle(
+            "nte-inv-hash-serial-active",
+            inv_serial_blur_on,
+          );
+          inv_hash_btn.setAttribute(
+            "aria-pressed",
+            inv_serial_blur_on ? "true" : "false",
+          );
+          inv_hash_btn.setAttribute(
+            "aria-label",
+            inv_serial_blur_on
+              ? "Unblur serial numbers in this list"
+              : "Blur serial numbers in this list",
+          );
+          inv_hash_btn.title = inv_serial_blur_on
+            ? "Unblur Serials"
+            : "Blur Serials";
         }
         update_inv_serial_blur = function () {
           overlay.querySelectorAll(".nte-inv-serial").forEach((el) => {
-            var original = el.getAttribute("data-nte-serial-text") || el.textContent || "";
-            if (!el.hasAttribute("data-nte-serial-text")) el.setAttribute("data-nte-serial-text", original);
-            el.textContent = inv_serial_blur_on ? "#\u2022\u2022\u2022\u2022" : original;
+            var original =
+              el.getAttribute("data-nte-serial-text") || el.textContent || "";
+            if (!el.hasAttribute("data-nte-serial-text"))
+              el.setAttribute("data-nte-serial-text", original);
+            el.textContent = inv_serial_blur_on
+              ? "#\u2022\u2022\u2022\u2022"
+              : original;
             el.setAttribute("data-nte-blurred", inv_serial_blur_on ? "1" : "0");
           });
         };
@@ -2429,8 +3432,27 @@
             inv_image_btn.disabled = true;
             inv_image_btn.textContent = "Rendering...";
             let username = await inv_image_profile_name();
-            let image_items = inv_image_items_for_output(enriched, image_opts.limit);
-            let blob = await inv_image_create_blob({
+            let image_items = inv_image_items_for_output(
+              enriched,
+              image_opts.limit,
+            );
+            if (image_opts.show_usd) {
+              if (!routility_snapshot) {
+                routility_snapshot = await new Promise((resolve) => {
+                  nte_send_message("getRoutilityData", function (data) {
+                    resolve(data || null);
+                  });
+                });
+              }
+              for (let entry of enriched) {
+                if (!Number(entry.usd)) {
+                  let usd = get_entry_routility_usd(entry);
+                  entry.usd = usd;
+                  entry.total_usd = usd * entry.count;
+                }
+              }
+            }
+            let image_data = {
               items: enriched,
               limit: image_opts.limit,
               items_per_row: image_opts.items_per_row,
@@ -2442,14 +3464,28 @@
               rare_count,
               proj_count,
               top_item,
-            });
-            inv_image_preview_toast(blob, inv_image_filename(username), image_items);
+              show_usd: image_opts.show_usd,
+              show_onhold: image_opts.show_onhold,
+              total_usd: routility_total_usd,
+            };
+            let blob =
+              image_opts.style === "v2"
+                ? await inv_image_create_blob_v2(image_data)
+                : await inv_image_create_blob(image_data);
+            inv_image_preview_toast(
+              blob,
+              inv_image_filename(username),
+              image_items,
+            );
             inv_image_btn.textContent = "Image";
           } catch (err) {
-            inv_image_error_toast(err?.message || "Could not create the inventory image.");
+            inv_image_error_toast(
+              err?.message || "Could not create the inventory image.",
+            );
             inv_image_btn.textContent = "Failed";
             setTimeout(() => {
-              if (inv_image_btn?.isConnected) inv_image_btn.textContent = "Image";
+              if (inv_image_btn?.isConnected)
+                inv_image_btn.textContent = "Image";
             }, 1200);
           } finally {
             setTimeout(() => {
@@ -2457,8 +3493,12 @@
             }, 350);
           }
         });
-        var after_serial_btn = ctrl_row.querySelector(".nte-inv-hash-serial-btn");
-        after_serial_btn ? after_serial_btn.insertAdjacentElement("afterend", inv_image_btn) : ctrl_row.insertBefore(inv_image_btn, ctrl_row.firstChild);
+        var after_serial_btn = ctrl_row.querySelector(
+          ".nte-inv-hash-serial-btn",
+        );
+        after_serial_btn
+          ? after_serial_btn.insertAdjacentElement("afterend", inv_image_btn)
+          : ctrl_row.insertBefore(inv_image_btn, ctrl_row.firstChild);
       }
 
       function render_items(sort_key, query) {
@@ -2488,7 +3528,8 @@
 
         var grid = overlay.querySelector(".nte-items-grid");
         if (sorted.length === 0) {
-          grid.innerHTML = '<div class="nte-no-items">No items match your search</div>';
+          grid.innerHTML =
+            '<div class="nte-no-items">No items match your search</div>';
           return;
         }
 
@@ -2503,20 +3544,31 @@
                 dm.l +
                 "</span></span></div>"
               : "";
-            var count_badge = item.count > 1 ? '<div class="nte-item-count">x' + item.count + "</div>" : "";
+            var count_badge =
+              item.count > 1
+                ? '<div class="nte-item-count">x' + item.count + "</div>"
+                : "";
             var dv = item.count > 1 ? item.total_val : item.val;
             var dr = item.count > 1 ? item.total_rap : item.rap;
             var safe_name = escape_html(item.name);
             var serial_text = item.serial ? "#" + fmt(item.serial) : "";
             var serial_tag = serial_text
-              ? '<div class="nte-thumb-tag serial"><span class="nte-inv-serial" data-nte-serial-text="' + escape_html(serial_text) + '">' + escape_html(serial_text) + "</span></div>"
+              ? '<div class="nte-thumb-tag serial"><span class="nte-inv-serial" data-nte-serial-text="' +
+                escape_html(serial_text) +
+                '">' +
+                escape_html(serial_text) +
+                "</span></div>"
               : "";
-            var proj_tag = item.proj ? '<div class="nte-thumb-tag proj">Projected</div>' : "";
+            var proj_tag = item.proj
+              ? '<div class="nte-thumb-tag proj">Projected</div>'
+              : "";
             var rare_tag = item.rare
               ? '<div class="nte-thumb-tag rare" aria-label="Rare"><span aria-hidden="true">&#128142;</span></div>'
               : "";
             var card_class =
-              "nte-item-card" + (item.rare ? " is-rare" : "") + (item.proj ? " is-proj" : "");
+              "nte-item-card" +
+              (item.rare ? " is-rare" : "") +
+              (item.proj ? " is-proj" : "");
             var item_url = item.rolimons_id
               ? "https://www.rolimons.com/item/" + item.rolimons_id
               : item.item_type === "Bundle"
@@ -2533,7 +3585,13 @@
               (item.count > 1 ? " (x" + item.count + ")" : "") +
               '">' +
               '<div class="nte-item-thumb">' +
-              (thumb ? '<img src="' + thumb + '" loading="lazy" alt="' + safe_name + '">' : "") +
+              (thumb
+                ? '<img src="' +
+                  thumb +
+                  '" loading="lazy" alt="' +
+                  safe_name +
+                  '">'
+                : "") +
               count_badge +
               rare_tag +
               proj_tag +
@@ -2561,8 +3619,12 @@
       render_items("val-d", "");
       var search_el = overlay.querySelector(".nte-search");
       var sort_el = overlay.querySelector(".nte-sort");
-      search_el.addEventListener("input", () => render_items(sort_el.value, search_el.value));
-      sort_el.addEventListener("change", () => render_items(sort_el.value, search_el.value));
+      search_el.addEventListener("input", () =>
+        render_items(sort_el.value, search_el.value),
+      );
+      sort_el.addEventListener("change", () =>
+        render_items(sort_el.value, search_el.value),
+      );
     };
   })();
   try {
