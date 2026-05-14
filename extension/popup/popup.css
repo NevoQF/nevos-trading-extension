@@ -2406,6 +2406,17 @@ body.is-tradeads-tab .popup {
   line-height: 1.4;
 }
 
+.ta-user-pill {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--bg-toggle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
 .ta-preview-label {
   font-size: 10px;
   font-weight: 800;
@@ -3109,16 +3120,206 @@ body.is-tradeads-tab .popup {
 }
 
 .ta-interval-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
-  text-align: center;
   margin-top: 8px;
   line-height: 1.35;
 }
 
+.ta-caption-sep {
+  display: none;
+}
+
+.ta-caption-post-btn {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-toggle);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+  line-height: 1;
+}
+
+.ta-caption-post-btn:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+}
+
+.ta-caption-post-btn:active {
+  transform: scale(0.96);
+}
+
+.ta-caption-post-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.ta-caption-duration {
+  flex: 1;
+  text-align: center;
+}
+
 .ta-final-actions {
   padding: 0 2px;
+}
+
+.ta-recent-posts {
+  margin-top: 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.ta-recent-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.ta-recent-toggle:hover {
+  background: var(--bg-card-hover);
+}
+
+.ta-recent-chevron {
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+.ta-recent-list {
+  display: none;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--border);
+  padding: 0;
+}
+
+.ta-recent-list.is-open {
+  display: flex;
+}
+
+.ta-recent-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  font-size: 11px;
+  color: var(--text-secondary);
+  transition: background 0.15s ease;
+}
+
+.ta-recent-item:hover {
+  background: var(--bg-card-hover);
+}
+
+.ta-recent-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ta-recent-meta {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.ta-recent-link {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-primary);
+  text-decoration: none;
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--bg-toggle);
+  border: 1px solid var(--border);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.ta-recent-link:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+}
+
+.ta-recent-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ta-recent-side-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  width: 52px;
+}
+
+.ta-recent-thumbs {
+  display: flex;
+  gap: 3px;
+  flex: 1;
+}
+
+.ta-recent-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ta-recent-no-items {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.ta-recent-total {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.ta-recent-empty {
+  padding: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
 .nte-totp-card {

@@ -22,7 +22,7 @@ const chevron_svg =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 
 const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Show User RoliBadges","enabledByDefault":true,"path":"show-user-roli-badges"},{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]',
+  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]',
 );
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -1996,12 +1996,63 @@ async function render_trade_ads_composer(root, status) {
     rows += slot_html("request", i, cfg.request_slots[i], cfg.request_random);
   rows += `</div>`;
 
+  let recent_posts = status.recent_posts || [];
+  let recent_items = "";
+  if (recent_posts.length > 0) {
+    recent_items = recent_posts
+      .map((p) => {
+        let url = p.player_id
+          ? `https://www.rolimons.com/playertrades/${encodeURIComponent(String(p.player_id))}`
+          : "https://www.rolimons.com/tradeads";
+        let time = escape_html(format_relative_time(Number(p.at)));
+        let offers = Array.isArray(p.offers) ? p.offers : [];
+        let requests = Array.isArray(p.requests) ? p.requests : [];
+        function thumb_tag(it) {
+          if (!it || it.id == null) return "";
+          return `<img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${it.id}" data-thumb-pending="1" decoding="async" class="ta-recent-thumb" />`;
+        }
+        function side_html(label, items, old_count) {
+          let thumbs = items.map(thumb_tag).join("");
+          if (!thumbs) {
+            if (old_count != null && old_count > 0) {
+              return `<div class="ta-recent-side"><span class="ta-recent-side-label">${label}</span><span class="ta-recent-no-items">${old_count} items</span></div>`;
+            }
+            return `<div class="ta-recent-side"><span class="ta-recent-side-label">${label}</span><span class="ta-recent-no-items">—</span></div>`;
+          }
+          let total = items.reduce((s, it) => s + (Number(it.value) || 0), 0);
+          let total_str = total > 0 ? format_number(total) : "";
+          return `<div class="ta-recent-side"><span class="ta-recent-side-label">${label}</span><div class="ta-recent-thumbs">${thumbs}</div>${total_str ? `<span class="ta-recent-total">${total_str}</span>` : ""}</div>`;
+        }
+        if (
+          offers.length === 0 &&
+          requests.length === 0 &&
+          (p.offer_count != null || p.request_count != null)
+        ) {
+          let line = `${p.offer_count || 0} offer · ${p.request_count || 0} request`;
+          return `<div class="ta-recent-item"><div class="ta-recent-top"><span class="ta-recent-meta">${time}</span><a href="${url}" target="_blank" rel="noopener noreferrer" class="ta-recent-link">View</a></div><div class="ta-recent-side" style="justify-content:center;padding:4px 0"><span class="ta-recent-no-items">${escape_html(line)}</span></div></div>`;
+        }
+        return `<div class="ta-recent-item"><div class="ta-recent-top"><span class="ta-recent-meta">${time}</span><a href="${url}" target="_blank" rel="noopener noreferrer" class="ta-recent-link">View</a></div>${side_html("Offered", offers, p.offer_count)}${side_html("Requested", requests, p.request_count)}</div>`;
+      })
+      .join("");
+  } else {
+    recent_items = `<div class="ta-recent-empty">No trade ads posted yet.</div>`;
+  }
+  let recent_posts_html = `
+    <div class="ta-recent-posts">
+      <button type="button" class="ta-recent-toggle" id="ta-recent-toggle">
+        <span>Recent posts</span>
+        <svg class="ta-recent-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </button>
+      <div class="ta-recent-list" id="ta-recent-list">${recent_items}</div>
+    </div>
+  `;
+
   root.innerHTML = `
     <div class="ta-card">
       <div class="ta-card-head">
         <div>
           <div class="ta-card-title">Ad preview</div>
-          <div class="ta-card-sub">Tap a square to fill slots, or enable random for offers and/or requests.</div>
+          <div class="ta-card-sub">Tap a square to fill slots, or randomize them.</div>
         </div>
       </div>
       ${rows}
@@ -2056,12 +2107,13 @@ async function render_trade_ads_composer(root, status) {
           <input type="number" class="ta-interval-bar-input" id="ta-interval-val" min="15" max="43200" value="${cfg.auto_interval_minutes}" inputmode="numeric" aria-label="Minutes between posts (editable)" />
           <button type="button" class="ta-interval-bar-btn" id="ta-plus-interval" aria-label="Add one minute">+</button>
         </div>
-        <div class="ta-interval-caption" id="ta-interval-human">${escape_html(format_trade_ads_duration(cfg.auto_interval_minutes))}</div>
+        <div class="ta-interval-caption" id="ta-interval-human"><button type="button" class="ta-caption-post-btn" id="ta-post-now">Post now</button><span class="ta-caption-duration" id="ta-interval-human-text">${escape_html(format_trade_ads_duration(cfg.auto_interval_minutes))}</span><span class="ta-caption-post-btn ta-caption-spacer" aria-hidden="true" style="visibility:hidden;pointer-events:none;">Post now</span></div>
       </div>
     </div>
 
+    ${recent_posts_html}
+
     <div class="ta-row ta-final-actions" style="margin-top:14px">
-      <button type="button" class="ta-btn ta-btn-primary" id="ta-post-now">Post now</button>
       <button type="button" class="ta-btn ta-btn-ghost" id="ta-disconnect">Disconnect Rolimons</button>
     </div>
     <div class="ta-status-line" id="ta-post-status"></div>
@@ -2273,7 +2325,7 @@ async function render_trade_ads_composer(root, status) {
 
     function tick() {
       let due = globalThis.__nte_trade_ads_due_at;
-      if (typeof due === "number" && Number.isFinite(due)) {
+      if (typeof due === "number" && Number.isFinite(due) && due > Date.now()) {
         el.textContent = format_trade_ad_countdown(due - Date.now());
         return;
       }
@@ -2307,7 +2359,7 @@ async function render_trade_ads_composer(root, status) {
     if (sw) sw.checked = !paused;
     let v = root.querySelector("#ta-interval-val");
     if (v) v.value = String(cfg.auto_interval_minutes);
-    let hum = root.querySelector("#ta-interval-human");
+    let hum = root.querySelector("#ta-interval-human-text");
     if (hum)
       hum.textContent = format_trade_ads_duration(cfg.auto_interval_minutes);
     let minus = root.querySelector("#ta-min-interval");
@@ -2387,16 +2439,17 @@ async function render_trade_ads_composer(root, status) {
       let url = pid
         ? `https://www.rolimons.com/playertrades/${encodeURIComponent(String(pid))}`
         : "https://www.rolimons.com/tradeads";
-      line.innerHTML = `Posted. <a href="${url}" target="_blank" rel="noopener noreferrer">View trade ad</a>`;
-      line.className = "ta-status-line ta-ok";
       let fresh = await trade_ads_fetch_status_from_bg();
-      if (fresh?.last_auto_post_at) {
-        let lp = root.querySelector("#ta-last-post-at");
-        if (lp) {
-          lp.style.display = "";
-          lp.textContent = `Last post: ${format_relative_time(Number(fresh.last_auto_post_at))}`;
-        }
+      if (fresh?.verified) {
+        await render_trade_ads_composer(root, fresh);
       }
+      requestAnimationFrame(() => {
+        let line2 = root.querySelector("#ta-post-status");
+        if (line2) {
+          line2.innerHTML = `Posted. <a href="${url}" target="_blank" rel="noopener noreferrer">View trade ad</a>`;
+          line2.className = "ta-status-line ta-ok";
+        }
+      });
     } else {
       line.textContent = res?.error || "Failed";
       line.className = "ta-status-line ta-err";
@@ -2411,6 +2464,17 @@ async function render_trade_ads_composer(root, status) {
     await trade_ads_merge_verify_ui({ step: "idle", phrase: "", error: "" });
     render_trade_ads_tab();
   });
+
+  let recent_toggle = root.querySelector("#ta-recent-toggle");
+  if (recent_toggle) {
+    recent_toggle.addEventListener("click", () => {
+      let list = root.querySelector("#ta-recent-list");
+      let chevron = recent_toggle.querySelector(".ta-recent-chevron");
+      if (!list) return;
+      let open = list.classList.toggle("is-open");
+      if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "";
+    });
+  }
 
   {
     let prev = globalThis.__nte_trade_ads_storage_listener;
@@ -2461,124 +2525,43 @@ async function render_trade_ads_composer(root, status) {
 async function render_trade_ads_verify_flow(root, status, vu) {
   let step = vu.step || "idle";
 
-  if (step === "loading_phrase") {
+  if (step === "loading") {
     root.innerHTML = `
-      <p class="ta-lede">Talking to Rolimons…</p>
+      <p class="ta-lede">Verifying…</p>
       <div class="ta-shimmer"></div>
     `;
     let r = await new Promise((resolve) =>
-      chrome.runtime.sendMessage({ type: "trade_ads_get_phrase" }, resolve),
+      chrome.runtime.sendMessage({ type: "trade_ads_auto_verify" }, resolve),
     );
     if (!r?.ok) {
       await trade_ads_merge_verify_ui({
         step: "idle",
-        error: r?.error || "Could not get phrase",
-      });
-    } else {
-      await trade_ads_merge_verify_ui({
-        step: "bio",
-        phrase: r.phrase,
-        userId: r.userId,
-        error: "",
-      });
-    }
-    vu = (await get_storage([trade_ads_verify_storage_key]))[
-      trade_ads_verify_storage_key
-    ];
-    return render_trade_ads_verify_flow(root, status, vu);
-  }
-
-  if (step === "verify_loading") {
-    root.innerHTML = `
-      <p class="ta-lede">Checking your Roblox profile…</p>
-      <div class="ta-shimmer"></div>
-    `;
-    let r = await new Promise((resolve) =>
-      chrome.runtime.sendMessage({ type: "trade_ads_verify_now" }, resolve),
-    );
-    if (!r?.ok) {
-      await trade_ads_merge_verify_ui({
-        step: "bio",
         error: r?.error || "Verification failed",
       });
-    } else {
-      await trade_ads_merge_verify_ui({ step: "done", error: "" });
-      return render_trade_ads_tab();
+      vu = (await get_storage([trade_ads_verify_storage_key]))[
+        trade_ads_verify_storage_key
+      ];
+      return render_trade_ads_verify_flow(root, status, vu);
     }
-    vu = (await get_storage([trade_ads_verify_storage_key]))[
-      trade_ads_verify_storage_key
-    ];
-    return render_trade_ads_verify_flow(root, status, vu);
+    await trade_ads_merge_verify_ui({ step: "idle", error: "" });
+    return render_trade_ads_tab();
   }
 
-  if (step === "bio" && vu.phrase) {
-    let profile_url = `https://www.roblox.com/users/${vu.userId}/profile`;
-    root.innerHTML = `
-      <div class="ta-card">
-        <div class="ta-card-head">
-          <div>
-            <div class="ta-card-title">Verify</div>
-            <div class="ta-card-sub">Add this to your Roblox bio</div>
-          </div>
-        </div>
-        <div class="ta-phrase-box" id="ta-phrase-box" style="cursor:pointer;font-size:13px;padding:14px;text-align:center;" title="Click to copy">${escape_html(vu.phrase)}</div>
-        ${vu.error ? `<div class="ta-status-line ta-err">${escape_html(vu.error)}</div>` : ""}
-        <div class="ta-row">
-          <a class="ta-btn ta-btn-secondary" href="${profile_url}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;">Profile</a>
-          <button type="button" class="ta-btn ta-btn-primary" id="ta-run-verify">Verify</button>
-        </div>
-        <div style="text-align:center;margin-top:10px;">
-          <button type="button" id="ta-cancel-verify" style="background:none;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;padding:4px 8px;">Cancel</button>
-        </div>
-      </div>
-    `;
-    let phrase_box = root.querySelector("#ta-phrase-box");
-    phrase_box.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(vu.phrase);
-        phrase_box.style.background = "var(--accent)";
-        phrase_box.style.color = "#fff";
-        setTimeout(() => {
-          phrase_box.style.background = "";
-          phrase_box.style.color = "";
-        }, 600);
-      } catch {}
-    });
-    root.querySelector("#ta-run-verify").addEventListener("click", async () => {
-      await trade_ads_merge_verify_ui({ step: "verify_loading", error: "" });
-      render_trade_ads_verify_flow(root, status, { step: "verify_loading" });
-    });
-    root
-      .querySelector("#ta-cancel-verify")
-      .addEventListener("click", async () => {
-        await trade_ads_merge_verify_ui({
-          step: "idle",
-          phrase: "",
-          error: "",
-        });
-        render_trade_ads_tab();
-      });
-    return;
-  }
-
+  let name = escape_html(status.roblox?.name || "");
   root.innerHTML = `
     <div class="ta-card">
-      <div class="ta-card-head">
-        <div>
-          <div class="ta-card-title">Connect Rolimons</div>
-          <div class="ta-card-sub">${escape_html(status.roblox?.name || "Roblox user")}</div>
-        </div>
+      <div class="ta-card-head" style="align-items:center;margin-bottom:14px;">
+        <div class="ta-card-title">Rolimons Trade Ads</div>
+        ${name ? `<div class="ta-user-pill">${name}</div>` : ""}
       </div>
       ${vu.error ? `<div class="ta-status-line ta-err" style="margin-bottom:10px">${escape_html(vu.error)}</div>` : ""}
-      <button type="button" class="ta-btn ta-btn-primary" id="ta-connect-start">Connect</button>
+      <button type="button" class="ta-btn ta-btn-primary" id="ta-auto-verify" style="width:100%;">Start Posting</button>
     </div>
   `;
-  root
-    .querySelector("#ta-connect-start")
-    .addEventListener("click", async () => {
-      await trade_ads_merge_verify_ui({ step: "loading_phrase", error: "" });
-      render_trade_ads_verify_flow(root, status, { step: "loading_phrase" });
-    });
+  root.querySelector("#ta-auto-verify").addEventListener("click", async () => {
+    await trade_ads_merge_verify_ui({ step: "loading", error: "" });
+    render_trade_ads_verify_flow(root, status, { step: "loading" });
+  });
 }
 
 async function render_trade_ads_tab() {

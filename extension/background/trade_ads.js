@@ -8,6 +8,7 @@ const trade_ads_popup_tab_key = "nte_popup_last_tab";
 const trade_ads_alarm_name = "tradeAdsAutoPost";
 const trade_ads_clear_error_alarm_name = "tradeAdsClearAutoError";
 const trade_ads_schedule_anchor_key = "trade_ads_schedule_anchor_at";
+const trade_ads_recent_posts_key = "trade_ads_recent_posts";
 const trade_ads_interval_min = 15;
 const trade_ads_interval_max = 43200;
 
@@ -86,6 +87,18 @@ function trade_ads_row_ui_metrics(row) {
   let raw = Number.isFinite(v) ? v : 0;
   let valueLine = raw > 0 ? raw : rap;
   return { valueLine, rap };
+}
+
+function trade_ads_item_summaries(ids, item_data) {
+  return (ids || []).slice(0, 4).map((id) => {
+    let row = get_rolimons_item(item_data, Number(id));
+    if (!Array.isArray(row))
+      return { id: Number(id), name: null, value: null, rap: null };
+    let rap = Number(row[2]) || 0;
+    let v = Number(row[3]);
+    let value = Number.isFinite(v) && v > 0 ? v : rap > 0 ? rap : 0;
+    return { id: Number(id), name: String(row[0] || ""), value, rap };
+  });
 }
 
 function trade_ads_random_int_below(n) {
@@ -326,6 +339,50 @@ async function trade_ads_verify_via_api(user_id) {
   throw new Error(
     "Rolimons accepted the phrase, but the extension could not read the session cookie. Reload the extension and confirm host access to api.rolimons.com, then try again.",
   );
+}
+
+async function trade_ads_get_roblox_bio(user_id) {
+  let res = await fetch(`https://users.roblox.com/v1/users/${user_id}`);
+  let data = await res.json().catch(() => ({}));
+  return data.description || "";
+}
+
+async function trade_ads_update_roblox_bio(description) {
+  let body = new URLSearchParams({ description });
+  let res = await fetch("https://users.roblox.com/v1/description", {
+    method: "POST",
+    credentials: "include",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+  if (res.status === 403) {
+    let csrf = res.headers.get("x-csrf-token");
+    if (!csrf) throw new Error("Could not get CSRF token");
+    res = await fetch("https://users.roblox.com/v1/description", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        "x-csrf-token": csrf,
+      },
+      body: body.toString(),
+    });
+  }
+  if (!res.ok) {
+    let data = await res.json().catch(() => ({}));
+    throw new Error(
+      data?.message || data?.error || `Bio update failed (${res.status})`,
+    );
+  }
+}
+
+async function trade_ads_auto_verify(user_id) {
+  let phrase = await trade_ads_fetch_phrase(user_id);
+  let original_bio = await trade_ads_get_roblox_bio(user_id);
+  let new_bio = original_bio ? `${original_bio}\n${phrase}` : phrase;
+  await trade_ads_update_roblox_bio(new_bio);
+  await trade_ads_verify_via_api(user_id);
+  await trade_ads_update_roblox_bio(original_bio);
 }
 
 async function trade_ads_fetch_inventory_collectibles(user_id) {
@@ -891,6 +948,33 @@ async function trade_ads_post_now(options) {
     await chrome.alarms.clear(trade_ads_clear_error_alarm_name);
   } catch {}
   let out = { ok: true, data, body, player_id: body.player_id };
+  try {
+    let recent = (await get_local_value(trade_ads_recent_posts_key)) || [];
+    let offer_summaries = trade_ads_item_summaries(
+      body.offer_item_ids,
+      item_data,
+    );
+    let request_summaries = trade_ads_item_summaries(
+      body.request_item_ids,
+      item_data,
+    );
+    console.log("NTE recent post saving:", {
+      offer_ids: body.offer_item_ids?.slice(0, 4),
+      request_ids: body.request_item_ids?.slice(0, 4),
+      offer_summaries: offer_summaries?.slice(0, 4),
+      request_summaries: request_summaries?.slice(0, 4),
+    });
+    recent.unshift({
+      at: Date.now(),
+      player_id: body.player_id,
+      offers: offer_summaries,
+      requests: request_summaries,
+    });
+    if (recent.length > 5) recent = recent.slice(0, 5);
+    await set_local_value(trade_ads_recent_posts_key, recent);
+  } catch (e) {
+    console.error("NTE recent post save failed:", e);
+  }
   await trade_ads_notify_post_success(config, body, item_data);
   return out;
 }
@@ -1010,6 +1094,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         last_auto_error: await get_local_value("trade_ads_last_auto_error"),
         last_auto_post_at: await get_local_value("trade_ads_last_auto_post_at"),
         next_auto_post_due_at: await trade_ads_compute_next_auto_post_due_at(),
+        recent_posts: (await get_local_value(trade_ads_recent_posts_key)) || [],
       });
     })();
     return true;
@@ -1072,6 +1157,27 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         if (me.id == null)
           return respond({ ok: false, error: "Sign in to Roblox first." });
         await trade_ads_verify_via_api(me.id);
+        respond({ ok: true });
+      } catch (err) {
+        respond({ ok: false, error: err?.message || String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (message?.type === "trade_ads_auto_verify") {
+    (async () => {
+      try {
+        let auth_res = await fetch(
+          "https://users.roblox.com/v1/users/authenticated",
+          { credentials: "include" },
+        );
+        if (!auth_res.ok)
+          return respond({ ok: false, error: "Sign in to Roblox first." });
+        let me = await auth_res.json();
+        if (me.id == null)
+          return respond({ ok: false, error: "Sign in to Roblox first." });
+        await trade_ads_auto_verify(me.id);
         respond({ ok: true });
       } catch (err) {
         respond({ ok: false, error: err?.message || String(err) });
