@@ -40,8 +40,30 @@ document.querySelectorAll(".tab").forEach((tab) => {
     if (tab.dataset.tab === "tradeactions") {
       render_actions_tab();
     }
+    if (tab.dataset.tab === "tradeads") {
+      render_trade_ads_tab();
+    }
   });
 });
+
+function format_number(value) {
+  return Number(value || 0).toLocaleString();
+}
+
+function format_relative_time(timestamp_ms) {
+  if (!timestamp_ms) return "Never";
+  let diff = Date.now() - Number(timestamp_ms);
+  if (diff < 0) diff = 0;
+  let seconds = Math.floor(diff / 1000);
+  if (seconds < 10) return "Just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  let minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  let hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  let days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
 
 function escape_html(value) {
   const map = {
@@ -1328,8 +1350,1271 @@ function create_profile_value_display_toggle(mode) {
   return toggle;
 }
 
+const trade_ads_verify_storage_key = "trade_ads_verify_ui";
+const trade_ads_config_storage_key = "trade_ads_config";
+
+const trade_ads_thumb_placeholder_src =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72"><rect fill="%231a1d26" width="72" height="72"/></svg>',
+  );
+
+function trade_ads_attach_thumb_error_handler(img) {
+  img.onerror = function trade_ads_thumb_onerror() {
+    img.onerror = null;
+    let aid = Number(img.dataset.thumbAid);
+    if (!Number.isFinite(aid)) return;
+    if (img.dataset.taThumbRefetched === "1") {
+      img.src = trade_ads_thumb_placeholder_src;
+      return;
+    }
+    img.dataset.taThumbRefetched = "1";
+    chrome.runtime.sendMessage(
+      { type: "trade_ads_refetch_thumb", assetId: aid },
+      (res) => {
+        if (chrome.runtime.lastError || !res?.ok || !res.url) {
+          img.src = trade_ads_thumb_placeholder_src;
+          return;
+        }
+        img.onerror = function trade_ads_thumb_second_fail() {
+          img.onerror = null;
+          img.src = trade_ads_thumb_placeholder_src;
+        };
+        img.src = res.url;
+      },
+    );
+  };
+}
+
+async function trade_ads_fill_thumbnails(scope_el) {
+  if (!scope_el) return;
+  let imgs = scope_el.querySelectorAll("img[data-thumb-pending='1']");
+  if (!imgs.length) return;
+  let ids = [
+    ...new Set(
+      [...imgs]
+        .map((i) => Number(i.dataset.thumbAid))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
+  ];
+  if (!ids.length) return;
+  let res = await new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: "trade_ads_resolve_thumbs", assetIds: ids },
+      resolve,
+    );
+  });
+  if (!res?.ok || !res.urls) return;
+  for (let img of imgs) {
+    if (!img.isConnected) continue;
+    let u = res.urls[String(img.dataset.thumbAid)];
+    if (u) {
+      trade_ads_attach_thumb_error_handler(img);
+      img.src = u;
+      img.removeAttribute("data-thumb-pending");
+    }
+  }
+}
+
+async function trade_ads_merge_verify_ui(patch) {
+  let prev =
+    (await get_storage([trade_ads_verify_storage_key]))[
+      trade_ads_verify_storage_key
+    ] || {};
+  let next = {
+    step: "idle",
+    phrase: "",
+    error: "",
+    userId: null,
+    ...prev,
+    ...patch,
+  };
+  await set_storage({ [trade_ads_verify_storage_key]: next });
+  return next;
+}
+
+const trade_ads_alarm_name_popup = "tradeAdsAutoPost";
+const trade_ads_interval_min_popup = 15;
+const trade_ads_interval_max_popup = 43200;
+
+let trade_ads_inventory_session_items = null;
+let trade_ads_inventory_session_promise = null;
+
+function trade_ads_reset_inventory_session() {
+  trade_ads_inventory_session_items = null;
+  trade_ads_inventory_session_promise = null;
+}
+
+async function trade_ads_load_inventory_session() {
+  if (trade_ads_inventory_session_items != null)
+    return trade_ads_inventory_session_items;
+  if (trade_ads_inventory_session_promise)
+    return trade_ads_inventory_session_promise;
+  trade_ads_inventory_session_promise = (async () => {
+    let res = await new Promise((resolve) =>
+      chrome.runtime.sendMessage({ type: "trade_ads_inventory" }, resolve),
+    );
+    trade_ads_inventory_session_promise = null;
+    if (!res?.ok) throw new Error(res?.error || "Could not load inventory");
+    trade_ads_inventory_session_items = res.items || [];
+    return trade_ads_inventory_session_items;
+  })();
+  return trade_ads_inventory_session_promise;
+}
+
+function trade_ads_default_local_config() {
+  return {
+    offer_slots: [null, null, null, null],
+    request_slots: [null, null, null, null],
+    offer_random: false,
+    request_random: true,
+    request_demand_min: 2,
+    offer_robux: 0,
+    notify_on_post: true,
+    posting_paused: true,
+    auto_interval_minutes: 15,
+  };
+}
+
+function format_trade_ads_duration(total_minutes) {
+  let m = Math.max(0, Math.floor(Number(total_minutes) || 0));
+  if (m < 60) return `${m} minute${m === 1 ? "" : "s"}`;
+  let h = Math.floor(m / 60);
+  let r = m % 60;
+  if (m < 1440) {
+    if (r === 0) return `${h} hour${h === 1 ? "" : "s"}`;
+    return `${h}h ${r}m`;
+  }
+  let d = Math.floor(m / 1440);
+  let rem = m % 1440;
+  if (rem === 0) return `${d} day${d === 1 ? "" : "s"}`;
+  let rh = Math.floor(rem / 60);
+  let rm = rem % 60;
+  let parts = [`${d}d`];
+  if (rh > 0) parts.push(`${rh}h`);
+  if (rm > 0) parts.push(`${rm}m`);
+  return parts.join(" ");
+}
+
+function clear_trade_ads_countdown_timer() {
+  if (globalThis.__nte_trade_ads_cd_timer) {
+    clearInterval(globalThis.__nte_trade_ads_cd_timer);
+    globalThis.__nte_trade_ads_cd_timer = null;
+  }
+}
+
+function format_trade_ad_countdown(ms_remaining) {
+  let ms = Number(ms_remaining);
+  if (!Number.isFinite(ms) || ms <= 0) return "Posting an ad momentarily";
+  if (ms < 1000) return "Posting an ad in less than a second";
+
+  let totalSec = Math.floor(ms / 1000);
+
+  if (totalSec < 60) {
+    return `Posting an ad in ${totalSec} second${totalSec === 1 ? "" : "s"}`;
+  }
+
+  let m = Math.floor(totalSec / 60);
+  let s = totalSec % 60;
+
+  if (totalSec < 3600) {
+    if (s === 0) return `Posting an ad in ${m} minute${m === 1 ? "" : "s"}`;
+    return `Posting an ad in ${m} minute${m === 1 ? "" : "s"} ${s} second${s === 1 ? "" : "s"}`;
+  }
+
+  let h = Math.floor(totalSec / 3600);
+  let rem = totalSec % 3600;
+  m = Math.floor(rem / 60);
+  s = rem % 60;
+  let parts = [`${h} hour${h === 1 ? "" : "s"}`];
+  if (m > 0) parts.push(`${m} minute${m === 1 ? "" : "s"}`);
+  if (s > 0) parts.push(`${s} second${s === 1 ? "" : "s"}`);
+  return "Posting an ad in " + parts.join(" ");
+}
+
+async function trade_ads_save_merged_config(patch) {
+  let prev =
+    (await get_storage([trade_ads_config_storage_key]))[
+      trade_ads_config_storage_key
+    ] || {};
+  let next = { ...trade_ads_default_local_config(), ...prev, ...patch };
+  delete next.auto_post;
+  if (typeof next.posting_paused !== "boolean") next.posting_paused = true;
+  if (typeof next.notify_on_post !== "boolean")
+    next.notify_on_post = trade_ads_default_local_config().notify_on_post;
+  let mins = Math.floor(Number(next.auto_interval_minutes));
+  if (!Number.isFinite(mins))
+    mins = trade_ads_default_local_config().auto_interval_minutes;
+  next.auto_interval_minutes = Math.max(
+    trade_ads_interval_min_popup,
+    Math.min(trade_ads_interval_max_popup, mins),
+  );
+  await new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: "trade_ads_save_config", config: next },
+      () => {
+        chrome.runtime.lastError;
+        resolve();
+      },
+    );
+  });
+  return next;
+}
+
+async function trade_ads_fetch_status_light_from_bg() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type: "trade_ads_get_status" }, (r) => {
+      chrome.runtime.lastError;
+      resolve(r && typeof r === "object" ? r : null);
+    });
+  });
+}
+
+async function trade_ads_fetch_status_from_bg() {
+  await new Promise((resolve) => {
+    chrome.runtime.sendMessage("getData", () => {
+      chrome.runtime.lastError;
+      resolve();
+    });
+  });
+  return trade_ads_fetch_status_light_from_bg();
+}
+
+function trade_ads_attach_picker(root, opts) {
+  let { side, inventory, inventoryPromise, onPick, onInventoryError } = opts;
+  let overlay = document.createElement("div");
+  overlay.className = "ta-overlay";
+  let ph =
+    side === "offer"
+      ? "Filter by name or acronym…"
+      : "Search name, acronym, or words…";
+  overlay.innerHTML = `
+    <div class="ta-sheet ta-sheet-picker">
+      <div class="ta-sheet-head">
+        <button type="button" class="ta-sheet-close" aria-label="Close">×</button>
+        <input type="search" class="ta-search-input" placeholder="${escape_html(ph)}" />
+      </div>
+      <div class="ta-sheet-body ta-sheet-body-strip">
+        <div class="ta-strip-scroll" tabindex="0" role="listbox" aria-label="${side === "offer" ? "Your items" : "Catalog items"}"></div>
+        <div class="ta-strip-footer" aria-live="polite"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  let strip = overlay.querySelector(".ta-strip-scroll");
+  let footer = overlay.querySelector(".ta-strip-footer");
+  let input = overlay.querySelector(".ta-search-input");
+
+  strip.addEventListener(
+    "wheel",
+    (e) => {
+      if (strip.scrollWidth <= strip.clientWidth + 1) return;
+      let delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (delta === 0) return;
+      e.preventDefault();
+      strip.scrollLeft += delta;
+    },
+    { passive: false },
+  );
+
+  function close() {
+    overlay.remove();
+  }
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) close();
+  });
+  overlay.querySelector(".ta-sheet-close").addEventListener("click", close);
+
+  function set_footer(html) {
+    footer.innerHTML = html;
+  }
+
+  function pick_cell_el(item) {
+    let id = item.assetId ?? item.id;
+    if (!Number.isFinite(Number(id))) return null;
+    let cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "ta-pick-strip-cell";
+    cell.setAttribute("role", "option");
+    let nm = item.name || `#${id}`;
+    let ac = item.acronym ? String(item.acronym).trim() : "";
+    cell.title = ac ? `${nm} (${ac})` : nm;
+    let img = document.createElement("img");
+    img.alt = nm;
+    img.src = trade_ads_thumb_placeholder_src;
+    img.decoding = "async";
+    img.dataset.thumbAid = String(id);
+    img.dataset.thumbPending = "1";
+    let rv =
+      item.valueLine != null
+        ? Number(item.valueLine)
+        : item.rolimonsValue != null
+          ? Number(item.rolimonsValue)
+          : null;
+    let rp = item.rap != null ? Number(item.rap) : null;
+    if (rv === null && rp === null && item.value != null) {
+      rv = Number(item.value);
+      rp = 0;
+    }
+    let meta = document.createElement("div");
+    meta.className = "ta-pick-cell-meta";
+    meta.innerHTML = `<div class="ta-pick-metric"><span>Value</span><b>${rv != null ? format_number(rv) : "—"}</b></div>
+      <div class="ta-pick-metric"><span>RAP</span><b>${rp != null ? format_number(rp) : "—"}</b></div>`;
+    cell.append(img, meta);
+    cell.addEventListener("click", () => {
+      onPick(Number(id), nm);
+      close();
+    });
+    return cell;
+  }
+
+  async function render_offer_strip_from(list) {
+    strip.textContent = "";
+    let n = 0;
+    for (let item of list) {
+      let el = pick_cell_el(item);
+      if (el) {
+        strip.appendChild(el);
+        n++;
+      }
+    }
+    if (!n) {
+      let d = document.createElement("div");
+      d.className = "ta-strip-empty";
+      d.textContent = "Nothing matches.";
+      strip.appendChild(d);
+      set_footer("");
+      return;
+    }
+    set_footer("");
+    await trade_ads_fill_thumbnails(strip);
+  }
+
+  if (side === "offer") {
+    let live_inv = Array.isArray(inventory) ? inventory : [];
+    let q = "";
+    function filter_inv() {
+      let qq = q.trim().toLowerCase();
+      if (!qq) return live_inv;
+      let tokens = qq.split(/\s+/).filter(Boolean);
+      return live_inv.filter((x) => {
+        let hay = `${String(x.name || "").toLowerCase()} ${String(x.acronym || "").toLowerCase()}`;
+        return tokens.every((t) => hay.includes(t));
+      });
+    }
+    async function refresh_offer_display() {
+      await render_offer_strip_from(filter_inv());
+    }
+    input.addEventListener("input", () => {
+      q = input.value;
+      void refresh_offer_display();
+    });
+    if (inventoryPromise && typeof inventoryPromise.then === "function") {
+      strip.textContent = "";
+      let load_msg = document.createElement("div");
+      load_msg.className = "ta-strip-empty";
+      load_msg.textContent = "Loading your items…";
+      strip.appendChild(load_msg);
+      set_footer(`<span class="ta-strip-hint">Loading…</span>`);
+      inventoryPromise
+        .then((inv) => {
+          live_inv = Array.isArray(inv) ? inv : [];
+          if (!live_inv.length) {
+            strip.textContent = "";
+            let em = document.createElement("div");
+            em.className = "ta-strip-empty";
+            em.textContent = "No tradeable items found.";
+            strip.appendChild(em);
+            set_footer("");
+            return;
+          }
+          void refresh_offer_display();
+        })
+        .catch((e) => {
+          let msg = e?.message || String(e);
+          strip.textContent = "";
+          let em = document.createElement("div");
+          em.className = "ta-strip-empty";
+          em.textContent = msg;
+          strip.appendChild(em);
+          set_footer("");
+          if (typeof onInventoryError === "function") onInventoryError(msg);
+        });
+    } else {
+      void refresh_offer_display();
+    }
+  } else {
+    let request_offset = 0;
+    let request_has_more = false;
+    let request_loading = false;
+    let request_query = "";
+    let page_limit = 100;
+
+    async function fetch_catalog_page(append) {
+      if (request_loading) return;
+      if (append && !request_has_more) return;
+      request_loading = true;
+      let offset = append ? request_offset : 0;
+      if (!append) {
+        strip.textContent = "";
+        set_footer(`<span class="ta-strip-hint">Loading…</span>`);
+      } else {
+        set_footer(`<span class="ta-strip-hint">Loading more…</span>`);
+      }
+      let res = await new Promise((resolve) =>
+        chrome.runtime.sendMessage(
+          {
+            type: "trade_ads_search_items",
+            query: request_query,
+            limit: page_limit,
+            offset,
+          },
+          resolve,
+        ),
+      );
+      request_loading = false;
+      if (!res?.ok) {
+        strip.textContent = "";
+        let d = document.createElement("div");
+        d.className = "ta-strip-empty";
+        d.textContent = res?.error || "Could not load items.";
+        strip.appendChild(d);
+        set_footer("");
+        request_has_more = false;
+        return;
+      }
+      for (let x of res.items || []) {
+        let el = pick_cell_el({
+          id: x.id,
+          name: x.name,
+          assetId: x.id,
+          acronym: x.acronym,
+          value: x.value,
+          valueLine: x.valueLine,
+          rap: x.rap,
+        });
+        if (el) strip.appendChild(el);
+      }
+      request_offset = offset + (res.items?.length || 0);
+      request_has_more = !!res.hasMore;
+      if (!strip.querySelector(".ta-pick-strip-cell")) {
+        strip.textContent = "";
+        let d = document.createElement("div");
+        d.className = "ta-strip-empty";
+        d.textContent = request_query
+          ? "No items match that search."
+          : "No valued items in catalog.";
+        strip.appendChild(d);
+        set_footer("");
+        return;
+      }
+      await trade_ads_fill_thumbnails(strip);
+      if (request_has_more) {
+        let t = res.total != null ? `${request_offset} / ${res.total} · ` : "";
+        set_footer(
+          `<span class="ta-strip-hint">${t}Scroll right for more</span>`,
+        );
+      } else {
+        set_footer("");
+      }
+      requestAnimationFrame(() => {
+        if (
+          request_has_more &&
+          !request_loading &&
+          strip.scrollWidth <= strip.clientWidth + 8
+        ) {
+          fetch_catalog_page(true);
+        }
+      });
+    }
+
+    let debounce;
+    function schedule_search() {
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        request_query = input.value.trim();
+        request_offset = 0;
+        request_has_more = false;
+        fetch_catalog_page(false);
+      }, 200);
+    }
+    input.addEventListener("input", schedule_search);
+    strip.addEventListener(
+      "scroll",
+      () => {
+        if (!request_has_more || request_loading) return;
+        if (strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 72) {
+          fetch_catalog_page(true);
+        }
+      },
+      { passive: true },
+    );
+    schedule_search();
+  }
+}
+
+async function render_trade_ads_composer(root, status) {
+  clear_trade_ads_countdown_timer();
+  let cfg = { ...trade_ads_default_local_config(), ...(status.config || {}) };
+  delete cfg.auto_post;
+  if (typeof cfg.posting_paused !== "boolean") cfg.posting_paused = true;
+  let im = Math.floor(Number(cfg.auto_interval_minutes));
+  cfg.auto_interval_minutes = Math.max(
+    trade_ads_interval_min_popup,
+    Math.min(
+      trade_ads_interval_max_popup,
+      Number.isFinite(im)
+        ? im
+        : trade_ads_default_local_config().auto_interval_minutes,
+    ),
+  );
+  let last_err = status.last_auto_error;
+  let last_auto = status.last_auto_post_at;
+  let slot_metrics =
+    status.slot_item_metrics && typeof status.slot_item_metrics === "object"
+      ? status.slot_item_metrics
+      : {};
+
+  function trade_ads_metric_value_for_display(m) {
+    if (!m) return 0;
+    if (m.valueLine != null) return Number(m.valueLine) || 0;
+    let raw = Number(m.rolimonsValue);
+    if (Number.isFinite(raw) && raw > 0) return raw;
+    return Number(m.rap) || 0;
+  }
+
+  function slot_metrics_html(aid) {
+    let m = slot_metrics[String(aid)];
+    let val = m ? format_number(trade_ads_metric_value_for_display(m)) : "—";
+    let rap = m ? format_number(Number(m.rap) || 0) : "—";
+    return `<div class="ta-slot-metrics">
+      <div class="ta-slot-metric-row"><span class="ta-metric-k">Value</span><span class="ta-metric-v">${val}</span></div>
+      <div class="ta-slot-metric-row"><span class="ta-metric-k">RAP</span><span class="ta-metric-v">${rap}</span></div>
+    </div>`;
+  }
+
+  function sum_offer_items_value() {
+    if (cfg.offer_random) return null;
+    let s = 0;
+    for (let id of cfg.offer_slots || []) {
+      if (id == null) continue;
+      let m = slot_metrics[String(id)];
+      if (m) s += trade_ads_metric_value_for_display(m);
+    }
+    return s;
+  }
+
+  function sum_request_items_value() {
+    if (cfg.request_random) return null;
+    let s = 0;
+    for (let id of cfg.request_slots || []) {
+      if (id == null) continue;
+      let m = slot_metrics[String(id)];
+      if (m) s += trade_ads_metric_value_for_display(m);
+    }
+    return s;
+  }
+
+  let robuxOffer = Math.floor(Number(cfg.offer_robux) || 0);
+  let offerItemsSum = sum_offer_items_value();
+  let requestItemsSum = sum_request_items_value();
+  let offerGrand = offerItemsSum != null ? offerItemsSum + robuxOffer : null;
+  let roli_icon_url = escape_html(get_asset_url("assets/rolimons.png"));
+
+  function offer_has_any_pick() {
+    return (cfg.offer_slots || []).some((id) => id != null);
+  }
+
+  function request_has_any_pick() {
+    return (cfg.request_slots || []).some((id) => id != null);
+  }
+
+  function preview_side_label_line(title, opts, extraClass) {
+    let { randomMode, showTotal, totalNum } = opts;
+    let mod = extraClass ? ` ${extraClass}` : "";
+    if (randomMode || !showTotal) {
+      return `<div class="ta-preview-label${mod}">${escape_html(title)}</div>`;
+    }
+    return `<div class="ta-preview-label ta-preview-label-with-total${mod}">
+      <span class="ta-preview-label-text">${escape_html(title)}</span>
+      <span class="ta-preview-label-total" title="Rolimons-side total">
+        <img class="ta-preview-label-roli" src="${roli_icon_url}" width="15" height="15" alt="" decoding="async" />
+        <span class="ta-preview-label-value">${escape_html(format_number(totalNum))}</span>
+      </span>
+    </div>`;
+  }
+
+  function slot_html(side, i, id, random_each_post) {
+    if (random_each_post) {
+      let hint =
+        side === "offer" ? "Random offers each post" : "Random each post";
+      return `
+        <div class="ta-slot" data-side="${side}" data-index="${i}" data-random="1">
+          <span class="ta-slot-random" title="${escape_html(hint)}">🎲</span>
+        </div>`;
+    }
+    if (id) {
+      let aid = Number(id);
+      return `
+        <div class="ta-slot" data-side="${side}" data-index="${i}">
+          <div class="ta-slot-thumb-wrap">
+            <img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" />
+            <button type="button" class="ta-slot-clear" data-side="${side}" data-index="${i}" aria-label="Clear">×</button>
+          </div>
+          ${slot_metrics_html(aid)}
+        </div>`;
+    }
+    return `
+      <div class="ta-slot ta-slot-is-empty" data-side="${side}" data-index="${i}">
+        <span class="ta-slot-empty">${side === "offer" ? "Offer" : "Want"}</span>
+      </div>`;
+  }
+
+  let rows = "";
+  rows += preview_side_label_line("You offer", {
+    randomMode: !!cfg.offer_random,
+    showTotal: !cfg.offer_random && (offer_has_any_pick() || robuxOffer > 0),
+    totalNum: offerGrand != null ? offerGrand : 0,
+  });
+  rows += `<div class="ta-slot-row">`;
+  for (let i = 0; i < 4; i++)
+    rows += slot_html("offer", i, cfg.offer_slots[i], cfg.offer_random);
+  rows += `</div>`;
+  rows += preview_side_label_line(
+    "You request",
+    {
+      randomMode: !!cfg.request_random,
+      showTotal: !cfg.request_random && request_has_any_pick(),
+      totalNum: requestItemsSum != null ? requestItemsSum : 0,
+    },
+    "ta-preview-label-section-gap",
+  );
+  rows += `<div class="ta-slot-row">`;
+  for (let i = 0; i < 4; i++)
+    rows += slot_html("request", i, cfg.request_slots[i], cfg.request_random);
+  rows += `</div>`;
+
+  root.innerHTML = `
+    <div class="ta-card">
+      <div class="ta-card-head">
+        <div>
+          <div class="ta-card-title">Ad preview</div>
+          <div class="ta-card-sub">Tap a square to fill slots, or enable random for offers and/or requests.</div>
+        </div>
+      </div>
+      ${rows}
+      <div class="ta-divider"></div>
+      <div class="ta-row">
+        <label class="ta-toggle-pill"><input type="checkbox" id="ta-offer-random" ${cfg.offer_random ? "checked" : ""}/> Randomize offers each ad</label>
+      </div>
+      <div class="ta-row">
+        <label class="ta-toggle-pill"><input type="checkbox" id="ta-req-random" ${cfg.request_random ? "checked" : ""}/> Randomize requests each ad</label>
+      </div>
+      <div class="ta-row">
+        <label class="ta-field">
+          <span>Min demand (random)</span>
+          <select id="ta-demand">
+            <option value="0"${cfg.request_demand_min === 0 ? " selected" : ""}>Any</option>
+            <option value="1"${cfg.request_demand_min === 1 ? " selected" : ""}>Low+</option>
+            <option value="2"${cfg.request_demand_min === 2 ? " selected" : ""}>Normal+</option>
+            <option value="3"${cfg.request_demand_min === 3 ? " selected" : ""}>High+</option>
+            <option value="4"${cfg.request_demand_min === 4 ? " selected" : ""}>Amazing</option>
+          </select>
+        </label>
+        <label class="ta-field">
+          <span>Offer Robux</span>
+          <input type="number" id="ta-robux" min="0" step="1" value="${Number(cfg.offer_robux) || 0}" />
+        </label>
+      </div>
+      <div class="ta-row">
+        <label class="ta-toggle-pill"><input type="checkbox" id="ta-notify-post" ${cfg.notify_on_post !== false ? "checked" : ""}/> Windows notification when a trade ad posts</label>
+      </div>
+    </div>
+
+    <div class="ta-schedule-card ${cfg.posting_paused ? "is-paused" : "is-live"}">
+      <div class="ta-schedule-top">
+        <div class="ta-schedule-copy">
+          <div class="ta-schedule-status-label" id="ta-schedule-status-text">Automatic posting (${cfg.posting_paused ? "off" : "on"})</div>
+          <p class="ta-schedule-next" id="ta-next-run" aria-live="polite"></p>
+        </div>
+        <label class="ta-schedule-switch-wrap" title="Turn automatic posting on or off">
+          <span class="ta-switch">
+            <input type="checkbox" id="ta-schedule-live" ${!cfg.posting_paused ? "checked" : ""} />
+            <span class="ta-switch-knob" aria-hidden="true"></span>
+          </span>
+        </label>
+      </div>
+
+      <div class="ta-stepper-block">
+        <div class="ta-stepper-label-row">
+          <span class="ta-stepper-title">Minutes between posts</span>
+        </div>
+        <div class="ta-interval-bar">
+          <button type="button" class="ta-interval-bar-btn" id="ta-min-interval" aria-label="Subtract one minute">−</button>
+          <input type="number" class="ta-interval-bar-input" id="ta-interval-val" min="15" max="43200" value="${cfg.auto_interval_minutes}" inputmode="numeric" aria-label="Minutes between posts (editable)" />
+          <button type="button" class="ta-interval-bar-btn" id="ta-plus-interval" aria-label="Add one minute">+</button>
+        </div>
+        <div class="ta-interval-caption" id="ta-interval-human">${escape_html(format_trade_ads_duration(cfg.auto_interval_minutes))}</div>
+      </div>
+    </div>
+
+    <div class="ta-row ta-final-actions" style="margin-top:14px">
+      <button type="button" class="ta-btn ta-btn-primary" id="ta-post-now">Post now</button>
+      <button type="button" class="ta-btn ta-btn-ghost" id="ta-disconnect">Disconnect Rolimons</button>
+    </div>
+    <div class="ta-status-line" id="ta-post-status"></div>
+    ${
+      last_err
+        ? `<div class="ta-status-line ta-err" id="ta-auto-post-err">Auto-post: ${escape_html(String(last_err).slice(0, 200))}</div>`
+        : ""
+    }
+    <div class="ta-status-line" id="ta-last-post-at"${!last_auto ? ' style="display:none"' : ""}>${
+      last_auto
+        ? `Last post: ${escape_html(format_relative_time(Number(last_auto)))}`
+        : ""
+    }</div>
+  `;
+
+  root
+    .querySelectorAll('.ta-slot[data-side="offer"]:not([data-random="1"])')
+    .forEach((el) => {
+      el.addEventListener("click", () => {
+        if (cfg.offer_random) return;
+        let idx = Number(el.dataset.index);
+        let status_line = root.querySelector("#ta-post-status");
+        let pick_opts = {
+          side: "offer",
+          index: idx,
+          onInventoryError: (msg) => {
+            status_line.textContent = msg;
+            status_line.className = "ta-status-line ta-err";
+          },
+          onPick: async (id) => {
+            let slots = cfg.offer_slots.slice();
+            slots[idx] = id;
+            void render_trade_ads_composer(root, {
+              ...status,
+              config: { ...(status.config || {}), offer_slots: slots },
+              slot_item_metrics: { ...(status.slot_item_metrics || {}) },
+              last_auto_error: null,
+            });
+            await trade_ads_save_merged_config({ offer_slots: slots });
+            let fresh = await trade_ads_fetch_status_from_bg();
+            if (!fresh?.verified) {
+              await render_trade_ads_tab();
+              return;
+            }
+            await render_trade_ads_composer(root, {
+              ...fresh,
+              last_auto_error: null,
+            });
+          },
+        };
+        if (trade_ads_inventory_session_items != null) {
+          pick_opts.inventory = trade_ads_inventory_session_items;
+        } else {
+          pick_opts.inventoryPromise = trade_ads_load_inventory_session();
+        }
+        trade_ads_attach_picker(root, pick_opts);
+      });
+    });
+
+  root
+    .querySelectorAll('.ta-slot[data-side="request"]:not([data-random="1"])')
+    .forEach((el) => {
+      el.addEventListener("click", async () => {
+        if (cfg.request_random) return;
+        let idx = Number(el.dataset.index);
+        trade_ads_attach_picker(root, {
+          side: "request",
+          index: idx,
+          inventory: [],
+          onPick: async (id) => {
+            let slots = cfg.request_slots.slice();
+            slots[idx] = id;
+            void render_trade_ads_composer(root, {
+              ...status,
+              config: { ...(status.config || {}), request_slots: slots },
+              slot_item_metrics: { ...(status.slot_item_metrics || {}) },
+            });
+            await trade_ads_save_merged_config({ request_slots: slots });
+            let fresh = await trade_ads_fetch_status_from_bg();
+            if (!fresh?.verified) {
+              await render_trade_ads_tab();
+              return;
+            }
+            await render_trade_ads_composer(root, fresh);
+          },
+        });
+      });
+    });
+
+  root.querySelectorAll(".ta-slot-clear").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      let side = btn.dataset.side;
+      let idx = Number(btn.dataset.index);
+      if (side === "offer") {
+        let slots = cfg.offer_slots.slice();
+        let prevId = slots[idx];
+        slots[idx] = null;
+        let sm = { ...(status.slot_item_metrics || {}) };
+        if (prevId != null) delete sm[String(prevId)];
+        void render_trade_ads_composer(root, {
+          ...status,
+          config: { ...(status.config || {}), offer_slots: slots },
+          slot_item_metrics: sm,
+        });
+        void trade_ads_save_merged_config({ offer_slots: slots }).then(
+          async () => {
+            let fresh = await trade_ads_fetch_status_light_from_bg();
+            if (!fresh?.verified) {
+              await render_trade_ads_tab();
+              return;
+            }
+            await render_trade_ads_composer(root, fresh);
+          },
+        );
+      } else {
+        let slots = cfg.request_slots.slice();
+        let prevId = slots[idx];
+        slots[idx] = null;
+        let sm = { ...(status.slot_item_metrics || {}) };
+        if (prevId != null) delete sm[String(prevId)];
+        void render_trade_ads_composer(root, {
+          ...status,
+          config: { ...(status.config || {}), request_slots: slots },
+          slot_item_metrics: sm,
+        });
+        void trade_ads_save_merged_config({ request_slots: slots }).then(
+          async () => {
+            let fresh = await trade_ads_fetch_status_light_from_bg();
+            if (!fresh?.verified) {
+              await render_trade_ads_tab();
+              return;
+            }
+            await render_trade_ads_composer(root, fresh);
+          },
+        );
+      }
+    });
+  });
+
+  root
+    .querySelector("#ta-offer-random")
+    .addEventListener("change", async (e) => {
+      await trade_ads_save_merged_config({ offer_random: e.target.checked });
+      let fresh = await trade_ads_fetch_status_from_bg();
+      if (fresh?.verified) await render_trade_ads_composer(root, fresh);
+      else await render_trade_ads_tab();
+    });
+
+  root.querySelector("#ta-req-random").addEventListener("change", async (e) => {
+    await trade_ads_save_merged_config({ request_random: e.target.checked });
+    let fresh = await trade_ads_fetch_status_from_bg();
+    if (fresh?.verified) await render_trade_ads_composer(root, fresh);
+    else await render_trade_ads_tab();
+  });
+
+  root.querySelector("#ta-demand").addEventListener("change", async (e) => {
+    await trade_ads_save_merged_config({
+      request_demand_min: Number(e.target.value),
+    });
+    let fresh = await trade_ads_fetch_status_from_bg();
+    if (fresh?.verified) await render_trade_ads_composer(root, fresh);
+    else await render_trade_ads_tab();
+  });
+
+  root.querySelector("#ta-robux").addEventListener("change", async (e) => {
+    await trade_ads_save_merged_config({
+      offer_robux: Math.max(0, Number(e.target.value) || 0),
+    });
+    let fresh = await trade_ads_fetch_status_from_bg();
+    if (fresh?.verified)
+      await render_trade_ads_composer(root, {
+        ...fresh,
+        last_auto_error: null,
+      });
+    else await render_trade_ads_tab();
+  });
+
+  root
+    .querySelector("#ta-notify-post")
+    .addEventListener("change", async (e) => {
+      if (e.target.checked) {
+        let granted = await maybe_request_notifications();
+        if (!granted) {
+          e.target.checked = false;
+          cfg = await trade_ads_save_merged_config({ notify_on_post: false });
+          return;
+        }
+      }
+      cfg = await trade_ads_save_merged_config({
+        notify_on_post: e.target.checked,
+      });
+    });
+
+  function refresh_trade_ads_next_run(root_el, paused, initial_due_at) {
+    clear_trade_ads_countdown_timer();
+    let el = root_el.querySelector("#ta-next-run");
+    if (!el) return;
+    if (paused) {
+      el.textContent = "";
+      globalThis.__nte_trade_ads_due_at = null;
+      return;
+    }
+
+    globalThis.__nte_trade_ads_due_at =
+      typeof initial_due_at === "number" && Number.isFinite(initial_due_at)
+        ? initial_due_at
+        : null;
+
+    function tick() {
+      let due = globalThis.__nte_trade_ads_due_at;
+      if (typeof due === "number" && Number.isFinite(due)) {
+        el.textContent = format_trade_ad_countdown(due - Date.now());
+        return;
+      }
+      chrome.alarms.get(trade_ads_alarm_name_popup, (a) => {
+        if (chrome.runtime.lastError || !a?.scheduledTime) {
+          el.textContent = "";
+          return;
+        }
+        let ms = a.scheduledTime - Date.now();
+        el.textContent = format_trade_ad_countdown(ms);
+      });
+    }
+
+    tick();
+    globalThis.__nte_trade_ads_cd_timer = setInterval(tick, 1000);
+  }
+
+  function sync_schedule_ui() {
+    let paused = !!cfg.posting_paused;
+    let card = root.querySelector(".ta-schedule-card");
+    if (card) {
+      card.classList.toggle("is-paused", paused);
+      card.classList.toggle("is-live", !paused);
+    }
+    let status_lbl = root.querySelector("#ta-schedule-status-text");
+    if (status_lbl)
+      status_lbl.textContent = paused
+        ? "Automatic posting (off)"
+        : "Automatic posting (on)";
+    let sw = root.querySelector("#ta-schedule-live");
+    if (sw) sw.checked = !paused;
+    let v = root.querySelector("#ta-interval-val");
+    if (v) v.value = String(cfg.auto_interval_minutes);
+    let hum = root.querySelector("#ta-interval-human");
+    if (hum)
+      hum.textContent = format_trade_ads_duration(cfg.auto_interval_minutes);
+    let minus = root.querySelector("#ta-min-interval");
+    if (minus)
+      minus.disabled =
+        cfg.auto_interval_minutes <= trade_ads_interval_min_popup;
+    refresh_trade_ads_next_run(root, paused, status.next_auto_post_due_at);
+  }
+
+  sync_schedule_ui();
+
+  root
+    .querySelector("#ta-schedule-live")
+    .addEventListener("change", async (e) => {
+      cfg = await trade_ads_save_merged_config({
+        posting_paused: !e.target.checked,
+      });
+      sync_schedule_ui();
+    });
+
+  async function bump_interval(delta) {
+    let next = Math.max(
+      trade_ads_interval_min_popup,
+      Math.min(trade_ads_interval_max_popup, cfg.auto_interval_minutes + delta),
+    );
+    if (next === cfg.auto_interval_minutes) return;
+    cfg = await trade_ads_save_merged_config({ auto_interval_minutes: next });
+    sync_schedule_ui();
+  }
+
+  root
+    .querySelector("#ta-min-interval")
+    .addEventListener("click", () => bump_interval(-1));
+  root
+    .querySelector("#ta-plus-interval")
+    .addEventListener("click", () => bump_interval(1));
+
+  let interval_input = root.querySelector("#ta-interval-val");
+  interval_input.addEventListener("focus", () => interval_input.select());
+  interval_input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      interval_input.blur();
+    }
+  });
+  interval_input.addEventListener("blur", async () => {
+    let n = Math.floor(Number(interval_input.value));
+    if (!Number.isFinite(n)) {
+      interval_input.value = String(cfg.auto_interval_minutes);
+      return;
+    }
+    n = Math.max(
+      trade_ads_interval_min_popup,
+      Math.min(trade_ads_interval_max_popup, n),
+    );
+    if (n === cfg.auto_interval_minutes) {
+      interval_input.value = String(n);
+      return;
+    }
+    cfg = await trade_ads_save_merged_config({ auto_interval_minutes: n });
+    sync_schedule_ui();
+  });
+
+  root.querySelector("#ta-post-now").addEventListener("click", async () => {
+    let btn = root.querySelector("#ta-post-now");
+    let line = root.querySelector("#ta-post-status");
+    btn.disabled = true;
+    line.textContent = "Posting…";
+    line.className = "ta-status-line";
+    if (cfg.notify_on_post !== false) await maybe_request_notifications();
+    let res = await new Promise((resolve) =>
+      chrome.runtime.sendMessage({ type: "trade_ads_post" }, resolve),
+    );
+    btn.disabled = false;
+    if (res?.ok) {
+      let pid = res.player_id ?? res.body?.player_id;
+      let url = pid
+        ? `https://www.rolimons.com/playertrades/${encodeURIComponent(String(pid))}`
+        : "https://www.rolimons.com/tradeads";
+      line.innerHTML = `Posted. <a href="${url}" target="_blank" rel="noopener noreferrer">View trade ad</a>`;
+      line.className = "ta-status-line ta-ok";
+      let fresh = await trade_ads_fetch_status_from_bg();
+      if (fresh?.last_auto_post_at) {
+        let lp = root.querySelector("#ta-last-post-at");
+        if (lp) {
+          lp.style.display = "";
+          lp.textContent = `Last post: ${format_relative_time(Number(fresh.last_auto_post_at))}`;
+        }
+      }
+    } else {
+      line.textContent = res?.error || "Failed";
+      line.className = "ta-status-line ta-err";
+    }
+  });
+
+  root.querySelector("#ta-disconnect").addEventListener("click", async () => {
+    trade_ads_reset_inventory_session();
+    await new Promise((resolve) =>
+      chrome.runtime.sendMessage({ type: "trade_ads_disconnect" }, resolve),
+    );
+    await trade_ads_merge_verify_ui({ step: "idle", phrase: "", error: "" });
+    render_trade_ads_tab();
+  });
+
+  {
+    let prev = globalThis.__nte_trade_ads_storage_listener;
+    if (prev) {
+      try {
+        chrome.storage.onChanged.removeListener(prev);
+      } catch {}
+    }
+    function nte_trade_ads_storage_sync(changes, area) {
+      if (area !== "local") return;
+      if (changes.trade_ads_last_auto_error) {
+        let nv = changes.trade_ads_last_auto_error.newValue;
+        if (nv == null || nv === "")
+          document.getElementById("ta-auto-post-err")?.remove();
+      }
+      if (changes.trade_ads_last_auto_post_at?.newValue) {
+        let lp = document.getElementById("ta-last-post-at");
+        let at = changes.trade_ads_last_auto_post_at.newValue;
+        if (lp && at) {
+          lp.style.display = "";
+          lp.textContent = `Last post: ${format_relative_time(Number(at))}`;
+        }
+      }
+      if (
+        changes.trade_ads_last_auto_post_at ||
+        changes[trade_ads_config_storage_key] ||
+        changes.trade_ads_schedule_anchor_at
+      ) {
+        chrome.runtime.sendMessage({ type: "trade_ads_get_next_due" }, (r) => {
+          if (chrome.runtime.lastError) return;
+          if (
+            r &&
+            typeof r.next_auto_post_due_at === "number" &&
+            Number.isFinite(r.next_auto_post_due_at)
+          ) {
+            globalThis.__nte_trade_ads_due_at = r.next_auto_post_due_at;
+          }
+        });
+      }
+    }
+    globalThis.__nte_trade_ads_storage_listener = nte_trade_ads_storage_sync;
+    chrome.storage.onChanged.addListener(nte_trade_ads_storage_sync);
+  }
+
+  void trade_ads_fill_thumbnails(root);
+}
+
+async function render_trade_ads_verify_flow(root, status, vu) {
+  let step = vu.step || "idle";
+
+  if (step === "loading_phrase") {
+    root.innerHTML = `
+      <p class="ta-lede">Talking to Rolimons…</p>
+      <div class="ta-shimmer"></div>
+    `;
+    let r = await new Promise((resolve) =>
+      chrome.runtime.sendMessage({ type: "trade_ads_get_phrase" }, resolve),
+    );
+    if (!r?.ok) {
+      await trade_ads_merge_verify_ui({
+        step: "idle",
+        error: r?.error || "Could not get phrase",
+      });
+    } else {
+      await trade_ads_merge_verify_ui({
+        step: "bio",
+        phrase: r.phrase,
+        userId: r.userId,
+        error: "",
+      });
+    }
+    vu = (await get_storage([trade_ads_verify_storage_key]))[
+      trade_ads_verify_storage_key
+    ];
+    return render_trade_ads_verify_flow(root, status, vu);
+  }
+
+  if (step === "verify_loading") {
+    root.innerHTML = `
+      <p class="ta-lede">Checking your Roblox profile…</p>
+      <div class="ta-shimmer"></div>
+    `;
+    let r = await new Promise((resolve) =>
+      chrome.runtime.sendMessage({ type: "trade_ads_verify_now" }, resolve),
+    );
+    if (!r?.ok) {
+      await trade_ads_merge_verify_ui({
+        step: "bio",
+        error: r?.error || "Verification failed",
+      });
+    } else {
+      await trade_ads_merge_verify_ui({ step: "done", error: "" });
+      return render_trade_ads_tab();
+    }
+    vu = (await get_storage([trade_ads_verify_storage_key]))[
+      trade_ads_verify_storage_key
+    ];
+    return render_trade_ads_verify_flow(root, status, vu);
+  }
+
+  if (step === "bio" && vu.phrase) {
+    let profile_url = `https://www.roblox.com/users/${vu.userId}/profile`;
+    root.innerHTML = `
+      <p class="ta-lede">Paste the phrase into your Roblox profile <strong>About</strong>, save, then verify.</p>
+      <div class="ta-card">
+        <div class="ta-card-title">Your phrase</div>
+        <div class="ta-phrase-box">${escape_html(vu.phrase)}</div>
+        <div class="ta-row">
+          <button type="button" class="ta-btn ta-btn-secondary" id="ta-copy-phrase">Copy phrase</button>
+          <a class="ta-btn ta-btn-secondary" href="${profile_url}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center;line-height:1.2;display:flex;align-items:center;justify-content:center;">Open profile</a>
+        </div>
+        ${vu.error ? `<div class="ta-status-line ta-err">${escape_html(vu.error)}</div>` : ""}
+        <div class="ta-row" style="margin-top:12px">
+          <button type="button" class="ta-btn ta-btn-primary" id="ta-run-verify">I added it — verify</button>
+          <button type="button" class="ta-btn ta-btn-ghost" id="ta-cancel-verify">Back</button>
+        </div>
+      </div>
+    `;
+    root
+      .querySelector("#ta-copy-phrase")
+      .addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(vu.phrase);
+          root.querySelector("#ta-copy-phrase").textContent = "Copied";
+          setTimeout(
+            () =>
+              (root.querySelector("#ta-copy-phrase").textContent =
+                "Copy phrase"),
+            1600,
+          );
+        } catch {}
+      });
+    root.querySelector("#ta-run-verify").addEventListener("click", async () => {
+      await trade_ads_merge_verify_ui({ step: "verify_loading", error: "" });
+      render_trade_ads_verify_flow(root, status, { step: "verify_loading" });
+    });
+    root
+      .querySelector("#ta-cancel-verify")
+      .addEventListener("click", async () => {
+        await trade_ads_merge_verify_ui({
+          step: "idle",
+          phrase: "",
+          error: "",
+        });
+        render_trade_ads_tab();
+      });
+    return;
+  }
+
+  root.innerHTML = `
+    <p class="ta-lede">Post Rolimons trade ads from the browser. One-time bio check, same idea as Essentials Bot.</p>
+    <div class="ta-card">
+      <div class="ta-card-head">
+        <div>
+          <div class="ta-card-title">Rolimons</div>
+          <div class="ta-card-sub">Signed in as ${escape_html(status.roblox?.name || "Roblox user")}</div>
+        </div>
+      </div>
+      ${vu.error ? `<div class="ta-status-line ta-err" style="margin-bottom:10px">${escape_html(vu.error)}</div>` : ""}
+      <button type="button" class="ta-btn ta-btn-primary" id="ta-connect-start">Start posting trade ads</button>
+    </div>
+  `;
+  root
+    .querySelector("#ta-connect-start")
+    .addEventListener("click", async () => {
+      await trade_ads_merge_verify_ui({ step: "loading_phrase", error: "" });
+      render_trade_ads_verify_flow(root, status, { step: "loading_phrase" });
+    });
+}
+
+async function render_trade_ads_tab() {
+  const root = document.getElementById("trade-ads-root");
+  if (!root) return;
+
+  clear_trade_ads_countdown_timer();
+  root.innerHTML = `<p class="ta-lede">Loading…</p>`;
+  chrome.runtime.sendMessage("getData", () => {
+    chrome.runtime.lastError;
+  });
+
+  let status = await new Promise((resolve) =>
+    chrome.runtime.sendMessage({ type: "trade_ads_get_status" }, resolve),
+  );
+
+  if (!status?.roblox) {
+    root.innerHTML = `<p class="ta-lede">Sign in to Roblox in this browser, then reopen this tab.</p>`;
+    return;
+  }
+
+  if (status.verified) {
+    render_trade_ads_composer(root, status);
+    return;
+  }
+
+  let vu =
+    (await get_storage([trade_ads_verify_storage_key]))[
+      trade_ads_verify_storage_key
+    ] || {};
+  await render_trade_ads_verify_flow(root, status, vu);
+}
+
 async function refresh_all_panels() {
   await render_options();
+  await render_trade_ads_tab();
 }
 
 const ROBLOX_TOTP_ENABLED_KEY = "roblox_totp_autofill_enabled";

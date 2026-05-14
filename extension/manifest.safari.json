@@ -14,16 +14,30 @@
   "content_scripts": [
     {
       "js": ["shared/browser_compat.js", "content/trade_request_bootstrap.js"],
-      "matches": ["https://*.roblox.com/trades*", "https://*.roblox.com/*/trades*"],
+      "matches": [
+        "https://*.roblox.com/trades*",
+        "https://*.roblox.com/*/trades*"
+      ],
       "run_at": "document_start"
     },
     {
       "js": ["shared/browser_compat.js", "content/trade_page_themes.js"],
-      "matches": ["https://*.roblox.com/trades*", "https://*.roblox.com/*/trades*"],
+      "matches": [
+        "https://*.roblox.com/trades*",
+        "https://*.roblox.com/*/trades*"
+      ],
       "run_at": "document_start"
     },
     {
-      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_history_proof_styles.js", "shared/nte_icons.js", "content/analyze_trade.js", "content/trade_page.js"],
+      "js": [
+        "shared/browser_compat.js",
+        "shared/username_lookup_guard.js",
+        "shared/nte_icon_utils.js",
+        "shared/nte_history_proof_styles.js",
+        "shared/nte_icons.js",
+        "content/analyze_trade.js",
+        "content/trade_page.js"
+      ],
       "matches": [
         "https://*.roblox.com/trades*",
         "https://*.roblox.com/*/trades*",
@@ -33,7 +47,15 @@
       "run_at": "document_idle"
     },
     {
-      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_history_proof_styles.js", "shared/nte_icons.js", "content/catalog_page.js", "content/catalog_item_intel.js"],
+      "js": [
+        "shared/browser_compat.js",
+        "shared/username_lookup_guard.js",
+        "shared/nte_icon_utils.js",
+        "shared/nte_history_proof_styles.js",
+        "shared/nte_icons.js",
+        "content/catalog_page.js",
+        "content/catalog_item_intel.js"
+      ],
       "matches": [
         "https://*.roblox.com/catalog/*",
         "https://*.roblox.com/*/catalog/*",
@@ -47,7 +69,13 @@
       "run_at": "document_idle"
     },
     {
-      "js": ["shared/browser_compat.js", "shared/username_lookup_guard.js", "shared/nte_icon_utils.js", "shared/nte_icons.js", "content/user_profile_page.js"],
+      "js": [
+        "shared/browser_compat.js",
+        "shared/username_lookup_guard.js",
+        "shared/nte_icon_utils.js",
+        "shared/nte_icons.js",
+        "content/user_profile_page.js"
+      ],
       "matches": [
         "https://*.roblox.com/users/*/profile*",
         "https://*.roblox.com/*/users/*/profile*",
@@ -94,7 +122,7 @@
     "open_in_tab": true,
     "page": "popup/popup.html"
   },
-  "permissions": ["storage", "alarms", "notifications", "activeTab"],
+  "permissions": ["storage", "alarms", "notifications", "activeTab", "cookies"],
   "short_name": "Nevos Trade",
   "version": "3.10.35",
   "web_accessible_resources": [
