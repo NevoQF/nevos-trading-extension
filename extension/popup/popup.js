@@ -2514,35 +2514,36 @@ async function render_trade_ads_verify_flow(root, status, vu) {
   if (step === "bio" && vu.phrase) {
     let profile_url = `https://www.roblox.com/users/${vu.userId}/profile`;
     root.innerHTML = `
-      <p class="ta-lede">Paste the phrase into your Roblox profile <strong>About</strong>, save, then verify.</p>
       <div class="ta-card">
-        <div class="ta-card-title">Your phrase</div>
-        <div class="ta-phrase-box">${escape_html(vu.phrase)}</div>
-        <div class="ta-row">
-          <button type="button" class="ta-btn ta-btn-secondary" id="ta-copy-phrase">Copy phrase</button>
-          <a class="ta-btn ta-btn-secondary" href="${profile_url}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center;line-height:1.2;display:flex;align-items:center;justify-content:center;">Open profile</a>
+        <div class="ta-card-head">
+          <div>
+            <div class="ta-card-title">Verify</div>
+            <div class="ta-card-sub">Add this to your Roblox bio</div>
+          </div>
         </div>
+        <div class="ta-phrase-box" id="ta-phrase-box" style="cursor:pointer;font-size:13px;padding:14px;text-align:center;" title="Click to copy">${escape_html(vu.phrase)}</div>
         ${vu.error ? `<div class="ta-status-line ta-err">${escape_html(vu.error)}</div>` : ""}
-        <div class="ta-row" style="margin-top:12px">
-          <button type="button" class="ta-btn ta-btn-primary" id="ta-run-verify">I added it — verify</button>
-          <button type="button" class="ta-btn ta-btn-ghost" id="ta-cancel-verify">Back</button>
+        <div class="ta-row">
+          <a class="ta-btn ta-btn-secondary" href="${profile_url}" target="_blank" rel="noopener" style="text-decoration:none;text-align:center;display:flex;align-items:center;justify-content:center;">Profile</a>
+          <button type="button" class="ta-btn ta-btn-primary" id="ta-run-verify">Verify</button>
+        </div>
+        <div style="text-align:center;margin-top:10px;">
+          <button type="button" id="ta-cancel-verify" style="background:none;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;padding:4px 8px;">Cancel</button>
         </div>
       </div>
     `;
-    root
-      .querySelector("#ta-copy-phrase")
-      .addEventListener("click", async () => {
-        try {
-          await navigator.clipboard.writeText(vu.phrase);
-          root.querySelector("#ta-copy-phrase").textContent = "Copied";
-          setTimeout(
-            () =>
-              (root.querySelector("#ta-copy-phrase").textContent =
-                "Copy phrase"),
-            1600,
-          );
-        } catch {}
-      });
+    let phrase_box = root.querySelector("#ta-phrase-box");
+    phrase_box.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(vu.phrase);
+        phrase_box.style.background = "var(--accent)";
+        phrase_box.style.color = "#fff";
+        setTimeout(() => {
+          phrase_box.style.background = "";
+          phrase_box.style.color = "";
+        }, 600);
+      } catch {}
+    });
     root.querySelector("#ta-run-verify").addEventListener("click", async () => {
       await trade_ads_merge_verify_ui({ step: "verify_loading", error: "" });
       render_trade_ads_verify_flow(root, status, { step: "verify_loading" });
@@ -2561,16 +2562,15 @@ async function render_trade_ads_verify_flow(root, status, vu) {
   }
 
   root.innerHTML = `
-    <p class="ta-lede">Post Rolimons trade ads from the browser. One-time bio check, same idea as Essentials Bot.</p>
     <div class="ta-card">
       <div class="ta-card-head">
         <div>
-          <div class="ta-card-title">Rolimons</div>
-          <div class="ta-card-sub">Signed in as ${escape_html(status.roblox?.name || "Roblox user")}</div>
+          <div class="ta-card-title">Connect Rolimons</div>
+          <div class="ta-card-sub">${escape_html(status.roblox?.name || "Roblox user")}</div>
         </div>
       </div>
       ${vu.error ? `<div class="ta-status-line ta-err" style="margin-bottom:10px">${escape_html(vu.error)}</div>` : ""}
-      <button type="button" class="ta-btn ta-btn-primary" id="ta-connect-start">Start posting trade ads</button>
+      <button type="button" class="ta-btn ta-btn-primary" id="ta-connect-start">Connect</button>
     </div>
   `;
   root
