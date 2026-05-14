@@ -9,21 +9,6 @@ function get_asset_url(path) {
   return chrome.runtime.getURL(path);
 }
 
-const section_icons = {
-  Values:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
-  Trading:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>',
-  "Trade Notifications":
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>',
-  "Item Flags":
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>',
-  Links:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>',
-  Other:
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>',
-};
-
 const section_classes = {
   Values: "section-values",
   Trading: "section-trading",
@@ -53,7 +38,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
       .getElementById(`panel-${tab.dataset.tab}`)
       .classList.remove("hidden");
     if (tab.dataset.tab === "tradeactions") {
-      render_trade_actions_tab();
+      render_actions_tab();
     }
   });
 });
@@ -1486,7 +1471,6 @@ async function render_options() {
       const header = document.createElement("div");
       header.className = "section-header";
       header.innerHTML = `
-        <span class="section-icon">${section_icons[item] || ""}</span>
         <span class="section-title">${escape_html(item)}</span>
         <span class="section-count">0</span>
         <span class="section-chevron">${chevron_svg}</span>
@@ -2894,7 +2878,7 @@ async function ta_start_polling() {
   }, 800);
 }
 
-async function render_trade_actions_tab() {
+async function render_actions_tab() {
   let root = document.getElementById("trade-actions-root");
   if (!root) return;
 
@@ -2907,11 +2891,11 @@ async function render_trade_actions_tab() {
   }
 
   let cancel_icon =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M7.8 16.2 16.2 7.8"/></svg>';
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6"/><path d="M15 9l-6 6"/></svg>';
   let inbound_icon =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14l2 10v4.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5V14L5 4Z"/><path d="M3.5 14H8l1.5 2h5l1.5-2h4.5"/><path d="M9 8h6"/><path d="M8 11h8"/></svg>';
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3H10L8 12H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>';
   let outbound_icon =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 3.5 11 21l-2.3-7.7L3 10.5l17.5-7Z"/><path d="M8.8 13.2 20.5 3.5"/></svg>';
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
 
   root.innerHTML = `
     <p class="ta-lede">Bulk decline trades directly from Roblox. Actions run in the background even if you close this popup.</p>

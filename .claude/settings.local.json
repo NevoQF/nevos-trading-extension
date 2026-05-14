@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -o \"https://[^''''\"\"]*\" /c/Users/nevok/Desktop/\"the thing\"/Roblox Bots/Extension/nevos trading extension/*.js)",
+      "Bash(grep -o '\"\"name\"\":\"\"[^\"\"]*\"\",\"\"enabledByDefault\"\":[^,]*,\"\"path\"\":\"\"[^\"\"]*\"\"' background.js)",
+      "Bash(tr '}' '}\\\\n')",
+      "WebFetch(domain:www.rolimons.com)",
+      "WebFetch(domain:api.rolimons.com)",
+      "WebFetch(domain:create.roblox.com)"
+    ]
+  }
+}

@@ -244,7 +244,7 @@
         let n = document;
         function a() {
           let t = n.querySelector(e);
-          t && (r(t), o.disconnect());
+          t && (r(t), o.disconnect(), clearTimeout(l));
         }
         void 0 !== t && (n = t);
         let o = new MutationObserver(a);
@@ -253,6 +253,10 @@
           subtree: !0,
         }),
           a();
+        let l = setTimeout(() => {
+          o.disconnect();
+          r(null);
+        }, 5000);
       });
     }
     function l(e, t, r) {
@@ -4778,24 +4782,19 @@
             element.remove();
       })();
     let e = await c.waitForElm(".trades-container");
-    if ((k(), "details" === c.getPageType()))
-      for (let offer of e.getElementsByClassName("trade-list-detail-offer"))
-        T(
-          offer
-            .querySelector(".robux-line:not(.ng-hide):not([ng-show])")
-            .querySelector(".robux-line-amount"),
-          await c.calculateValueTotalDetails(offer),
-        );
-    if ("sendOrCounter" === c.getPageType())
+    if ((k(), "sendOrCounter" === c.getPageType()))
       for (let offer of document.getElementsByClassName(
         "trade-request-window-offer",
-      ))
-        T(
-          offer
-            .querySelector(".robux-line:not(.ng-hide):not([ng-show])")
-            .querySelector(".robux-line-amount"),
-          await c.calculateValueTotalSendOrCounter(offer),
+      )) {
+        let robux_line = offer.querySelector(
+          ".robux-line:not(.ng-hide):not([ng-show])",
         );
+        if (robux_line)
+          T(
+            robux_line.querySelector(".robux-line-amount"),
+            await c.calculateValueTotalSendOrCounter(offer),
+          );
+      }
   }
   function format_trade_item_routility_usd(value) {
     let numeric = Number(value) || 0,

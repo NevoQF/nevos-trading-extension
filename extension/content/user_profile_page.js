@@ -2333,16 +2333,8 @@
       let metric_gap = 8;
       let metric_w = (w - 28 - metric_gap) / 2;
       let metrics = [
-        [
-          "VALUE",
-          inv_image_compact(item.count > 1 ? item.total_val : item.val),
-          "#e8eef9",
-        ],
-        [
-          "RAP",
-          inv_image_compact(item.count > 1 ? item.total_rap : item.rap),
-          "#9bd2ff",
-        ],
+        ["VALUE", inv_image_compact(item.val), "#e8eef9"],
+        ["RAP", inv_image_compact(item.rap), "#9bd2ff"],
       ];
       for (let i = 0; i < metrics.length; i++) {
         let mx = x + 14 + i * (metric_w + metric_gap);
@@ -2363,9 +2355,7 @@
 
     function inv_image_items_for_output(items, limit) {
       let out = [...items].sort(
-        (a, b) =>
-          (b.total_val || b.val) - (a.total_val || a.val) ||
-          (b.total_rap || b.rap) - (a.total_rap || a.rap),
+        (a, b) => (b.val || 0) - (a.val || 0) || (b.rap || 0) - (a.rap || 0),
       );
       if (Number(limit) > 0)
         out = out.slice(0, Math.min(out.length, Math.floor(Number(limit))));
@@ -2828,16 +2818,8 @@
       if (line2) ctx.fillText(line2, cx, name_y + 15);
       ctx.textAlign = "left";
 
-      let has_val = (item.count > 1 ? item.total_val : item.val) > 0;
-      let stat_num = fmt(
-        has_val
-          ? item.count > 1
-            ? item.total_val
-            : item.val
-          : item.count > 1
-            ? item.total_rap
-            : item.rap,
-      );
+      let has_val = item.val > 0;
+      let stat_num = fmt(has_val ? item.val : item.rap);
       let icon_size = 14;
       let icon_gap = 6;
       ctx.font = "900 14px Segoe UI, Arial, sans-serif";
@@ -2848,7 +2830,7 @@
       );
       let pill_h = 32;
       let pill_x = x + (w - pill_w) / 2;
-      let pill_y = y + h - 58;
+      let pill_y = y + h - 52;
 
       inv_image_round(ctx, pill_x, pill_y, pill_w, pill_h, 10);
       ctx.fillStyle = dark ? "rgba(255,255,255,.06)" : "rgba(15,23,42,.04)";
@@ -3044,9 +3026,19 @@
       });
     }
 
-    function inv_image_preview_toast(blob, filename, item_names_items) {
+    function inv_image_blob_to_data_url(blob) {
+      return new Promise((resolve, reject) => {
+        let reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    async function inv_image_preview_toast(blob, filename, item_names_items) {
       document.querySelector(".nte-inv-image-toast")?.remove();
       let url = URL.createObjectURL(blob);
+      let preview_url = await inv_image_blob_to_data_url(blob).catch(() => url);
       let toast = document.createElement("div");
       toast.className = "nte-inv-image-toast";
       toast.__nte_cleanup = () => URL.revokeObjectURL(url);
@@ -3061,7 +3053,7 @@
         <button type="button" class="nte-inv-image-toast-close" aria-label="Close">x</button>
         <div class="nte-inv-image-toast-title">Inventory image ready</div>
         <div class="nte-inv-image-toast-sub">Preview it here, then copy or download it.</div>
-        <img class="nte-inv-image-toast-preview" src="${escape_html(url)}" alt="Inventory image preview">
+        <img class="nte-inv-image-toast-preview" src="${escape_html(preview_url)}" alt="Inventory image preview">
         ${list_html}
         <div class="nte-inv-image-toast-actions">
           <button type="button" class="nte-inv-image-toast-copy" data-label="Copy Image">Copy Image</button>
@@ -3113,7 +3105,11 @@
           await inv_image_copy_blob(blob);
           inv_image_set_button_state(buttons[0], "Copied", 1200);
         } catch {
-          inv_image_set_button_state(buttons[0], "Copy Failed", 1400);
+          let a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          a.click();
+          inv_image_set_button_state(buttons[0], "Saved", 1200);
         } finally {
           setTimeout(() => {
             if (buttons[0]?.isConnected) buttons[0].disabled = false;
