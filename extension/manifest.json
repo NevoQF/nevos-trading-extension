@@ -116,7 +116,11 @@
     "https://www.nevos-extension.com/*",
     "https://*.roblox.com/*",
     "https://roblox.com/*",
-    "https://thumbnails.roblox.com/*"
+    "https://thumbnails.roblox.com/*",
+    "https://discord.com/*",
+    "https://*.discord.com/*",
+    "https://discordapp.com/*",
+    "https://*.discordapp.com/*"
   ],
   "icons": {
     "128": "assets/icons/logo128.png",

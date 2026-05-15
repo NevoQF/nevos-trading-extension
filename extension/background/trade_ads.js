@@ -788,19 +788,31 @@ async function trade_ads_build_post_body(
     request_tags = roll.request_tags;
   } else {
     let manual = (config.request_slots || [])
-      .map((x) => (x != null ? Number(x) : null))
+      .map((x) => (x != null ? x : null))
+      .filter((x) => x !== null);
+    let manual_ids = manual
+      .filter((x) => typeof x !== "string" || !x.startsWith("tag:"))
+      .map(Number)
       .filter((n) => Number.isFinite(n) && n > 0);
-    if (!manual.length) {
+    let manual_tags = manual
+      .filter((x) => typeof x === "string" && x.startsWith("tag:"))
+      .map((x) => x.slice(4));
+    if (!manual_ids.length && !manual_tags.length) {
       throw new Error(
         'Choose wanted items, or turn on "Randomize requests each ad".',
       );
     }
-    let clamped = trade_ads_clamp_requests(offer_ids, manual, item_data);
+    let clamped = trade_ads_clamp_requests(offer_ids, manual_ids, item_data);
     request_item_ids = clamped.ids;
     let user_tags = Array.isArray(config.request_tags)
       ? config.request_tags.filter(Boolean)
       : [];
-    request_tags = user_tags.length > 0 ? user_tags : clamped.tags;
+    request_tags =
+      manual_tags.length > 0
+        ? manual_tags
+        : user_tags.length > 0
+          ? user_tags
+          : clamped.tags;
   }
 
   let body = {
@@ -1057,6 +1069,8 @@ async function trade_ads_sync_alarm() {
 
 // Message handlers
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (trade_ad_notif_handle_message(message, respond)) return true;
+
   if (message?.type === "trade_ads_get_status") {
     (async () => {
       let auth_res = await fetch(

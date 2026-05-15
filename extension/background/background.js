@@ -37,10 +37,12 @@ if (
   globalThis.fetch = marked_fetch;
 }
 
+importScripts("../shared/trade_ad_notifications_core.js");
 importScripts("trade_ads.js");
+importScripts("trade_ad_notifications.js");
 
 const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]',
+  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]',
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
 const show_routility_usd_values_option_name = "Show Routility USD Values";
@@ -48,6 +50,9 @@ const colorblind_mode_option_name = "Colorblind Mode";
 const legacy_colorblind_mode_option_name = "Colorblind Profit Mode";
 const post_tax_trade_values_option_name = "Post-Tax Trade Values";
 const legacy_post_tax_trade_value_option_name = "Post-Tax Trade Value";
+const add_item_ownership_buttons_option_name = "Add Item Ownership Buttons";
+const legacy_add_item_ownership_uaid_links_option_name =
+  "Add Item Ownership History (UAID) Links";
 const colorblind_mode_profile_key = "colorblind_mode_profile";
 const colorblind_mode_profile_default = "deuteranopia";
 const colorblind_mode_profiles = [
@@ -74,6 +79,14 @@ const nte_roblox_tab_url_query_patterns = [
 const inbound_trade_notification_min_gain_key =
   "inbound_trade_notification_min_gain_percent";
 const inbound_trade_notification_min_gain_default = 0;
+const inbound_trade_notification_webhook_enabled_key =
+  "inbound_trade_notification_webhook_enabled";
+const inbound_trade_notification_webhook_url_key =
+  "inbound_trade_notification_webhook_url";
+const inbound_trade_notification_webhook_ping_enabled_key =
+  "inbound_trade_notification_webhook_ping_enabled";
+const inbound_trade_notification_webhook_discord_id_key =
+  "inbound_trade_notification_webhook_discord_id";
 const duplicate_trade_warning_hours_key = "duplicate_trade_warning_hours";
 const duplicate_trade_warning_hours_default = 24;
 const trade_cache_ttl_ms = 5 * 24 * 60 * 60 * 1000;
@@ -480,6 +493,35 @@ function normalize_inbound_trade_notification_min_gain(value) {
     parsed = inbound_trade_notification_min_gain_default;
   parsed = Math.max(0, parsed);
   return Math.round(parsed * 100) / 100;
+}
+
+function normalize_inbound_trade_notification_webhook_url(value) {
+  let raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    let parsed = new URL(raw);
+    let host = String(parsed.hostname || "").toLowerCase();
+    let valid_host =
+      host === "discord.com" ||
+      host === "www.discord.com" ||
+      host === "canary.discord.com" ||
+      host === "ptb.discord.com" ||
+      host === "discordapp.com" ||
+      host === "www.discordapp.com";
+    if (!valid_host) return "";
+    if (parsed.protocol !== "https:") return "";
+    if (!String(parsed.pathname || "").startsWith("/api/webhooks/")) return "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function normalize_inbound_trade_notification_discord_id(value) {
+  let normalized = String(value || "")
+    .trim()
+    .replace(/[<@!>\s]/g, "");
+  return /^\d{5,30}$/.test(normalized) ? normalized : "";
 }
 
 async function parse_json_response_safe(response, label) {
@@ -1139,6 +1181,131 @@ async function show_trade_notification(
   );
 }
 
+function get_trade_offer_item_names(offer, limit = 4) {
+  let user_assets = Array.isArray(offer?.userAssets) ? offer.userAssets : [];
+  let names = user_assets
+    .map((asset) =>
+      String(
+        asset?.name || asset?.assetName || asset?.itemName || asset?.assetId || "",
+      ).trim(),
+    )
+    .filter(Boolean);
+  if (!names.length) return "No items";
+  if (names.length <= limit) return names.join(", ");
+  return `${names.slice(0, limit).join(", ")} (+${names.length - limit} more)`;
+}
+
+async function get_inbound_trade_webhook_settings() {
+  let saved = await get_local_values([
+    inbound_trade_notification_webhook_enabled_key,
+    inbound_trade_notification_webhook_url_key,
+    inbound_trade_notification_webhook_ping_enabled_key,
+    inbound_trade_notification_webhook_discord_id_key,
+  ]);
+  let enabled = !!saved[inbound_trade_notification_webhook_enabled_key];
+  let webhook_url = normalize_inbound_trade_notification_webhook_url(
+    saved[inbound_trade_notification_webhook_url_key],
+  );
+  let ping_enabled =
+    enabled && !!saved[inbound_trade_notification_webhook_ping_enabled_key];
+  let discord_id = normalize_inbound_trade_notification_discord_id(
+    saved[inbound_trade_notification_webhook_discord_id_key],
+  );
+  if (!enabled || !webhook_url) return null;
+  if (ping_enabled && !discord_id) ping_enabled = false;
+  return {
+    webhook_url,
+    ping_enabled,
+    discord_id,
+  };
+}
+
+async function send_inbound_trade_webhook_notification(
+  trade,
+  trade_detail,
+  trade_stats,
+  my_user_id,
+  webhook_settings,
+) {
+  if (!webhook_settings?.webhook_url) return;
+  let stats = trade_stats;
+  if (!stats && trade_detail) {
+    stats = await get_trade_notification_value_stats(trade_detail, my_user_id);
+  }
+
+  let partner_name = String(
+    trade?.user?.displayName || trade?.user?.name || `User ${trade?.user?.id || ""}`,
+  ).trim();
+  let title = `Inbound Trade from ${partner_name || "Unknown User"}`;
+  let description = "A new inbound trade was detected.";
+
+  let fields = [];
+  if (stats) {
+    let diff = Number(stats.diff) || 0;
+    let diff_sign = diff > 0 ? "+" : "";
+    let pct = Number.isFinite(stats.diff_pct_raw)
+      ? `${stats.diff_pct_raw > 0 ? "+" : ""}${Math.round(stats.diff_pct_raw)}%`
+      : diff > 0
+        ? "+INF%"
+        : "0%";
+    description =
+      `Diff: ${diff_sign}${format_number(diff)} (${pct})\n` +
+      `Yours: ${format_number(stats.your_value)} (${stats.your_count} item${stats.your_count === 1 ? "" : "s"})\n` +
+      `Theirs: ${format_number(stats.their_value)} (${stats.their_count} item${stats.their_count === 1 ? "" : "s"})`;
+  }
+
+  if (trade_detail) {
+    let offer_pair = get_trade_notification_offer_pair(trade_detail, my_user_id);
+    if (offer_pair) {
+      fields.push({
+        name: "They offer",
+        value: get_trade_offer_item_names(offer_pair.their_offer),
+        inline: false,
+      });
+      fields.push({
+        name: "For your",
+        value: get_trade_offer_item_names(offer_pair.your_offer),
+        inline: false,
+      });
+    }
+  }
+
+  let payload = {
+    content:
+      webhook_settings.ping_enabled && webhook_settings.discord_id
+        ? `<@${webhook_settings.discord_id}>`
+        : "",
+    embeds: [
+      {
+        title,
+        description,
+        color: (Number(stats?.diff) || 0) > 0 ? 0x57f287 : 0xfaa61a,
+        fields,
+        footer: {
+          text: `Trade ID ${trade?.id || "unknown"} • Nevos Trading Extension`,
+        },
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  };
+
+  try {
+    let response = await fetch(webhook_settings.webhook_url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      console.info(
+        "Nevos Trading Extension: inbound webhook request failed",
+        response.status,
+      );
+    }
+  } catch (error) {
+    console.info("Nevos Trading Extension: inbound webhook send failed", error);
+  }
+}
+
 let inbound_poll_running = false;
 const INBOUND_POLL_INTERVAL_MS = 3000;
 const INBOUND_POLL_MAX_NOTIFIED = 200;
@@ -1294,6 +1461,7 @@ async function poll_inbound_trades() {
 
     let cached_trades = await get_pruned_cached_trades();
     let my_user_id = 0;
+    let webhook_settings = await get_inbound_trade_webhook_settings();
     try {
       my_user_id = Number((await get_authenticated_user_cached())?.id) || 0;
     } catch {}
@@ -1355,6 +1523,15 @@ async function poll_inbound_trades() {
         trade_stats,
         my_user_id,
       );
+      if (webhook_settings) {
+        await send_inbound_trade_webhook_notification(
+          trade,
+          detail,
+          trade_stats,
+          my_user_id,
+          webhook_settings,
+        );
+      }
     }
 
     await save_cached_trades(cached_trades);
@@ -1556,8 +1733,13 @@ function ensure_default_options() {
   option_names.push(legacy_show_usd_values_option_name);
   option_names.push(legacy_colorblind_mode_option_name);
   option_names.push(legacy_post_tax_trade_value_option_name);
+  option_names.push(legacy_add_item_ownership_uaid_links_option_name);
   option_names.push(colorblind_mode_profile_key);
   option_names.push(inbound_trade_notification_min_gain_key);
+  option_names.push(inbound_trade_notification_webhook_enabled_key);
+  option_names.push(inbound_trade_notification_webhook_url_key);
+  option_names.push(inbound_trade_notification_webhook_ping_enabled_key);
+  option_names.push(inbound_trade_notification_webhook_discord_id_key);
   option_names.push(duplicate_trade_warning_hours_key);
 
   chrome.storage.local.get(option_names, (saved_values) => {
@@ -1594,6 +1776,17 @@ function ensure_default_options() {
         });
         return;
       }
+      if (
+        entry.name === add_item_ownership_buttons_option_name &&
+        saved_values[legacy_add_item_ownership_uaid_links_option_name] !==
+          undefined
+      ) {
+        chrome.storage.local.set({
+          [entry.name]:
+            saved_values[legacy_add_item_ownership_uaid_links_option_name],
+        });
+        return;
+      }
       chrome.storage.local.set({ [entry.name]: entry.enabledByDefault });
     });
     if (
@@ -1615,6 +1808,32 @@ function ensure_default_options() {
       chrome.storage.local.set({
         [inbound_trade_notification_min_gain_key]:
           inbound_trade_notification_min_gain_default,
+      });
+    }
+    if (saved_values[inbound_trade_notification_webhook_enabled_key] === undefined) {
+      chrome.storage.local.set({
+        [inbound_trade_notification_webhook_enabled_key]: false,
+      });
+    }
+    if (saved_values[inbound_trade_notification_webhook_url_key] === undefined) {
+      chrome.storage.local.set({
+        [inbound_trade_notification_webhook_url_key]: "",
+      });
+    }
+    if (
+      saved_values[inbound_trade_notification_webhook_ping_enabled_key] ===
+      undefined
+    ) {
+      chrome.storage.local.set({
+        [inbound_trade_notification_webhook_ping_enabled_key]: false,
+      });
+    }
+    if (
+      saved_values[inbound_trade_notification_webhook_discord_id_key] ===
+      undefined
+    ) {
+      chrome.storage.local.set({
+        [inbound_trade_notification_webhook_discord_id_key]: "",
       });
     }
     if (saved_values[duplicate_trade_warning_hours_key] === undefined) {

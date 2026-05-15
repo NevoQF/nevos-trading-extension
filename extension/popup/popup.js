@@ -22,7 +22,7 @@ const chevron_svg =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 
 const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership History (UAID) Links","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]',
+  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]',
 );
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -129,6 +129,14 @@ const trade_page_theme_default_image_overlay = 72;
 const inbound_trade_notification_min_gain_key =
   "inbound_trade_notification_min_gain_percent";
 const inbound_trade_notification_min_gain_default = 0;
+const inbound_trade_notification_webhook_enabled_key =
+  "inbound_trade_notification_webhook_enabled";
+const inbound_trade_notification_webhook_url_key =
+  "inbound_trade_notification_webhook_url";
+const inbound_trade_notification_webhook_ping_enabled_key =
+  "inbound_trade_notification_webhook_ping_enabled";
+const inbound_trade_notification_webhook_discord_id_key =
+  "inbound_trade_notification_webhook_discord_id";
 const duplicate_trade_warning_hours_key = "duplicate_trade_warning_hours";
 const duplicate_trade_warning_hours_default = 24;
 const profile_value_display_mode_key = "profile_value_display_mode";
@@ -497,10 +505,7 @@ function format_inbound_trade_notification_min_gain(value) {
 }
 
 function get_inbound_trade_notification_note(value) {
-  let normalized = normalize_inbound_trade_notification_min_gain(value);
-  if (normalized > 0)
-    return `Min alert gain: +${format_inbound_trade_notification_min_gain(normalized)}%. Click to edit.`;
-  return "Min alert gain: any inbound trade. Click to edit.";
+  return "Click to open settings";
 }
 
 function normalize_duplicate_trade_warning_hours(value) {
@@ -524,37 +529,251 @@ function get_duplicate_trade_warning_note(value) {
 }
 
 async function prompt_inbound_trade_notification_min_gain() {
-  let saved = await get_storage([inbound_trade_notification_min_gain_key]);
+  let saved = await get_storage([
+    inbound_trade_notification_min_gain_key,
+    inbound_trade_notification_webhook_enabled_key,
+    inbound_trade_notification_webhook_url_key,
+    inbound_trade_notification_webhook_ping_enabled_key,
+    inbound_trade_notification_webhook_discord_id_key,
+  ]);
   let current = normalize_inbound_trade_notification_min_gain(
     saved[inbound_trade_notification_min_gain_key],
   );
+  let webhook_enabled = !!saved[inbound_trade_notification_webhook_enabled_key];
+  let webhook_url = normalize_inbound_trade_notification_webhook_url(
+    saved[inbound_trade_notification_webhook_url_key],
+  );
+  let ping_enabled = !!saved[inbound_trade_notification_webhook_ping_enabled_key];
+  let discord_id = normalize_inbound_trade_notification_discord_id(
+    saved[inbound_trade_notification_webhook_discord_id_key],
+  );
 
-  while (true) {
-    let response = window.prompt(
-      "Minimum % gain for inbound trade alerts?\n0 = notify every inbound.\nExample: 5 means +5% or better only.",
-      format_inbound_trade_notification_min_gain(current),
-    );
+  let next = await open_inbound_trade_notification_settings_modal({
+    min_gain: current,
+    webhook_enabled,
+    webhook_url,
+    ping_enabled,
+    discord_id,
+  });
+  if (!next) return current;
 
-    if (response === null) return current;
+  await set_storage({
+    [inbound_trade_notification_min_gain_key]: next.min_gain,
+    [inbound_trade_notification_webhook_enabled_key]: next.webhook_enabled,
+    [inbound_trade_notification_webhook_url_key]: next.webhook_url,
+    [inbound_trade_notification_webhook_ping_enabled_key]: next.ping_enabled,
+    [inbound_trade_notification_webhook_discord_id_key]: next.discord_id,
+  });
+  return next.min_gain;
+}
 
-    let trimmed = String(response || "").trim();
-    if (!trimmed) {
-      current = inbound_trade_notification_min_gain_default;
-      break;
-    }
-
-    let parsed = Number(trimmed.replace(/%/g, ""));
-    if (!Number.isFinite(parsed) || parsed < 0) {
-      window.alert("Enter a number like 0, 5, or 12.5.");
-      continue;
-    }
-
-    current = normalize_inbound_trade_notification_min_gain(parsed);
-    break;
+function normalize_inbound_trade_notification_webhook_url(value) {
+  let raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    let parsed = new URL(raw);
+    let host = String(parsed.hostname || "").toLowerCase();
+    let valid_host =
+      host === "discord.com" ||
+      host === "www.discord.com" ||
+      host === "canary.discord.com" ||
+      host === "ptb.discord.com" ||
+      host === "discordapp.com" ||
+      host === "www.discordapp.com";
+    if (!valid_host) return "";
+    if (parsed.protocol !== "https:") return "";
+    if (!String(parsed.pathname || "").startsWith("/api/webhooks/")) return "";
+    return parsed.toString();
+  } catch {
+    return "";
   }
+}
 
-  await set_storage({ [inbound_trade_notification_min_gain_key]: current });
-  return current;
+function normalize_inbound_trade_notification_discord_id(value) {
+  let normalized = String(value || "")
+    .trim()
+    .replace(/[<@!>\s]/g, "");
+  return /^\d{5,30}$/.test(normalized) ? normalized : "";
+}
+
+function escape_html_attr(value) {
+  return escape_html(value).replace(/"/g, "&quot;");
+}
+
+function open_inbound_trade_notification_settings_modal(current) {
+  return new Promise((resolve) => {
+    let existing = document.getElementById("inbound-notif-settings-overlay");
+    if (existing) existing.remove();
+
+    let overlay = document.createElement("div");
+    overlay.id = "inbound-notif-settings-overlay";
+    overlay.className = "inbound-notif-settings-overlay";
+    overlay.innerHTML = `
+      <div class="inbound-notif-settings-card" role="dialog" aria-modal="true" aria-labelledby="inbound-settings-title">
+        <div class="inbound-notif-settings-head">
+          <div>
+            <h3 id="inbound-settings-title" class="inbound-notif-settings-title">Inbound Alert Settings</h3>
+            <p class="inbound-notif-settings-subtitle">Choose your minimum gain and optional Discord alerts.</p>
+          </div>
+          <button type="button" class="inbound-notif-settings-close" aria-label="Close settings">✕</button>
+        </div>
+        <div class="inbound-notif-settings-body">
+          <div class="inbound-notif-settings-group">
+            <span class="inbound-notif-settings-label">Minimum alert gain (%)</span>
+            <div class="inbound-notif-pills">
+              <button type="button" class="inbound-notif-pill" data-gain="0">Any</button>
+              <button type="button" class="inbound-notif-pill" data-gain="1">+1%</button>
+              <button type="button" class="inbound-notif-pill" data-gain="3">+3%</button>
+              <button type="button" class="inbound-notif-pill" data-gain="5">+5%</button>
+              <button type="button" class="inbound-notif-pill" data-gain="10">+10%</button>
+            </div>
+            <label class="inbound-notif-input-wrap">
+              <span>Custom</span>
+              <input id="inbound-notif-min-gain" type="number" min="0" max="9999" step="0.01" value="${escape_html_attr(format_inbound_trade_notification_min_gain(current.min_gain))}" />
+            </label>
+          </div>
+
+          <div class="inbound-notif-settings-group">
+            <label class="inbound-notif-switch-row">
+              <span>Notify to a Discord webhook</span>
+              <input id="inbound-notif-webhook-enabled" type="checkbox" ${current.webhook_enabled ? "checked" : ""} />
+            </label>
+            <input id="inbound-notif-webhook-url" class="inbound-notif-text-input" type="url" placeholder="https://discord.com/api/webhooks/..." value="${escape_html_attr(current.webhook_url)}" />
+
+            <label class="inbound-notif-switch-row inbound-notif-switch-row-sub">
+              <span>Ping the user</span>
+              <input id="inbound-notif-ping-enabled" type="checkbox" ${current.ping_enabled ? "checked" : ""} />
+            </label>
+            <input id="inbound-notif-discord-id" class="inbound-notif-text-input" type="text" inputmode="numeric" placeholder="Discord user ID" value="${escape_html_attr(current.discord_id)}" />
+          </div>
+        </div>
+        <div class="inbound-notif-settings-actions">
+          <button type="button" class="btn modern tertiary" data-role="cancel">Cancel</button>
+          <button type="button" class="btn modern primary" data-role="save">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.append(overlay);
+
+    let card = overlay.querySelector(".inbound-notif-settings-card");
+    let close_btn = overlay.querySelector(".inbound-notif-settings-close");
+    let cancel_btn = overlay.querySelector('[data-role="cancel"]');
+    let save_btn = overlay.querySelector('[data-role="save"]');
+    let min_gain_input = overlay.querySelector("#inbound-notif-min-gain");
+    let webhook_enabled_input = overlay.querySelector(
+      "#inbound-notif-webhook-enabled",
+    );
+    let webhook_url_input = overlay.querySelector("#inbound-notif-webhook-url");
+    let ping_enabled_input = overlay.querySelector("#inbound-notif-ping-enabled");
+    let discord_id_input = overlay.querySelector("#inbound-notif-discord-id");
+    let gain_pills = Array.from(overlay.querySelectorAll(".inbound-notif-pill"));
+
+    function close(result = null) {
+      overlay.remove();
+      resolve(result);
+    }
+
+    function sync_webhook_fields() {
+      let webhook_enabled = !!webhook_enabled_input.checked;
+      let ping_enabled = webhook_enabled && !!ping_enabled_input.checked;
+      webhook_url_input.disabled = !webhook_enabled;
+      ping_enabled_input.disabled = !webhook_enabled;
+      discord_id_input.disabled = !ping_enabled;
+      if (!webhook_enabled) {
+        ping_enabled_input.checked = false;
+      }
+    }
+
+    function normalize_min_gain_input() {
+      let normalized = normalize_inbound_trade_notification_min_gain(
+        min_gain_input.value,
+      );
+      min_gain_input.value = format_inbound_trade_notification_min_gain(normalized);
+      return normalized;
+    }
+
+    function sync_pills() {
+      let current_value = normalize_inbound_trade_notification_min_gain(
+        min_gain_input.value,
+      );
+      gain_pills.forEach((pill) => {
+        let gain = normalize_inbound_trade_notification_min_gain(
+          pill.getAttribute("data-gain"),
+        );
+        pill.classList.toggle("is-active", gain === current_value);
+      });
+    }
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close(null);
+    });
+    card.addEventListener("click", (event) => event.stopPropagation());
+    close_btn.addEventListener("click", () => close(null));
+    cancel_btn.addEventListener("click", () => close(null));
+
+    gain_pills.forEach((pill) => {
+      pill.addEventListener("click", () => {
+        let gain = normalize_inbound_trade_notification_min_gain(
+          pill.getAttribute("data-gain"),
+        );
+        min_gain_input.value = format_inbound_trade_notification_min_gain(gain);
+        sync_pills();
+      });
+    });
+
+    min_gain_input.addEventListener("input", () => {
+      sync_pills();
+    });
+    min_gain_input.addEventListener("blur", () => {
+      normalize_min_gain_input();
+      sync_pills();
+    });
+
+    webhook_enabled_input.addEventListener("change", sync_webhook_fields);
+    ping_enabled_input.addEventListener("change", sync_webhook_fields);
+
+    overlay.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close(null);
+      }
+    });
+
+    save_btn.addEventListener("click", () => {
+      let min_gain = normalize_min_gain_input();
+      let webhook_enabled = !!webhook_enabled_input.checked;
+      let webhook_url = normalize_inbound_trade_notification_webhook_url(
+        webhook_url_input.value,
+      );
+      let ping_enabled = webhook_enabled && !!ping_enabled_input.checked;
+      let discord_id = normalize_inbound_trade_notification_discord_id(
+        discord_id_input.value,
+      );
+
+      if (webhook_enabled && !webhook_url) {
+        window.alert("Enter a valid Discord webhook URL.");
+        webhook_url_input.focus();
+        return;
+      }
+      if (ping_enabled && !discord_id) {
+        window.alert("Enter a valid Discord user ID.");
+        discord_id_input.focus();
+        return;
+      }
+
+      close({
+        min_gain,
+        webhook_enabled,
+        webhook_url,
+        ping_enabled,
+        discord_id,
+      });
+    });
+
+    sync_webhook_fields();
+    sync_pills();
+    setTimeout(() => min_gain_input.focus(), 0);
+  });
 }
 
 async function prompt_duplicate_trade_warning_hours() {
@@ -1581,7 +1800,15 @@ async function trade_ads_fetch_status_from_bg() {
 }
 
 function trade_ads_attach_picker(root, opts) {
-  let { side, inventory, inventoryPromise, onPick, onInventoryError } = opts;
+  let {
+    side,
+    inventory,
+    inventoryPromise,
+    onPick,
+    onInventoryError,
+    requestTags,
+  } = opts;
+  let cfg_pick_tags = Array.isArray(requestTags) ? requestTags : [];
   let overlay = document.createElement("div");
   overlay.className = "ta-overlay";
   let ph =
@@ -1594,6 +1821,27 @@ function trade_ads_attach_picker(root, opts) {
         <button type="button" class="ta-sheet-close" aria-label="Close">×</button>
         <input type="search" class="ta-search-input" placeholder="${escape_html(ph)}" />
       </div>
+      ${
+        side === "request"
+          ? `<div class="ta-tag-strip">${[
+              ["demand", "Demand"],
+              ["rares", "Rares"],
+              ["robux", "Robux"],
+              ["any", "Any"],
+              ["upgrade", "Upgrade"],
+              ["downgrade", "Downgrade"],
+              ["rap", "RAP"],
+              ["wishlist", "Wishlist"],
+              ["projecteds", "Projecteds"],
+              ["adds", "Adds"],
+            ]
+              .map(([tag, label]) => {
+                let img = `https://www.rolimons.com/images/tradetag${tag}-420.png`;
+                return `<button type="button" class="ta-tag-cell" data-tag="${tag}" title="${label}"><img src="${img}" alt="${label}" loading="lazy" decoding="async" /></button>`;
+              })
+              .join("")}</div>`
+          : ""
+      }
       <div class="ta-sheet-body ta-sheet-body-strip">
         <div class="ta-strip-scroll" tabindex="0" role="listbox" aria-label="${side === "offer" ? "Your items" : "Catalog items"}"></div>
         <div class="ta-strip-footer" aria-live="polite"></div>
@@ -1618,6 +1866,22 @@ function trade_ads_attach_picker(root, opts) {
     { passive: false },
   );
 
+  let tag_strip = overlay.querySelector(".ta-tag-strip");
+  if (tag_strip) {
+    tag_strip.addEventListener(
+      "wheel",
+      (e) => {
+        if (tag_strip.scrollWidth <= tag_strip.clientWidth + 1) return;
+        let delta =
+          Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        if (delta === 0) return;
+        e.preventDefault();
+        tag_strip.scrollLeft += delta;
+      },
+      { passive: false },
+    );
+  }
+
   function close() {
     overlay.remove();
   }
@@ -1626,6 +1890,17 @@ function trade_ads_attach_picker(root, opts) {
     if (e.target === overlay) close();
   });
   overlay.querySelector(".ta-sheet-close").addEventListener("click", close);
+
+  if (side === "request") {
+    overlay.querySelectorAll(".ta-tag-cell").forEach((cell) => {
+      cell.addEventListener("click", async () => {
+        let tag = cell.dataset.tag;
+        if (!tag) return;
+        close();
+        await onPick("tag:" + tag);
+      });
+    });
+  }
 
   function set_footer(html) {
     footer.innerHTML = html;
@@ -1855,8 +2130,109 @@ function trade_ads_attach_picker(root, opts) {
   }
 }
 
+function trade_ads_get_active_category(root) {
+  if (root?.dataset?.taActiveCategory === "notifs") return "notifs";
+  if (root?.dataset?.taActiveCategory === "posting") return "posting";
+  return globalThis.__nte_ads_active_category === "notifs" ? "notifs" : "posting";
+}
+
+function trade_ads_set_active_category(root, category) {
+  if (!root) return;
+  let cat = category === "notifs" ? "notifs" : "posting";
+  globalThis.__nte_ads_active_category = cat;
+  root.dataset.taActiveCategory = cat;
+  root.querySelectorAll(".ta-category-pick").forEach((btn) => {
+    let on = btn.dataset.taCategory === cat;
+    btn.classList.toggle("is-active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  root.querySelectorAll("[data-ta-category-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.taCategoryPanel !== cat;
+  });
+}
+
+function trade_ads_get_layout_root(root) {
+  if (root?.id === "trade-ads-root") return root;
+  return document.getElementById("trade-ads-root");
+}
+
+function trade_ads_ensure_category_layout(layout_root, active_category) {
+  if (!layout_root) return null;
+  let cat = active_category === "notifs" ? "notifs" : "posting";
+  if (!layout_root.querySelector("#ta-posting-inner")) {
+    layout_root.innerHTML = `
+    <div class="ta-category-bar" role="tablist" aria-label="Ads sections">
+      <button type="button" class="ta-category-pick is-active" data-ta-category="posting" role="tab" aria-selected="true" aria-controls="ta-posting-panel">
+        <span class="ta-category-pick-label">Trade Ad Posting</span>
+        <span class="ta-category-pick-note">Post Rolimons trade ads</span>
+      </button>
+      <button type="button" class="ta-category-pick" data-ta-category="notifs" role="tab" aria-selected="false" aria-controls="ta-notifs-panel">
+        <span class="ta-category-pick-label">Trade Ad Notifications</span>
+        <span class="ta-category-pick-note">Alerts for trade ads</span>
+      </button>
+    </div>
+    <div class="ta-category-panel" id="ta-posting-panel" data-ta-category-panel="posting" role="tabpanel">
+      <div id="ta-posting-inner" class="ta-posting-inner"></div>
+    </div>
+    <div class="ta-category-panel" id="ta-notifs-panel" data-ta-category-panel="notifs" role="tabpanel" hidden>
+      <div id="ta-notifs-root" class="ta-notifs-root"></div>
+    </div>`;
+    layout_root.dataset.taActiveCategory = cat;
+    trade_ads_bind_category_picks(layout_root);
+  }
+  trade_ads_set_active_category(layout_root, cat);
+  if (cat === "notifs") trade_ads_mount_notifications_panel(layout_root);
+  return layout_root.querySelector("#ta-posting-inner");
+}
+
+function trade_ads_resolve_posting_panel(root) {
+  let layout_root = trade_ads_get_layout_root(root) || root;
+  return trade_ads_ensure_category_layout(
+    layout_root,
+    trade_ads_get_active_category(layout_root),
+  );
+}
+
+function trade_ads_mount_notifications_panel(root) {
+  let mount = root?.querySelector("#ta-notifs-root");
+  if (!mount) return;
+  if (typeof trade_ad_notif_render_into !== "function") {
+    mount.innerHTML = `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Trade ad alerts unavailable</p><p class="ta-notifs-empty-copy">Reload the extension to load the notifications module.</p></div>`;
+    return;
+  }
+  if (mount.__taNotifMounted) {
+    if (typeof trade_ad_notif_refresh_ui === "function") {
+      trade_ad_notif_refresh_ui(mount).catch(() => {});
+    }
+    return;
+  }
+  mount.__taNotifMounted = true;
+  trade_ad_notif_render_into(mount);
+  if (typeof trade_ad_notif_bind_storage_refresh === "function") {
+    trade_ad_notif_bind_storage_refresh(mount);
+  }
+}
+
+function trade_ads_bind_category_picks(root) {
+  let active = trade_ads_get_active_category(root);
+  root.querySelectorAll(".ta-category-pick").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      trade_ads_set_active_category(root, btn.dataset.taCategory);
+      if (btn.dataset.taCategory === "notifs") {
+        trade_ads_mount_notifications_panel(root);
+      }
+    });
+  });
+  trade_ads_set_active_category(root, active);
+  if (active === "notifs") trade_ads_mount_notifications_panel(root);
+}
+
 async function render_trade_ads_composer(root, status) {
   clear_trade_ads_countdown_timer();
+  let layout_root = trade_ads_get_layout_root(root) || root;
+  let panel = trade_ads_resolve_posting_panel(layout_root);
+  if (!panel) return;
+  let saved_category = trade_ads_get_active_category(layout_root);
   let cfg = { ...trade_ads_default_local_config(), ...(status.config || {}) };
   delete cfg.auto_post;
   if (typeof cfg.posting_paused !== "boolean") cfg.posting_paused = true;
@@ -1950,26 +2326,18 @@ async function render_trade_ads_composer(root, status) {
     if (random_each_post) {
       let hint =
         side === "offer" ? "Random offers each post" : "Random each post";
-      return `
-        <div class="ta-slot" data-side="${side}" data-index="${i}" data-random="1">
-          <span class="ta-slot-random" title="${escape_html(hint)}">🎲</span>
-        </div>`;
+      return `<div class="ta-slot" data-side="${side}" data-index="${i}" data-random="1"><span class="ta-slot-random" title="${escape_html(hint)}">🎲</span></div>`;
     }
-    if (id) {
+    if (id != null) {
+      if (typeof id === "string" && id.startsWith("tag:")) {
+        let tag = id.slice(4);
+        let img = `https://www.rolimons.com/images/tradetag${tag}-420.png`;
+        return `<div class="ta-slot ta-slot-tag" data-side="${side}" data-index="${i}" data-tag="${tag}"><div class="ta-slot-tag-img-wrap"><img src="${img}" alt="${tag}" decoding="async" /></div><button type="button" class="ta-slot-clear" data-side="${side}" data-index="${i}" aria-label="Clear">×</button></div>`;
+      }
       let aid = Number(id);
-      return `
-        <div class="ta-slot" data-side="${side}" data-index="${i}">
-          <div class="ta-slot-thumb-wrap">
-            <img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" />
-            <button type="button" class="ta-slot-clear" data-side="${side}" data-index="${i}" aria-label="Clear">×</button>
-          </div>
-          ${slot_metrics_html(aid)}
-        </div>`;
+      return `<div class="ta-slot" data-side="${side}" data-index="${i}"><div class="ta-slot-thumb-wrap"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" /><button type="button" class="ta-slot-clear" data-side="${side}" data-index="${i}" aria-label="Clear">×</button></div></div>`;
     }
-    return `
-      <div class="ta-slot ta-slot-is-empty" data-side="${side}" data-index="${i}">
-        <span class="ta-slot-empty">${side === "offer" ? "Offer" : "Want"}</span>
-      </div>`;
+    return `<div class="ta-slot ta-slot-is-empty" data-side="${side}" data-index="${i}"><span class="ta-slot-empty">${side === "offer" ? "Offer" : "Want"}</span></div>`;
   }
 
   let rows = "";
@@ -2047,7 +2415,7 @@ async function render_trade_ads_composer(root, status) {
     </div>
   `;
 
-  root.innerHTML = `
+  panel.innerHTML = `
     <div class="ta-card">
       <div class="ta-card-head">
         <div>
@@ -2063,24 +2431,6 @@ async function render_trade_ads_composer(root, status) {
       <div class="ta-row">
         <label class="ta-toggle-pill"><input type="checkbox" id="ta-req-random" ${cfg.request_random ? "checked" : ""}/> Randomize requests each ad</label>
       </div>
-      ${
-        !cfg.request_random
-          ? `<div class="ta-row ta-tags-row" id="ta-tags-row"><span class="ta-tags-label">Tags</span>${[
-              ["any", "🏷️", "Any"],
-              ["rap", "📊", "RAP"],
-              ["value", "💎", "Value"],
-              ["overpay", "📈", "Overpay"],
-              ["downgrade", "📉", "Downgrade"],
-              ["upgrade", "⬆️", "Upgrade"],
-              ["rares", "⭐", "Rares"],
-            ]
-              .map(([tag, emo, label]) => {
-                let active = (cfg.request_tags || []).includes(tag);
-                return `<button type="button" class="ta-tag-pill${active ? " is-on" : ""}" data-tag="${tag}" id="ta-tag-${tag}">${emo} ${label}</button>`;
-              })
-              .join("")}</div>`
-          : ""
-      }
       <div class="ta-row">
         <label class="ta-field">
           <span>Min demand (random)</span>
@@ -2147,13 +2497,13 @@ async function render_trade_ads_composer(root, status) {
     }</div>
   `;
 
-  root
+  panel
     .querySelectorAll('.ta-slot[data-side="offer"]:not([data-random="1"])')
     .forEach((el) => {
       el.addEventListener("click", () => {
         if (cfg.offer_random) return;
         let idx = Number(el.dataset.index);
-        let status_line = root.querySelector("#ta-post-status");
+        let status_line = panel.querySelector("#ta-post-status");
         let pick_opts = {
           side: "offer",
           index: idx,
@@ -2201,6 +2551,7 @@ async function render_trade_ads_composer(root, status) {
           side: "request",
           index: idx,
           inventory: [],
+          requestTags: cfg.request_tags || [],
           onPick: async (id) => {
             let slots = cfg.request_slots.slice();
             slots[idx] = id;
@@ -2221,7 +2572,7 @@ async function render_trade_ads_composer(root, status) {
       });
     });
 
-  root.querySelectorAll(".ta-slot-clear").forEach((btn) => {
+  panel.querySelectorAll(".ta-slot-clear").forEach((btn) => {
     btn.addEventListener("click", (ev) => {
       ev.stopPropagation();
       let side = btn.dataset.side;
@@ -2281,27 +2632,14 @@ async function render_trade_ads_composer(root, status) {
       else await render_trade_ads_tab();
     });
 
-  root.querySelector("#ta-req-random").addEventListener("change", async (e) => {
+  panel.querySelector("#ta-req-random").addEventListener("change", async (e) => {
     await trade_ads_save_merged_config({ request_random: e.target.checked });
     let fresh = await trade_ads_fetch_status_from_bg();
     if (fresh?.verified) await render_trade_ads_composer(root, fresh);
     else await render_trade_ads_tab();
   });
 
-  root.querySelectorAll(".ta-tag-pill").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      let tag = btn.dataset.tag;
-      if (!tag) return;
-      let tags = (cfg.request_tags || []).slice();
-      let idx = tags.indexOf(tag);
-      if (idx >= 0) tags.splice(idx, 1);
-      else tags.push(tag);
-      cfg = await trade_ads_save_merged_config({ request_tags: tags });
-      btn.classList.toggle("is-on", tags.includes(tag));
-    });
-  });
-
-  root.querySelector("#ta-demand").addEventListener("change", async (e) => {
+  panel.querySelector("#ta-demand").addEventListener("change", async (e) => {
     await trade_ads_save_merged_config({
       request_demand_min: Number(e.target.value),
     });
@@ -2310,7 +2648,7 @@ async function render_trade_ads_composer(root, status) {
     else await render_trade_ads_tab();
   });
 
-  root.querySelector("#ta-robux").addEventListener("change", async (e) => {
+  panel.querySelector("#ta-robux").addEventListener("change", async (e) => {
     await trade_ads_save_merged_config({
       offer_robux: Math.max(0, Number(e.target.value) || 0),
     });
@@ -2376,24 +2714,24 @@ async function render_trade_ads_composer(root, status) {
 
   function sync_schedule_ui() {
     let paused = !!cfg.posting_paused;
-    let card = root.querySelector(".ta-schedule-card");
+    let card = panel.querySelector(".ta-schedule-card");
     if (card) {
       card.classList.toggle("is-paused", paused);
       card.classList.toggle("is-live", !paused);
     }
-    let status_lbl = root.querySelector("#ta-schedule-status-text");
+    let status_lbl = panel.querySelector("#ta-schedule-status-text");
     if (status_lbl)
       status_lbl.textContent = paused
         ? "Automatic posting (off)"
         : "Automatic posting (on)";
-    let sw = root.querySelector("#ta-schedule-live");
+    let sw = panel.querySelector("#ta-schedule-live");
     if (sw) sw.checked = !paused;
-    let v = root.querySelector("#ta-interval-val");
+    let v = panel.querySelector("#ta-interval-val");
     if (v) v.value = String(cfg.auto_interval_minutes);
-    let hum = root.querySelector("#ta-interval-human-text");
+    let hum = panel.querySelector("#ta-interval-human-text");
     if (hum)
       hum.textContent = format_trade_ads_duration(cfg.auto_interval_minutes);
-    let minus = root.querySelector("#ta-min-interval");
+    let minus = panel.querySelector("#ta-min-interval");
     if (minus)
       minus.disabled =
         cfg.auto_interval_minutes <= trade_ads_interval_min_popup;
@@ -2428,7 +2766,7 @@ async function render_trade_ads_composer(root, status) {
     .querySelector("#ta-plus-interval")
     .addEventListener("click", () => bump_interval(1));
 
-  let interval_input = root.querySelector("#ta-interval-val");
+  let interval_input = panel.querySelector("#ta-interval-val");
   interval_input.addEventListener("focus", () => interval_input.select());
   interval_input.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") {
@@ -2454,9 +2792,9 @@ async function render_trade_ads_composer(root, status) {
     sync_schedule_ui();
   });
 
-  root.querySelector("#ta-post-now").addEventListener("click", async () => {
-    let btn = root.querySelector("#ta-post-now");
-    let line = root.querySelector("#ta-post-status");
+  panel.querySelector("#ta-post-now").addEventListener("click", async () => {
+    let btn = panel.querySelector("#ta-post-now");
+    let line = panel.querySelector("#ta-post-status");
     btn.disabled = true;
     line.textContent = "Posting…";
     line.className = "ta-status-line";
@@ -2475,7 +2813,7 @@ async function render_trade_ads_composer(root, status) {
         await render_trade_ads_composer(root, fresh);
       }
       requestAnimationFrame(() => {
-        let line2 = root.querySelector("#ta-post-status");
+        let line2 = panel.querySelector("#ta-post-status");
         if (line2) {
           line2.innerHTML = `Posted. <a href="${url}" target="_blank" rel="noopener noreferrer">View trade ad</a>`;
           line2.className = "ta-status-line ta-ok";
@@ -2487,7 +2825,7 @@ async function render_trade_ads_composer(root, status) {
     }
   });
 
-  root.querySelector("#ta-disconnect").addEventListener("click", async () => {
+  panel.querySelector("#ta-disconnect").addEventListener("click", async () => {
     trade_ads_reset_inventory_session();
     await new Promise((resolve) =>
       chrome.runtime.sendMessage({ type: "trade_ads_disconnect" }, resolve),
@@ -2496,15 +2834,21 @@ async function render_trade_ads_composer(root, status) {
     render_trade_ads_tab();
   });
 
-  let recent_toggle = root.querySelector("#ta-recent-toggle");
+  let recent_toggle = panel.querySelector("#ta-recent-toggle");
   if (recent_toggle) {
     recent_toggle.addEventListener("click", () => {
-      let list = root.querySelector("#ta-recent-list");
+      let list = panel.querySelector("#ta-recent-list");
       let chevron = recent_toggle.querySelector(".ta-recent-chevron");
       if (!list) return;
       let open = list.classList.toggle("is-open");
       if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "";
     });
+  }
+
+  layout_root.dataset.taActiveCategory = saved_category;
+  trade_ads_bind_category_picks(layout_root);
+  if (saved_category === "notifs") {
+    trade_ads_mount_notifications_panel(layout_root);
   }
 
   {
@@ -2554,10 +2898,13 @@ async function render_trade_ads_composer(root, status) {
 }
 
 async function render_trade_ads_verify_flow(root, status, vu) {
+  let layout_root = trade_ads_get_layout_root(root) || root;
+  let panel = trade_ads_resolve_posting_panel(layout_root);
+  if (!panel) return;
   let step = vu.step || "idle";
 
   if (step === "loading") {
-    root.innerHTML = `
+    panel.innerHTML = `
       <p class="ta-lede">Verifying…</p>
       <div class="ta-shimmer"></div>
     `;
@@ -2579,7 +2926,7 @@ async function render_trade_ads_verify_flow(root, status, vu) {
   }
 
   let name = escape_html(status.roblox?.name || "");
-  root.innerHTML = `
+  panel.innerHTML = `
     <div class="ta-card">
       <div class="ta-card-head" style="align-items:center;margin-bottom:14px;">
         <div class="ta-card-title">Rolimons Trade Ads</div>
@@ -2589,18 +2936,18 @@ async function render_trade_ads_verify_flow(root, status, vu) {
       <button type="button" class="ta-btn ta-btn-primary" id="ta-auto-verify" style="width:100%;">Start Posting</button>
     </div>
   `;
-  root.querySelector("#ta-auto-verify").addEventListener("click", async () => {
+  panel.querySelector("#ta-auto-verify").addEventListener("click", async () => {
     await trade_ads_merge_verify_ui({ step: "loading", error: "" });
-    render_trade_ads_verify_flow(root, status, { step: "loading" });
+    render_trade_ads_verify_flow(layout_root, status, { step: "loading" });
   });
 }
 
 async function render_trade_ads_tab() {
-  const root = document.getElementById("trade-ads-root");
-  if (!root) return;
+  const layout_root = document.getElementById("trade-ads-root");
+  if (!layout_root) return;
 
   clear_trade_ads_countdown_timer();
-  root.innerHTML = `<p class="ta-lede">Loading…</p>`;
+  layout_root.innerHTML = `<p class="ta-lede">Loading…</p>`;
   chrome.runtime.sendMessage("getData", () => {
     chrome.runtime.lastError;
   });
@@ -2609,13 +2956,20 @@ async function render_trade_ads_tab() {
     chrome.runtime.sendMessage({ type: "trade_ads_get_status" }, resolve),
   );
 
+  let active = trade_ads_get_active_category(layout_root);
   if (!status?.roblox) {
-    root.innerHTML = `<p class="ta-lede">Sign in to Roblox in this browser, then reopen this tab.</p>`;
+    trade_ads_ensure_category_layout(layout_root, active);
+    let panel = layout_root.querySelector("#ta-posting-inner");
+    if (panel) {
+      panel.innerHTML = `<p class="ta-lede">Sign in to Roblox in this browser, then reopen this tab.</p>`;
+    }
     return;
   }
 
+  trade_ads_ensure_category_layout(layout_root, active);
+
   if (status.verified) {
-    render_trade_ads_composer(root, status);
+    await render_trade_ads_composer(layout_root, status);
     return;
   }
 
@@ -2623,7 +2977,7 @@ async function render_trade_ads_tab() {
     (await get_storage([trade_ads_verify_storage_key]))[
       trade_ads_verify_storage_key
     ] || {};
-  await render_trade_ads_verify_flow(root, status, vu);
+  await render_trade_ads_verify_flow(layout_root, status, vu);
 }
 
 async function refresh_all_panels() {
@@ -2732,6 +3086,10 @@ async function render_options() {
     legacy_post_tax_trade_value_option_name,
     colorblind_mode_profile_key,
     inbound_trade_notification_min_gain_key,
+    inbound_trade_notification_webhook_enabled_key,
+    inbound_trade_notification_webhook_url_key,
+    inbound_trade_notification_webhook_ping_enabled_key,
+    inbound_trade_notification_webhook_discord_id_key,
     duplicate_trade_warning_hours_key,
     trade_page_theme_enabled_key,
     trade_page_theme_key,
@@ -2841,7 +3199,7 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
     <p class="nte-totp-hint">Paste your Roblox 2FA <strong>secret</strong> to auto-fill 2FA challenges. Treat it like a password - do not share it with anybody.</p>
     <label class="nte-totp-row">
       <input type="checkbox" id="nte-totp-enabled" />
-      <span>Enable autofill on roblox.com</span>
+      <span>Enable 2FA Autofill</span>
     </label>
     <div id="nte-totp-pw-toggle-row" class="nte-totp-pw-toggle-row" hidden>
       <button type="button" class="nte-totp-pw-reveal-btn" id="nte-totp-pw-toggle" aria-expanded="false">
@@ -3806,6 +4164,10 @@ function restore_defaults() {
     updates[colorblind_mode_profile_key] = colorblind_mode_profile_default;
     updates[inbound_trade_notification_min_gain_key] =
       inbound_trade_notification_min_gain_default;
+    updates[inbound_trade_notification_webhook_enabled_key] = false;
+    updates[inbound_trade_notification_webhook_url_key] = "";
+    updates[inbound_trade_notification_webhook_ping_enabled_key] = false;
+    updates[inbound_trade_notification_webhook_discord_id_key] = "";
     updates[duplicate_trade_warning_hours_key] =
       duplicate_trade_warning_hours_default;
     updates[profile_value_display_mode_key] =
@@ -3857,6 +4219,10 @@ const required_origins = [
   "https://*.roblox.com/*",
   "https://roblox.com/*",
   "https://thumbnails.roblox.com/*",
+  "https://discord.com/*",
+  "https://*.discord.com/*",
+  "https://discordapp.com/*",
+  "https://*.discordapp.com/*",
 ];
 
 function check_host_permissions() {
