@@ -2063,6 +2063,24 @@ async function render_trade_ads_composer(root, status) {
       <div class="ta-row">
         <label class="ta-toggle-pill"><input type="checkbox" id="ta-req-random" ${cfg.request_random ? "checked" : ""}/> Randomize requests each ad</label>
       </div>
+      ${
+        !cfg.request_random
+          ? `<div class="ta-row ta-tags-row" id="ta-tags-row"><span class="ta-tags-label">Tags</span>${[
+              ["any", "🏷️", "Any"],
+              ["rap", "📊", "RAP"],
+              ["value", "💎", "Value"],
+              ["overpay", "📈", "Overpay"],
+              ["downgrade", "📉", "Downgrade"],
+              ["upgrade", "⬆️", "Upgrade"],
+              ["rares", "⭐", "Rares"],
+            ]
+              .map(([tag, emo, label]) => {
+                let active = (cfg.request_tags || []).includes(tag);
+                return `<button type="button" class="ta-tag-pill${active ? " is-on" : ""}" data-tag="${tag}" id="ta-tag-${tag}">${emo} ${label}</button>`;
+              })
+              .join("")}</div>`
+          : ""
+      }
       <div class="ta-row">
         <label class="ta-field">
           <span>Min demand (random)</span>
@@ -2268,6 +2286,19 @@ async function render_trade_ads_composer(root, status) {
     let fresh = await trade_ads_fetch_status_from_bg();
     if (fresh?.verified) await render_trade_ads_composer(root, fresh);
     else await render_trade_ads_tab();
+  });
+
+  root.querySelectorAll(".ta-tag-pill").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      let tag = btn.dataset.tag;
+      if (!tag) return;
+      let tags = (cfg.request_tags || []).slice();
+      let idx = tags.indexOf(tag);
+      if (idx >= 0) tags.splice(idx, 1);
+      else tags.push(tag);
+      cfg = await trade_ads_save_merged_config({ request_tags: tags });
+      btn.classList.toggle("is-on", tags.includes(tag));
+    });
   });
 
   root.querySelector("#ta-demand").addEventListener("change", async (e) => {

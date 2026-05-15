@@ -2667,6 +2667,52 @@ body.is-tradeads-tab .popup {
   accent-color: var(--accent);
 }
 
+.ta-tags-row {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ta-tags-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.ta-tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+  line-height: 1.3;
+}
+
+.ta-tag-pill:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--border-hover);
+}
+
+.ta-tag-pill.is-on {
+  background: var(--accent-soft);
+  border-color: rgba(108, 92, 231, 0.3);
+  color: var(--accent);
+}
+
 .ta-field {
   display: flex;
   flex-direction: column;
@@ -2905,11 +2951,12 @@ body.is-tradeads-tab .popup {
 }
 
 .ta-strip-footer {
-  padding: 0 12px 10px;
+  padding: 0 0 10px 4px;
   min-height: 18px;
   font-size: 10px;
   font-weight: 600;
   color: var(--text-muted);
+  text-align: left;
 }
 
 .ta-sheet-close {

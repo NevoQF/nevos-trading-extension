@@ -23,6 +23,7 @@ function trade_ads_default_config() {
     notify_on_post: true,
     posting_paused: true,
     auto_interval_minutes: 15,
+    request_tags: [],
   };
 }
 
@@ -796,7 +797,10 @@ async function trade_ads_build_post_body(
     }
     let clamped = trade_ads_clamp_requests(offer_ids, manual, item_data);
     request_item_ids = clamped.ids;
-    request_tags = clamped.tags;
+    let user_tags = Array.isArray(config.request_tags)
+      ? config.request_tags.filter(Boolean)
+      : [];
+    request_tags = user_tags.length > 0 ? user_tags : clamped.tags;
   }
 
   let body = {
