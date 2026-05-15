@@ -124,7 +124,7 @@
   },
   "permissions": ["storage", "alarms", "notifications", "activeTab", "cookies"],
   "short_name": "Nevos Trade",
-  "version": "3.10.35",
+  "version": "3.10.36",
   "web_accessible_resources": [
     {
       "matches": ["https://*.roblox.com/*"],
