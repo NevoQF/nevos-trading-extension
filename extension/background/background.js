@@ -37,9 +37,11 @@ if (
   globalThis.fetch = marked_fetch;
 }
 
-importScripts("../shared/trade_ad_notifications_core.js");
-importScripts("trade_ads.js");
-importScripts("trade_ad_notifications.js");
+if (typeof importScripts === "function") {
+  importScripts("../shared/trade_ad_notifications_core.js");
+  importScripts("trade_ads.js");
+  importScripts("trade_ad_notifications.js");
+}
 
 const option_groups = JSON.parse(
   '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]',
@@ -3300,18 +3302,16 @@ chrome.storage.onChanged.addListener((changes, area_name) => {
   }
 });
 
-const required_host_origins = [
-  "https://api.rolimons.com/*",
-  "https://www.rolimons.com/*",
-  "https://rolimons.com/*",
-  "https://routility.io/*",
-  "https://roautotrade.com/*",
-  "https://nevos-extension.com/*",
-  "https://www.nevos-extension.com/*",
-  "https://*.roblox.com/*",
-  "https://roblox.com/*",
-  "https://thumbnails.roblox.com/*",
-];
+const required_host_origins = (() => {
+  // Quick Proof only needs Roblox page access for tab capture flow.
+  let quick_proof = ["https://*.roblox.com/*", "https://roblox.com/*"];
+  let manifest_origins = chrome.runtime?.getManifest?.()?.host_permissions;
+  if (!Array.isArray(manifest_origins) || !manifest_origins.length)
+    return quick_proof;
+  let granted_set = new Set(manifest_origins.map((x) => String(x || "").trim()));
+  let filtered = quick_proof.filter((x) => granted_set.has(x));
+  return filtered.length ? filtered : quick_proof;
+})();
 
 const quick_proof_capture_permission_message =
   "Open the extension popup from the toolbar once, then try Proof again.";

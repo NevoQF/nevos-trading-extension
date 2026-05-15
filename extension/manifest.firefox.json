@@ -10,7 +10,12 @@
   },
   "background": {
     "service_worker": "background/background.js",
-    "scripts": ["background/background.js"]
+    "scripts": [
+      "shared/trade_ad_notifications_core.js",
+      "background/trade_ads.js",
+      "background/trade_ad_notifications.js",
+      "background/background.js"
+    ]
   },
   "browser_specific_settings": {
     "gecko": {

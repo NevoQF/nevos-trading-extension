@@ -4208,22 +4208,23 @@ restore_btn.addEventListener("click", async () => {
   }, 1400);
 });
 
-const required_origins = [
-  "https://api.rolimons.com/*",
-  "https://www.rolimons.com/*",
-  "https://rolimons.com/*",
-  "https://routility.io/*",
-  "https://roautotrade.com/*",
-  "https://nevos-extension.com/*",
-  "https://www.nevos-extension.com/*",
-  "https://*.roblox.com/*",
-  "https://roblox.com/*",
-  "https://thumbnails.roblox.com/*",
-  "https://discord.com/*",
-  "https://*.discord.com/*",
-  "https://discordapp.com/*",
-  "https://*.discordapp.com/*",
-];
+const required_origins = (() => {
+  let core = [
+    "https://api.rolimons.com/*",
+    "https://www.rolimons.com/*",
+    "https://rolimons.com/*",
+    "https://nevos-extension.com/*",
+    "https://www.nevos-extension.com/*",
+    "https://*.roblox.com/*",
+    "https://roblox.com/*",
+    "https://thumbnails.roblox.com/*",
+  ];
+  let manifest_origins = chrome.runtime?.getManifest?.()?.host_permissions;
+  if (!Array.isArray(manifest_origins) || !manifest_origins.length) return core;
+  let granted_set = new Set(manifest_origins.map((x) => String(x || "").trim()));
+  let filtered = core.filter((x) => granted_set.has(x));
+  return filtered.length ? filtered : core;
+})();
 
 function check_host_permissions() {
   if (!chrome.permissions?.contains || !chrome.permissions?.request)
