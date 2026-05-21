@@ -13,7 +13,10 @@
   },
   "content_scripts": [
     {
-      "js": ["shared/browser_compat.js", "content/trade_request_bootstrap.js"],
+      "js": [
+        "shared/browser_compat.js",
+        "content/trade_request_bootstrap.js"
+      ],
       "matches": [
         "https://*.roblox.com/trades*",
         "https://*.roblox.com/*/trades*"
@@ -21,7 +24,10 @@
       "run_at": "document_start"
     },
     {
-      "js": ["shared/browser_compat.js", "content/trade_page_themes.js"],
+      "js": [
+        "shared/browser_compat.js",
+        "content/trade_page_themes.js"
+      ],
       "matches": [
         "https://*.roblox.com/trades*",
         "https://*.roblox.com/*/trades*"
@@ -29,7 +35,9 @@
       "run_at": "document_start"
     },
     {
-      "js": ["scripts/trade_list_request_patch.js"],
+      "js": [
+        "scripts/trade_list_request_patch.js"
+      ],
       "matches": [
         "https://*.roblox.com/trades*",
         "https://*.roblox.com/*/trades*"
@@ -95,13 +103,25 @@
     },
     {
       "all_frames": true,
-      "js": ["shared/browser_compat.js", "content/roblox_totp_autofill.js"],
-      "matches": ["https://*.roblox.com/*", "https://roblox.com/*"],
+      "js": [
+        "shared/browser_compat.js",
+        "content/roblox_totp_autofill.js"
+      ],
+      "matches": [
+        "https://*.roblox.com/*",
+        "https://roblox.com/*"
+      ],
       "run_at": "document_idle"
     },
     {
-      "js": ["shared/browser_compat.js", "content/navbar_quick_search.js"],
-      "matches": ["https://*.roblox.com/*", "https://roblox.com/*"],
+      "js": [
+        "shared/browser_compat.js",
+        "content/navbar_quick_search.js"
+      ],
+      "matches": [
+        "https://*.roblox.com/*",
+        "https://roblox.com/*"
+      ],
       "run_at": "document_idle"
     }
   ],
@@ -135,12 +155,20 @@
     "open_in_tab": true,
     "page": "popup/popup.html"
   },
-  "permissions": ["storage", "alarms", "notifications", "activeTab", "cookies"],
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "activeTab",
+    "cookies"
+  ],
   "short_name": "Nevos Trade",
-  "version": "3.10.36",
+  "version": "3.10.39",
   "web_accessible_resources": [
     {
-      "matches": ["https://*.roblox.com/*"],
+      "matches": [
+        "https://*.roblox.com/*"
+      ],
       "resources": [
         "assets/Averta.otf",
         "assets/AvertaExtraBold.otf",

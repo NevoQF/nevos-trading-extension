@@ -543,7 +543,8 @@ async function prompt_inbound_trade_notification_min_gain() {
   let webhook_url = normalize_inbound_trade_notification_webhook_url(
     saved[inbound_trade_notification_webhook_url_key],
   );
-  let ping_enabled = !!saved[inbound_trade_notification_webhook_ping_enabled_key];
+  let ping_enabled =
+    !!saved[inbound_trade_notification_webhook_ping_enabled_key];
   let discord_id = normalize_inbound_trade_notification_discord_id(
     saved[inbound_trade_notification_webhook_discord_id_key],
   );
@@ -664,9 +665,13 @@ function open_inbound_trade_notification_settings_modal(current) {
       "#inbound-notif-webhook-enabled",
     );
     let webhook_url_input = overlay.querySelector("#inbound-notif-webhook-url");
-    let ping_enabled_input = overlay.querySelector("#inbound-notif-ping-enabled");
+    let ping_enabled_input = overlay.querySelector(
+      "#inbound-notif-ping-enabled",
+    );
     let discord_id_input = overlay.querySelector("#inbound-notif-discord-id");
-    let gain_pills = Array.from(overlay.querySelectorAll(".inbound-notif-pill"));
+    let gain_pills = Array.from(
+      overlay.querySelectorAll(".inbound-notif-pill"),
+    );
 
     function close(result = null) {
       overlay.remove();
@@ -688,7 +693,8 @@ function open_inbound_trade_notification_settings_modal(current) {
       let normalized = normalize_inbound_trade_notification_min_gain(
         min_gain_input.value,
       );
-      min_gain_input.value = format_inbound_trade_notification_min_gain(normalized);
+      min_gain_input.value =
+        format_inbound_trade_notification_min_gain(normalized);
       return normalized;
     }
 
@@ -922,23 +928,72 @@ function get_update_notice_copy(next_version = "") {
   let next = String(next_version || "").trim();
   if (is_firefox_extension_runtime()) {
     return {
-      kicker: "Add-on update spotted",
-      title: "Firefox handles the install",
+      kicker: "Add-on update ready",
+      title: "New version downloaded",
       copy: next
-        ? `Firefox noticed v${next}. Store installs update automatically, so the extension can only surface the notice here.`
-        : "Firefox store installs update automatically.",
-      status: "Notice only.",
+        ? `Firefox has v${next} ready. Click Update to restart with the new version.`
+        : "A newer Firefox add-on build is ready. Click Update to restart with it.",
+      status: "Restart applies the pending add-on update.",
     };
   }
 
   return {
-    kicker: "Store update spotted",
-    title: "Chrome Web Store handles the install",
+    kicker: "Extension update ready",
+    title: "New version downloaded",
     copy: next
-      ? `Chrome noticed v${next}. Store installs update automatically, so the extension can only surface the notice here.`
-      : "Chrome Web Store installs update automatically.",
-    status: "Notice only.",
+      ? `v${next} is ready to install. Click Update to restart with the new version.`
+      : "A newer store build is ready. Click Update to restart with it.",
+    status: "Restart applies the pending store update.",
   };
+}
+
+function can_apply_extension_update() {
+  return typeof chrome.runtime?.reload === "function";
+}
+
+async function apply_extension_update(next_version = "") {
+  if (!can_apply_extension_update()) {
+    return {
+      ok: false,
+      error: "This browser cannot apply updates from the extension popup.",
+    };
+  }
+
+  let current_version = String(chrome.runtime.getManifest()?.version || "").trim();
+  let pending_version = String(next_version || "").trim();
+  let has_pending =
+    pending_version &&
+    (!current_version ||
+      compare_extension_versions(pending_version, current_version) > 0);
+
+  let result = await request_extension_update_check();
+  let can_reload =
+    result?.status === "update_available" ||
+    has_pending ||
+    result?.status === "throttled";
+
+  if (!can_reload) {
+    if (result?.status === "no_update") {
+      return {
+        ok: false,
+        error:
+          "No pending update is ready yet. The browser may still be downloading it.",
+      };
+    }
+    return {
+      ok: false,
+      error:
+        result?.error ||
+        "Could not verify the pending update. Try again in a few minutes.",
+    };
+  }
+
+  try {
+    chrome.runtime.reload();
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
 }
 
 function paint_about_update_status(state) {
@@ -957,8 +1012,8 @@ function paint_about_update_status(state) {
   ) {
     let next_label = `v${escape_html(state.version)}`;
     status_el.innerHTML = is_firefox_extension_runtime()
-      ? `Current version ${current_label}.<br>Firefox has a newer store build queued: ${next_label}.`
-      : `Current version ${current_label}.<br>Chrome has a newer store build queued: ${next_label}.`;
+      ? `Current version ${current_label}.<br>Firefox has a newer store build queued: ${next_label}. Use Update in the banner to restart.`
+      : `Current version ${current_label}.<br>Chrome has a newer store build queued: ${next_label}. Use Update in the banner to restart.`;
     return;
   }
   status_el.innerHTML = is_firefox_extension_runtime()
@@ -1171,6 +1226,9 @@ function paint_update_banner(state) {
     ? `v${escape_html(current_version)}`
     : "your current build";
   let copy = get_update_notice_copy(state.version);
+  let apply_button = can_apply_extension_update()
+    ? `<button type="button" class="update-banner-btn update-banner-btn-primary" data-update-action="apply">Update</button>`
+    : "";
 
   root.innerHTML = `
     <div class="update-banner">
@@ -1183,13 +1241,44 @@ function paint_update_banner(state) {
           <div class="update-banner-title">${copy.title}</div>
           <div class="update-banner-copy">You're on ${current_version_label}. ${copy.copy}</div>
           <div class="update-banner-actions">
+            ${apply_button}
             <button type="button" class="update-banner-btn update-banner-btn-secondary" data-update-action="dismiss">Dismiss</button>
           </div>
-          <div class="update-banner-status">${copy.status}</div>
+          <div class="update-banner-status" data-update-status>${copy.status}</div>
         </div>
       </div>
     </div>
   `;
+
+  root
+    .querySelector('[data-update-action="apply"]')
+    ?.addEventListener("click", async () => {
+      let apply_btn = root.querySelector('[data-update-action="apply"]');
+      let dismiss_btn = root.querySelector('[data-update-action="dismiss"]');
+      let status_el = root.querySelector("[data-update-status]");
+      if (apply_btn) {
+        apply_btn.disabled = true;
+        apply_btn.textContent = "Updating…";
+      }
+      if (dismiss_btn) dismiss_btn.disabled = true;
+      if (status_el) {
+        status_el.textContent =
+          "Applying update and restarting the extension…";
+      }
+
+      let result = await apply_extension_update(state.version);
+      if (result.ok) return;
+
+      if (apply_btn) {
+        apply_btn.disabled = false;
+        apply_btn.textContent = "Update";
+      }
+      if (dismiss_btn) dismiss_btn.disabled = false;
+      if (status_el) {
+        status_el.textContent =
+          result.error || "Could not apply the update. Try again shortly.";
+      }
+    });
 
   root
     .querySelector('[data-update-action="dismiss"]')
@@ -2133,7 +2222,9 @@ function trade_ads_attach_picker(root, opts) {
 function trade_ads_get_active_category(root) {
   if (root?.dataset?.taActiveCategory === "notifs") return "notifs";
   if (root?.dataset?.taActiveCategory === "posting") return "posting";
-  return globalThis.__nte_ads_active_category === "notifs" ? "notifs" : "posting";
+  return globalThis.__nte_ads_active_category === "notifs"
+    ? "notifs"
+    : "posting";
 }
 
 function trade_ads_set_active_category(root, category) {
@@ -2632,12 +2723,14 @@ async function render_trade_ads_composer(root, status) {
       else await render_trade_ads_tab();
     });
 
-  panel.querySelector("#ta-req-random").addEventListener("change", async (e) => {
-    await trade_ads_save_merged_config({ request_random: e.target.checked });
-    let fresh = await trade_ads_fetch_status_from_bg();
-    if (fresh?.verified) await render_trade_ads_composer(root, fresh);
-    else await render_trade_ads_tab();
-  });
+  panel
+    .querySelector("#ta-req-random")
+    .addEventListener("change", async (e) => {
+      await trade_ads_save_merged_config({ request_random: e.target.checked });
+      let fresh = await trade_ads_fetch_status_from_bg();
+      if (fresh?.verified) await render_trade_ads_composer(root, fresh);
+      else await render_trade_ads_tab();
+    });
 
   panel.querySelector("#ta-demand").addEventListener("change", async (e) => {
     await trade_ads_save_merged_config({
@@ -3078,6 +3171,26 @@ function totp_snapshot_is_encrypted(snap) {
 async function render_options() {
   const container = document.getElementById("options-container");
   container.innerHTML = "";
+
+  let banner_dismissed = await get_storage(["nte_discord_banner_dismissed"]);
+  if (!banner_dismissed?.nte_discord_banner_dismissed) {
+    let banner = document.createElement("div");
+    banner.className = "nte-discord-banner";
+    banner.innerHTML = `
+      <div class="nte-discord-banner-text">
+        <svg width="16" height="12" viewBox="0 0 71 55" fill="currentColor"><path d="M60.1045 4.8978C55.5792 2.8214 50.7265 1.2916 45.6527 0.41542C45.5603 0.39851 45.468 0.440769 45.4204 0.525289C44.7963 1.6353 44.105 3.0834 43.6209 4.2216C38.1637 3.4046 32.7345 3.4046 27.3892 4.2216C26.905 3.0581 26.1886 1.6353 25.5617 0.525289C25.5141 0.443589 25.4218 0.40133 25.3294 0.41542C20.2584 1.2886 15.4057 2.8184 10.8776 4.8978C10.8384 4.9147 10.8048 4.9429 10.7825 4.9795C1.57795 18.7309 -0.943561 32.1443 0.293408 45.3914C0.299005 45.4562 0.335386 45.5182 0.385761 45.5576C6.45866 50.0174 12.3413 52.7249 18.1147 54.5195C18.2071 54.5477 18.305 54.5132 18.3638 54.4378C19.7295 52.5728 20.9469 50.6063 21.9907 48.5383C22.0523 48.4172 21.9935 48.2735 21.8676 48.2256C19.9366 47.4931 18.0979 46.6 16.3292 45.5856C16.1893 45.5041 16.1781 45.304 16.3068 45.2082C16.679 44.9293 17.0513 44.6391 17.4067 44.3461C17.471 44.2926 17.5606 44.2813 17.6362 44.3151C29.2558 49.6202 41.8354 49.6202 53.3179 44.3151C53.3935 44.2784 53.4831 44.2897 53.5502 44.3432C53.9057 44.6362 54.2779 44.9293 54.6529 45.2082C54.7816 45.304 54.7732 45.5041 54.6333 45.5856C52.8646 46.6197 51.0259 47.4931 49.0921 48.2228C48.9662 48.2707 48.9047 48.4172 48.969 48.5383C50.039 50.6034 51.2564 52.5699 52.5951 54.435C52.6519 54.5132 52.7526 54.5477 52.845 54.5195C58.6464 52.7249 64.529 50.0174 70.6019 45.5576C70.6551 45.5182 70.6887 45.459 70.6943 45.3942C72.1747 30.0791 68.2147 16.7757 60.1968 4.98527C60.1772 4.94286 60.1436 4.91469 60.1045 4.8978ZM23.7259 37.3253C20.2276 37.3253 17.3451 34.1136 17.3451 30.1693C17.3451 26.225 20.1717 23.0133 23.7259 23.0133C27.308 23.0133 30.1346 26.2524 30.1066 30.1693C30.1066 34.1136 27.28 37.3253 23.7259 37.3253ZM47.3178 37.3253C43.8196 37.3253 40.9371 34.1136 40.9371 30.1693C40.9371 26.225 43.7637 23.0133 47.3178 23.0133C50.9 23.0133 53.7266 26.2524 53.6985 30.1693C53.6985 34.1136 50.9 37.3253 47.3178 37.3253Z"/></svg>
+        <span>Join our <a href="https://discord.gg/4XWE7yy2uE" target="_blank" rel="noopener noreferrer">Discord</a> for support and updates</span>
+      </div>
+      <button type="button" class="nte-discord-banner-close" title="Dismiss">×</button>
+    `;
+    banner
+      .querySelector(".nte-discord-banner-close")
+      .addEventListener("click", async () => {
+        await set_storage({ nte_discord_banner_dismissed: true });
+        banner.remove();
+      });
+    container.append(banner);
+  }
 
   const option_names = [...get_option_names(), profile_value_display_mode_key];
   let saved = await get_storage([
@@ -4221,7 +4334,9 @@ const required_origins = (() => {
   ];
   let manifest_origins = chrome.runtime?.getManifest?.()?.host_permissions;
   if (!Array.isArray(manifest_origins) || !manifest_origins.length) return core;
-  let granted_set = new Set(manifest_origins.map((x) => String(x || "").trim()));
+  let granted_set = new Set(
+    manifest_origins.map((x) => String(x || "").trim()),
+  );
   let filtered = core.filter((x) => granted_set.has(x));
   return filtered.length ? filtered : core;
 })();

@@ -112,8 +112,11 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.15);
-  padding: 2px;
+  object-fit: cover;
+  background: #100b2a;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.24),
+    0 8px 18px rgba(97, 78, 255, 0.24);
+  padding: 0;
 }
 
 .header-title {
@@ -3568,7 +3571,9 @@ body.is-tradeads-tab .popup {
   padding: 2px;
   display: inline-flex;
   align-items: center;
-  transition: background var(--transition), border-color var(--transition);
+  transition:
+    background var(--transition),
+    border-color var(--transition);
   cursor: pointer;
 }
 
@@ -3582,7 +3587,9 @@ body.is-tradeads-tab .popup {
   border-radius: 50%;
   background: #c7cbda;
   transform: translateX(0);
-  transition: transform var(--transition), background var(--transition);
+  transition:
+    transform var(--transition),
+    background var(--transition);
 }
 
 .ta-notif-toggle input:checked + .ta-notif-toggle-track {
@@ -3621,7 +3628,9 @@ body.is-tradeads-tab .popup {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 10px 10px 8px;
-  transition: border-color var(--transition), box-shadow var(--transition);
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition);
 }
 
 .ta-notif-card:hover {
@@ -5406,4 +5415,76 @@ body.is-mobile-browser .ta-filter-input-wrap {
 
 body.is-mobile-browser .ta-sheet {
   max-height: 92%;
+}
+
+.nte-discord-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: linear-gradient(
+    135deg,
+    rgba(88, 101, 242, 0.12),
+    rgba(108, 92, 231, 0.08)
+  );
+  border: 1px solid rgba(88, 101, 242, 0.2);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 600;
+  color: #c9cdfb;
+  animation: nte-banner-in 0.35s ease both;
+}
+
+@keyframes nte-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.nte-discord-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nte-discord-banner-text svg {
+  flex-shrink: 0;
+  color: #aab0f7;
+}
+
+.nte-discord-banner a {
+  color: #aab0f7;
+  text-decoration: underline;
+  transition: color 0.15s ease;
+}
+
+.nte-discord-banner a:hover {
+  color: #fff;
+}
+
+.nte-discord-banner-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.nte-discord-banner-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
 }

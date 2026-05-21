@@ -26,9 +26,9 @@
         .nte-analyze-trade-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 24px;border-bottom:1px solid rgba(255,255,255,.06);flex:0 0 auto;background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)}
         .light-theme .nte-analyze-trade-topbar{border-bottom-color:rgba(15,23,42,.07);background:linear-gradient(180deg,rgba(15,23,42,.015),transparent)}
         .nte-analyze-trade-brand{display:flex;align-items:center;gap:14px;min-width:0}
-        .nte-analyze-trade-brand-mark{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:12px;overflow:hidden;flex:0 0 auto;background:linear-gradient(135deg,rgba(99,102,241,.18),rgba(16,185,129,.12));box-shadow:0 1px 2px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.05) inset}
-        .light-theme .nte-analyze-trade-brand-mark{background:linear-gradient(135deg,rgba(99,102,241,.1),rgba(16,185,129,.08));box-shadow:0 1px 2px rgba(15,23,42,.06),0 0 0 1px rgba(15,23,42,.04) inset}
-        .nte-analyze-trade-brand-mark img{width:30px;height:30px;object-fit:contain}
+        .nte-analyze-trade-brand-mark{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:12px;overflow:hidden;flex:0 0 auto;background:#100b2a;box-shadow:0 0 0 1px rgba(255,255,255,.22),0 0 0 2px rgba(255,255,255,.03)}
+        .light-theme .nte-analyze-trade-brand-mark{background:#100b2a;box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 0 2px rgba(255,255,255,.025)}
+        .nte-analyze-trade-brand-mark img{width:100%;height:100%;object-fit:cover}
         .nte-analyze-trade-brand-mark span{font-size:16px;font-weight:800;color:#9ca3af}
         .nte-analyze-trade-brand-text{min-width:0;display:flex;flex-direction:column;gap:4px}
         .nte-analyze-trade-brand-title{font-size:17px;font-weight:800;letter-spacing:-.015em;line-height:1;color:#f3f4f6}
@@ -121,7 +121,7 @@
           .nte-analyze-trade-topbar{gap:10px;padding:14px 14px 12px}
           .nte-analyze-trade-brand{gap:10px}
           .nte-analyze-trade-brand-mark{width:34px;height:34px;border-radius:10px}
-          .nte-analyze-trade-brand-mark img{width:24px;height:24px}
+          .nte-analyze-trade-brand-mark img{width:100%;height:100%;object-fit:cover}
           .nte-analyze-trade-brand-title{font-size:15px;letter-spacing:0;line-height:1.15}
           .nte-analyze-trade-brand-sub{font-size:10px;letter-spacing:.08em}
           .nte-analyze-trade-close{width:34px;height:34px;border-radius:9px;font-size:20px}

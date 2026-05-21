@@ -1165,7 +1165,7 @@
   var PILL_CLASS =
     "relative clip group/interactable focus-visible:outline-focus disabled:outline-none cursor-pointer relative flex justify-center items-center radius-circle stroke-none padding-left-medium padding-right-medium height-800 text-label-medium bg-shift-300 content-action-utility";
   var PILL_OVERLAY =
-    '<div role="presentation" class="absolute inset-[0] transition-colors group-hover/interactable:bg-[var(--color-state-hover)] group-active/interactable:bg-[var(--color-state-press)] group-disabled/interactable:bg-none"></div>';
+    '<div role="presentation" class="absolute inset-[0] pointer-events-none transition-colors group-hover/interactable:bg-[var(--color-state-hover)] group-active/interactable:bg-[var(--color-state-press)] group-disabled/interactable:bg-none"></div>';
   var PROFILE_SUMMARY_ID = "nte-profile-summary";
   var profile_value_display_mode_key = "profile_value_display_mode";
   var profile_observer = null;
@@ -1323,10 +1323,15 @@
     let rap_label = document.getElementById("totalRAP");
     if (!rap_label) return;
 
-    rap_label.classList.add("nte-loading-dots");
-    rap_label.innerText = "Loading";
+    let has_cached_inventory = profile_inventory_cache[user_id] !== undefined;
+    if (!has_cached_inventory) {
+      rap_label.classList.add("nte-loading-dots");
+      rap_label.innerText = "Loading";
+    }
 
-    let inventory = await get_cached_profile_inventory(user_id);
+    let inventory = has_cached_inventory
+      ? profile_inventory_cache[user_id]
+      : await get_cached_profile_inventory(user_id);
     rap_label = document.getElementById("totalRAP");
     if (!rap_label) return;
 
@@ -1635,7 +1640,7 @@
       .nte-modal-overlay.active .nte-modal{transform:translateY(0) scale(1)}
       .nte-modal-header{padding:20px 24px 16px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-shrink:0}
       .nte-modal-title{font-size:17px;font-weight:700;color:#f6f6f7;display:flex;align-items:center;gap:12px;min-width:0}
-      .nte-modal-logo{width:40px;height:40px;border-radius:12px;object-fit:contain;flex-shrink:0;display:block;background:linear-gradient(145deg,#2b2d31,#17181b);box-shadow:0 10px 26px rgba(0,0,0,.34),0 0 0 1px rgba(255,255,255,.09)}
+      .nte-modal-logo{width:40px;height:40px;border-radius:12px;object-fit:cover;flex-shrink:0;display:block;background:#100b2a;box-shadow:0 0 0 1px rgba(255,255,255,.22),0 0 0 2px rgba(255,255,255,.03)}
       .nte-modal-title-stack{display:flex;flex-direction:column;align-items:flex-start;gap:3px;flex:1;min-width:0}
       .nte-modal-title-text{line-height:1.2;font-size:18px;font-weight:800;letter-spacing:-.2px}
       .nte-modal-discord-sub{font-size:11px;font-weight:500;color:#999da6;text-decoration:none;line-height:1.2}
@@ -1649,7 +1654,7 @@
       .nte-stat-card.routility-usd-card{background:radial-gradient(circle at top right,rgba(255,255,255,.09) 0%,transparent 42%),linear-gradient(180deg,#1d1f23,#141519);border-color:rgba(255,255,255,.12);box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 26px rgba(0,0,0,.24)}
       .nte-stat-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#9298a2;margin-bottom:7px;font-weight:700}
       .nte-stat-label.has-logo{display:inline-flex;align-items:center;gap:7px}
-      .nte-stat-label-logo{width:13px;height:13px;display:block;object-fit:contain;flex:0 0 auto;opacity:.9}
+      .nte-stat-label-logo{width:13px;height:13px;display:block;object-fit:cover;flex:0 0 auto;opacity:.96;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.2)}
       .nte-stat-value{font-size:24px;font-weight:800;color:#fafafa;letter-spacing:-.5px;line-height:1.1}
       .nte-stat-value.val-color{color:#fbfbfc}
       .nte-stat-value.rap-color{color:#d6d8de}
@@ -1791,7 +1796,7 @@
       .light-theme .nte-modal-title{color:#101215}
       .light-theme .nte-modal-discord-sub{color:#707782}
       .light-theme .nte-modal-discord-sub:hover{color:#1f2937}
-      .light-theme .nte-modal-logo{background:linear-gradient(145deg,#ffffff,#eceef1);box-shadow:0 6px 18px rgba(35,52,87,.08),0 0 0 1px rgba(17,24,39,.08)}
+      .light-theme .nte-modal-logo{background:#100b2a;box-shadow:0 0 0 1px rgba(255,255,255,.2),0 0 0 2px rgba(255,255,255,.025)}
       .light-theme .nte-modal-close{background:rgba(17,24,39,.05);color:#646b76}
       .light-theme .nte-modal-close:hover{background:rgba(17,24,39,.1);color:#111827}
       .light-theme .nte-stat-card{background:linear-gradient(180deg,#ffffff,#f4f4f5);border-color:rgba(17,24,39,.08);box-shadow:0 10px 20px rgba(15,23,42,.04)}
@@ -2024,6 +2029,20 @@
       let image = await inv_image_load_image(data_url);
       inv_image_asset_cache[src] = image;
       return image;
+    }
+
+    async function inv_image_user_headshot_url(user_id) {
+      let id = Number(user_id);
+      if (!Number.isFinite(id) || id <= 0) return "";
+      let api =
+        "https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" +
+        id +
+        "&size=150x150&format=Png&isCircular=false";
+      let json = await fetch(api, { credentials: "include" })
+        .then((r) => r.json())
+        .catch(() => null);
+      let u = json?.data?.[0]?.imageUrl;
+      return typeof u === "string" && u ? u : "";
     }
 
     function inv_image_canvas_blob(canvas) {
@@ -2420,10 +2439,14 @@
       ctx.fillStyle = grd;
       ctx.fillRect(0, 0, width, height);
 
-      let logo = await inv_image_safe_image(
+      let brand_logo = await inv_image_safe_image(
         utils.getURL("assets/icons/logo128.png"),
       );
-      inv_image_draw_logo(ctx, logo, pad, 34, 44);
+      let head_url = await inv_image_user_headshot_url(data.user_id);
+      let header_img = head_url
+        ? await inv_image_safe_image(head_url)
+        : brand_logo;
+      inv_image_draw_logo(ctx, header_img || brand_logo, pad, 34, 44);
       ctx.textBaseline = "top";
       ctx.fillStyle = dark ? "#ffffff" : "#101318";
       ctx.font = "900 31px Segoe UI, Arial, sans-serif";
@@ -2435,6 +2458,26 @@
         pad + 60,
         67,
       );
+
+      if (data.robux != null) {
+        let robux_text = fmt(data.robux);
+        let icon_s = 24;
+        let ry = 28;
+        let rtx = width - pad;
+        ctx.font = "700 20px Segoe UI, Arial, sans-serif";
+        ctx.textAlign = "right";
+        ctx.fillStyle = dark ? "#f8fafc" : "#111827";
+        ctx.fillText(robux_text, rtx, ry + 4);
+        ctx.textAlign = "left";
+        let robux_img = await inv_image_safe_image(
+          utils.getURL("elements/robux.png"),
+        );
+        let tw = ctx.measureText(robux_text).width;
+        let icon_x = rtx - tw - icon_s - 10;
+        if (robux_img) {
+          ctx.drawImage(robux_img, icon_x, ry, icon_s, icon_s);
+        }
+      }
 
       let summary_w = 168;
       let summary_gap = 16;
@@ -2509,7 +2552,7 @@
       let mark_gap = 7;
       let mark_x = width - pad - mark_logo - mark_gap - mark_w;
       let mark_y = height - 42;
-      inv_image_draw_logo(ctx, logo, mark_x, mark_y - 4, mark_logo);
+      inv_image_draw_logo(ctx, brand_logo, mark_x, mark_y - 4, mark_logo);
       ctx.fillText(mark, mark_x + mark_logo + mark_gap, mark_y);
       let invite = "discord.gg/4XWE7yy2uE";
       ctx.fillStyle = dark ? "rgba(255,255,255,.46)" : "rgba(17,24,39,.44)";
@@ -2560,10 +2603,14 @@
       ctx.fillStyle = bg_grd;
       ctx.fillRect(0, 0, width, height);
 
-      let logo = await inv_image_safe_image(
+      let brand_logo = await inv_image_safe_image(
         utils.getURL("assets/icons/logo128.png"),
       );
-      inv_image_draw_logo(ctx, logo, pad, 24, 54);
+      let head_url = await inv_image_user_headshot_url(data.user_id);
+      let header_img = head_url
+        ? await inv_image_safe_image(head_url)
+        : brand_logo;
+      inv_image_draw_logo(ctx, header_img || brand_logo, pad, 24, 54);
       ctx.textBaseline = "top";
       ctx.fillStyle = dark ? "#ffffff" : "#0f1115";
       ctx.font = "900 34px Segoe UI, Arial, sans-serif";
@@ -2575,6 +2622,26 @@
         pad + 70,
         73,
       );
+
+      if (data.robux != null) {
+        let robux_text = fmt(data.robux);
+        let icon_s = 28;
+        let ry = 30;
+        let rtx = width - pad;
+        ctx.font = "700 22px Segoe UI, Arial, sans-serif";
+        ctx.textAlign = "right";
+        ctx.fillStyle = dark ? "#f8fafc" : "#111827";
+        ctx.fillText(robux_text, rtx, ry + 5);
+        ctx.textAlign = "left";
+        let robux_img = await inv_image_safe_image(
+          utils.getURL("elements/robux.png"),
+        );
+        let tw = ctx.measureText(robux_text).width;
+        let icon_x = rtx - tw - icon_s - 12;
+        if (robux_img) {
+          ctx.drawImage(robux_img, icon_x, ry, icon_s, icon_s);
+        }
+      }
 
       let summary_w = 168;
       let summary_gap = 16;
@@ -2655,7 +2722,7 @@
       let mark_total_w = mark_logo + mark_gap + mark_w;
       let mark_x = (width - mark_total_w) / 2;
       let mark_y = height - 50;
-      inv_image_draw_logo(ctx, logo, mark_x, mark_y - 3, mark_logo);
+      inv_image_draw_logo(ctx, brand_logo, mark_x, mark_y - 3, mark_logo);
       ctx.fillText(mark, mark_x + mark_logo + mark_gap, mark_y);
       ctx.fillStyle = dark ? "rgba(255,255,255,.42)" : "rgba(17,24,39,.44)";
       ctx.font = "800 10px Segoe UI, Arial, sans-serif";
@@ -3149,7 +3216,7 @@
       overlay.id = "nte-inv-modal";
       overlay.className = "nte-modal-overlay";
       overlay.innerHTML =
-        '<div class="nte-modal"><div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://discord.gg/4XWE7yy2uE" target="_blank" rel="noopener noreferrer">discord.gg/4XWE7yy2uE</a></div></div><button class="nte-modal-close">\u00d7</button></div><div class="nte-loading-modal"><div class="spinner"></div>Nevos Trading Extension is loading inventory details...</div></div>';
+        '<div class="nte-modal"><div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">nevos trading extension</a></div></div><button class="nte-modal-close">\u00d7</button></div><div class="nte-loading-modal"><div class="spinner"></div>Nevos Trading Extension is loading inventory details...</div></div>';
       document.body.appendChild(overlay);
       assert_profile_dominance();
       attach_modal_logo(overlay);
@@ -3302,11 +3369,7 @@
           escape_html(utils.getURL("assets/routility.png")) +
           '" alt="" decoding="async" />Routility Worth</div>'
         : '<div class="nte-stat-label">Estimated Worth</div>';
-      var estimated_usd_sub = show_routility_usd
-        ? routility_priced_count
-          ? `Based on Routility.io\n${fmt(routility_priced_count)}/${fmt(total_count)} copies priced`
-          : "Routility.io values unavailable"
-        : "Based on $3.00 / 1k";
+      var estimated_usd_sub = show_routility_usd ? "" : "Based on $3.00 / 1k";
       var estimated_usd_sub_html = escape_html(estimated_usd_sub).replace(
         /\n/g,
         "<br>",
@@ -3314,7 +3377,7 @@
 
       var modal = overlay.querySelector(".nte-modal");
       modal.innerHTML =
-        '<div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://discord.gg/4XWE7yy2uE" target="_blank" rel="noopener noreferrer">discord.gg/4XWE7yy2uE</a></div></div><button class="nte-modal-close">\u00d7</button></div>' +
+        '<div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">nevos trading extension</a></div></div><button class="nte-modal-close">\u00d7</button></div>' +
         '<div class="nte-stats">' +
         '<div class="' +
         estimated_usd_card_class +
@@ -3343,14 +3406,14 @@
         (rare_count > 0 ? " / " + rare_count + " rare" : "") +
         (proj_count > 0 ? " / " + proj_count + " proj" : "") +
         "</div></div>" +
-        '<div class="nte-stat-card"><div class="nte-stat-label">Best Item</div><div class="nte-stat-value" style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' +
+        '<div class="nte-stat-card"><div class="nte-stat-label">Best Item</div><div class="nte-stat-value" style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:26.4px;display:flex;align-items:center">' +
         escape_html(top_item ? top_item.name : "N/A") +
         '</div><div class="nte-stat-sub">' +
         (top_item ? fmt(top_item.val) + " value" : "") +
         "</div></div>" +
         "</div>" +
         '<div class="nte-controls"><input type="text" class="nte-search" placeholder="Search items by name..."><select class="nte-sort"><option value="val-d">Value: High to Low</option><option value="rap-d">RAP: High to Low</option><option value="val-a">Value: Low to High</option><option value="name-a">Name: A to Z</option><option value="count-d">Quantity: Most</option></select></div>' +
-        '<div class="nte-items-container"><div class="nte-items-grid"></div><div class="nte-modal-footer"><a href="https://discord.gg/4XWE7yy2uE" target="_blank" class="nte-discord-link"><svg width="14" height="11" viewBox="0 0 71 55" fill="currentColor"><path d="M60.1 4.9A58.5 58.5 0 0045.4.2a.2.2 0 00-.2.1 40.8 40.8 0 00-1.8 3.7 54 54 0 00-16.2 0A37.4 37.4 0 0025.4.3a.2.2 0 00-.2-.1A58.4 58.4 0 0010.6 4.9a.2.2 0 00-.1.1C1.5 18.7-.9 32.2.3 45.5v.2a58.7 58.7 0 0017.7 9 .2.2 0 00.3-.1 42 42 0 003.6-5.9.2.2 0 00-.1-.3 38.6 38.6 0 01-5.5-2.6.2.2 0 01 0-.4l1.1-.9a.2.2 0 01.2 0 41.8 41.8 0 0035.6 0 .2.2 0 01.2 0l1.1.9a.2.2 0 010 .4c-1.8 1-3.6 1.8-5.5 2.6a.2.2 0 00-.1.3 47.2 47.2 0 003.6 5.9.2.2 0 00.3.1 58.5 58.5 0 0017.7-9 .2.2 0 00.1-.2c1.4-15.1-2.4-28.2-10-39.8a.2.2 0 00-.1-.1zM23.7 37.3c-3.4 0-6.3-3.2-6.3-7s2.8-7 6.3-7 6.4 3.1 6.3 7-2.8 7-6.3 7zm23.3 0c-3.4 0-6.3-3.2-6.3-7s2.8-7 6.3-7 6.4 3.1 6.3 7-2.8 7-6.3 7z"/></svg> Join our Discord</a></div></div>';
+        '<div class="nte-items-container"><div class="nte-items-grid"></div><div class="nte-modal-footer"><a href="https://nevos-extension.com" target="_blank" class="nte-discord-link">nevos-extension.com</a></div></div>';
 
       attach_modal_logo(overlay);
 
@@ -3448,11 +3511,16 @@
                 }
               }
             }
+            let robux_data = await fetch(
+              "https://economy.roblox.com/v1/user/currency",
+              { credentials: "include" },
+            ).then((r) => r.json().catch(() => ({})));
             let image_data = {
               items: enriched,
               limit: image_opts.limit,
               items_per_row: image_opts.items_per_row,
               username,
+              user_id: get_profile_user_id(),
               total_value,
               total_rap,
               total_count,
@@ -3463,6 +3531,7 @@
               show_usd: image_opts.show_usd,
               show_onhold: image_opts.show_onhold,
               total_usd: routility_total_usd,
+              robux: robux_data.robux || 0,
             };
             let blob =
               image_opts.style === "v2"
