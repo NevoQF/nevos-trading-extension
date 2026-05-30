@@ -3001,6 +3001,39 @@
   let search_inv_cache = {};
   let search_inst_cache = {};
   let search_thumb_cache = {};
+  const search_inv_cache_max_users = 4;
+  const search_inst_cache_max_entries = 3000;
+  const search_inst_cache_trim_count = 400;
+  const search_thumb_cache_max_entries = 2500;
+  const search_thumb_cache_trim_count = 400;
+
+  function trim_cache_object(cache, max_entries, trim_count = 200) {
+    let keys = Object.keys(cache);
+    if (keys.length <= max_entries) return;
+    let remove = Math.min(trim_count, keys.length - max_entries);
+    for (let i = 0; i < remove; i++) delete cache[keys[i]];
+  }
+
+  function trim_search_inv_cache() {
+    let user_keys = Object.keys(search_inv_cache).filter(
+      (key) => !key.endsWith("_loading"),
+    );
+    while (user_keys.length > search_inv_cache_max_users) {
+      let oldest = user_keys.shift();
+      delete search_inv_cache[oldest];
+      delete search_inv_cache[oldest + "_loading"];
+      user_keys = Object.keys(search_inv_cache).filter(
+        (key) => !key.endsWith("_loading"),
+      );
+    }
+  }
+
+  function clear_trade_search_caches() {
+    for (let key of Object.keys(search_inv_cache)) delete search_inv_cache[key];
+    for (let key of Object.keys(search_inst_cache)) delete search_inst_cache[key];
+    for (let key of Object.keys(search_thumb_cache)) delete search_thumb_cache[key];
+  }
+
   function normalize_trade_search_text(value) {
     return String(value ?? "")
       .toLowerCase()
@@ -3496,7 +3529,14 @@
   }
   function cache_search_item(item) {
     let inst_id = item?.collectibleItemInstanceId;
-    inst_id && (search_inst_cache[String(inst_id)] = item);
+    if (inst_id) {
+      search_inst_cache[String(inst_id)] = item;
+      trim_cache_object(
+        search_inst_cache,
+        search_inst_cache_max_entries,
+        search_inst_cache_trim_count,
+      );
+    }
     return item;
   }
   function get_cached_search_item_by_inst(inst_id) {
@@ -3654,6 +3694,7 @@
         console.error("[NRU] Failed to fetch tradable items", err);
       }
       search_inv_cache[user_id] = all;
+      trim_search_inv_cache();
       delete search_inv_cache[user_id + "_loading"];
       "function" == typeof N &&
         c?.getPageType &&
@@ -3710,6 +3751,11 @@
       );
     }
     await Promise.all(fetches);
+    trim_cache_object(
+      search_thumb_cache,
+      search_thumb_cache_max_entries,
+      search_thumb_cache_trim_count,
+    );
     return !0;
   }
   function ensure_demand_styles() {
@@ -4782,7 +4828,18 @@
             element.remove();
       })();
     let e = await c.waitForElm(".trades-container");
-    if ((k(), "sendOrCounter" === c.getPageType()))
+    if ((k(), "details" === c.getPageType()))
+      for (let offer of e.getElementsByClassName("trade-list-detail-offer")) {
+        let robux_line = offer.querySelector(
+          ".robux-line:not(.ng-hide):not([ng-show])",
+        );
+        if (robux_line)
+          T(
+            robux_line.querySelector(".robux-line-amount"),
+            await c.calculateValueTotalDetails(offer),
+          );
+      }
+    if ("sendOrCounter" === c.getPageType())
       for (let offer of document.getElementsByClassName(
         "trade-request-window-offer",
       )) {
@@ -6417,6 +6474,7 @@
     A = s("fgypU"),
     c = s("eFyFE");
   let row_trade_cache = {},
+    row_trade_cache_order = [],
     row_trade_pending = {},
     row_trade_raw_cache =
       window.__nte_trade_row_raw_cache &&
@@ -6429,6 +6487,22 @@
     row_fetch_fast_q = [],
     row_active_requests = 0,
     row_next_request_at = 0;
+  const row_trade_cache_max_entries = 120;
+
+  function trim_row_trade_cache() {
+    while (row_trade_cache_order.length > row_trade_cache_max_entries) {
+      let id = row_trade_cache_order.shift();
+      delete row_trade_cache[id];
+      delete row_trade_raw_cache[id];
+    }
+  }
+
+  function touch_row_trade_cache_order(id) {
+    let idx = row_trade_cache_order.indexOf(id);
+    if (idx >= 0) row_trade_cache_order.splice(idx, 1);
+    row_trade_cache_order.push(id);
+  }
+
   let TRADE_LIST_FILTER_OPTIONS = [
       { value: "all", label: "All trades" },
       { value: "overpay", label: "Overpay" },
@@ -6599,7 +6673,12 @@
     let n =
         t && "object" == typeof t ? set_trade_row_raw_cache_entry(r, t) : null,
       a = normalize_trade_row(n || t);
-    return a ? (row_trade_cache[r] = a) : null;
+    if (a) {
+      row_trade_cache[r] = a;
+      touch_row_trade_cache_order(r);
+      trim_row_trade_cache();
+    }
+    return a || null;
   }
   function get_trade_row_thumb_type(e) {
     let t = String(e?.itemType || e?.itemTarget?.itemType || "Asset").trim();
@@ -6620,6 +6699,7 @@
     return t;
   }
   function dispatch_trade_row_thumb_prewarm(e) {
+    if (document.hidden) return;
     let t = [];
     for (let r of Array.isArray(e) ? e : []) {
       let e = parseInt(r?.targetId ?? r, 10);
@@ -6646,14 +6726,45 @@
     t.length && dispatch_trade_row_thumb_prewarm(t);
   }
   function process_row_fetch_q() {
-    if (row_active_requests >= 3) return;
-    let q = row_fetch_fast_q.length ? row_fetch_fast_q : row_fetch_q;
+    let completed_tab = get_current_trade_tab() === "completed";
+    let max_parallel = completed_tab ? 1 : 3;
+    if (row_active_requests >= max_parallel) return;
+    let q = completed_tab
+      ? row_fetch_q
+      : row_fetch_fast_q.length
+        ? row_fetch_fast_q
+        : row_fetch_q;
     if (0 === q.length) return;
-    let { tradeId: e, resolve: t } = q.shift(),
+    let next_item = null;
+    if (completed_tab) {
+      let visible_idx = -1;
+      let visible_row_order = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < q.length; i++) {
+        let row = q[i]?.row;
+        if (!row?.isConnected) continue;
+        let row_order = get_trade_row_index(row);
+        if (row_order < 0) continue;
+        if (!is_trade_row_visible_in_scroll_view(row)) continue;
+        if (row_order < visible_row_order) {
+          visible_row_order = row_order;
+          visible_idx = i;
+        }
+      }
+      next_item = visible_idx >= 0 ? q.splice(visible_idx, 1)[0] : q.shift();
+    } else {
+      next_item = q.shift();
+    }
+    if (!next_item) return;
+    let { tradeId: e, resolve: t, row: queued_row = null } = next_item,
       r = Math.max(0, row_next_request_at - Date.now());
-    row_active_requests++,
-      (row_next_request_at = Date.now() + r + 100),
-      setTimeout(async () => {
+    row_active_requests++;
+    let pace_ms = 100;
+    if (completed_tab) {
+      let is_visible = is_trade_row_visible_in_scroll_view(queued_row);
+      pace_ms = is_visible ? 80 : 1500;
+    }
+    row_next_request_at = Date.now() + r + pace_ms;
+    setTimeout(async () => {
         let r = null;
         try {
           let t = await fetch_trade_api(
@@ -6704,13 +6815,42 @@
         }
         let n = set_trade_row_cached_trade(e, r);
         n && prewarm_trade_row_thumbnails(n).catch(() => {});
-        t(n), row_active_requests--, process_row_fetch_q();
+        t(n);
+        row_active_requests--;
+        process_row_fetch_q();
       }, r);
   }
-  function queue_row_fetch(e, fast = !1) {
+  function is_trade_row_visible_in_scroll_view(row) {
+    if (!row?.isConnected) return false;
+    let scroll = get_trade_list_scroll_element();
+    if (!scroll) return true;
+    let list = document.querySelector(".trade-row-list");
+    let list_offset = 0;
+    if (list) {
+      let el = list;
+      while (el && el !== scroll) {
+        list_offset += el.offsetTop;
+        el = el.offsetParent;
+      }
+    }
+    let row_top = list_offset + row.offsetTop;
+    let row_bottom = row_top + row.offsetHeight;
+    let view_top = scroll.scrollTop;
+    let view_bottom = view_top + scroll.clientHeight;
+    return row_bottom >= view_top && row_top <= view_bottom;
+  }
+  function queue_row_fetch(e, fast = !1, row = null) {
     return new Promise((t) => {
-      (fast ? row_fetch_fast_q : row_fetch_q).push({ tradeId: e, resolve: t }),
-        process_row_fetch_q();
+      if (get_current_trade_tab() === "completed") {
+        row_fetch_q.push({ tradeId: e, resolve: t, row });
+      } else {
+        (fast ? row_fetch_fast_q : row_fetch_q).push({
+          tradeId: e,
+          resolve: t,
+          row,
+        });
+      }
+      process_row_fetch_q();
     });
   }
   async function Y() {
@@ -6748,13 +6888,23 @@
     }
     return null;
   }
-  async function K(e, t, fast = !1) {
+  async function fetch_priced_cached_trade(trade_id) {
+    return nte_quick_proof_message(
+      { type: "getCachedTrade", tradeId: trade_id },
+      2500,
+    ).catch(() => null);
+  }
+  async function K(e, t, fast = !1, row = null) {
     if (!(e = String(e || ""))) return null;
     if (row_trade_cache[e]) return row_trade_cache[e];
-    let r = t?.[e] || t?.[Number(e)];
-    if (r) return set_trade_row_cached_trade(e, r);
+    if (t?.[e] || t?.[Number(e)]) {
+      let priced = await fetch_priced_cached_trade(e);
+      if (priced) return set_trade_row_cached_trade(e, priced);
+      let r = t?.[e] || t?.[Number(e)];
+      if (r) return set_trade_row_cached_trade(e, r);
+    }
     if (row_trade_pending[e]) return row_trade_pending[e];
-    return (row_trade_pending[e] = queue_row_fetch(e, fast)
+    return (row_trade_pending[e] = queue_row_fetch(e, fast, row)
       .then((t) => {
         return t || row_trade_cache[e] || null;
       })
@@ -7595,7 +7745,7 @@
     let trade = get_trade_row_cached_trade(trade_id);
     trade ||
       (trade = !row_trade_pending[trade_id]
-        ? await K(trade_id).catch(() => null)
+        ? await K(trade_id, null, !1, row).catch(() => null)
         : await row_trade_pending[trade_id].catch(() => null));
     trade && prewarm_trade_row_thumbnails(trade).catch(() => {});
   }
@@ -7867,6 +8017,7 @@
   let L_running = false,
     L_queued = false;
   async function L() {
+    if (document.hidden) return;
     if (L_running) {
       L_queued = true;
       return;
@@ -7936,7 +8087,7 @@
           a || (await H(t, n));
           a = await J(t);
           if (!a) return;
-          let l = await K(a, r, !0);
+          let l = await K(a, r, !0, t);
           quick_decline_tab &&
             (l
               ? ensure_trade_row_decline_button(t)
@@ -8065,7 +8216,7 @@
           quick_decline_tab && sync_trade_row_decline_position(t);
         }
         r || (r = {});
-        prefetch_uncached_trades(r);
+        get_current_trade_tab() !== "completed" && prefetch_uncached_trades(r);
         let n = sort_trade_rows_by_viewport_priority(
           get_trade_rows_for_processing(),
         );
@@ -8077,6 +8228,8 @@
   let prefetch_running = false,
     prefetch_last_tab = null,
     prefetch_last_time = 0,
+    prefetch_list_signature = null,
+    prefetch_full_scan_clear = false,
     bg_fetch_running = false,
     bg_fetch_abort = false,
     bg_fetch_token = 0;
@@ -8096,44 +8249,104 @@
     );
   }
 
-  async function fetch_all_trade_ids(type) {
-    let all = [];
-    let cursor = "";
+  function build_trade_list_signature(type, trades) {
+    if (!trades.length) return `${type}|empty`;
+    return `${type}|${trades[0].id}|${trades.length}|${trades[trades.length - 1].id}`;
+  }
+
+  function trade_ids_all_cached(trades, cached) {
+    return trades.every((t) => t.id in cached || row_trade_cache[t.id]);
+  }
+
+  async function fetch_trade_list_page(type, cursor = "") {
+    if (get_current_trade_tab() !== type) return null;
+    let url = `https://trades.roblox.com/v1/trades/${type}?limit=100&sortOrder=Desc`;
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+    let resp = await fetch_trade_api(url, { credentials: "include" });
+    if (!resp.ok) return null;
+    let data = await resp.json();
+    let trades = [];
+    for (let t of data.data || []) {
+      trades.push({ id: String(t.id), status: t.status, listTrade: t });
+    }
+    return { trades, nextCursor: data.nextPageCursor || "" };
+  }
+
+  async function fetch_all_trade_ids(type, initial_page = null) {
+    let all = initial_page ? initial_page.trades.slice() : [];
+    let cursor = initial_page?.nextCursor || "";
+    if (!initial_page) {
+      let first = await fetch_trade_list_page(type);
+      if (!first) return all;
+      all = first.trades.slice();
+      cursor = first.nextCursor;
+    }
     for (
-      let page = 0;
-      page < bg_fetch_pages && all.length < bg_fetch_max;
+      let page = 1;
+      page < bg_fetch_pages && all.length < bg_fetch_max && cursor;
       page++
     ) {
       if (get_current_trade_tab() !== type) break;
-      let url = `https://trades.roblox.com/v1/trades/${type}?limit=100&sortOrder=Desc`;
-      if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
-      let resp = await fetch_trade_api(url, { credentials: "include" });
-      if (!resp.ok) break;
-      let data = await resp.json();
-      for (let t of data.data || []) {
-        all.push({ id: String(t.id), status: t.status, listTrade: t });
+      await new Promise((r) => setTimeout(r, 200));
+      let next = await fetch_trade_list_page(type, cursor);
+      if (!next) break;
+      for (let t of next.trades) {
+        all.push(t);
         if (all.length >= bg_fetch_max) break;
       }
-      cursor = data.nextPageCursor || "";
+      cursor = next.nextCursor;
       if (!cursor) break;
-      await new Promise((r) => setTimeout(r, 200));
     }
     return all;
   }
 
   async function prefetch_uncached_trades(cached) {
-    if (prefetch_running) return;
+    if (prefetch_running || document.hidden) return;
     let type = get_current_trade_tab();
     if (type === prefetch_last_tab && Date.now() - prefetch_last_time < 120000)
       return;
     prefetch_running = true;
     try {
-      let all_trades = await fetch_all_trade_ids(type);
+      let first_page = await fetch_trade_list_page(type);
+      if (!first_page) return;
+      let signature = build_trade_list_signature(type, first_page.trades);
+      let page_cached = trade_ids_all_cached(first_page.trades, cached);
+
+      if (bg_fetch_running) {
+        if (signature !== prefetch_list_signature) {
+          cancel_background_trade_fetch();
+        } else {
+          prefetch_last_tab = type;
+          prefetch_last_time = Date.now();
+          prefetch_list_signature = signature;
+          return;
+        }
+      }
+
+      if (
+        signature === prefetch_list_signature &&
+        prefetch_full_scan_clear &&
+        page_cached
+      ) {
+        prefetch_last_tab = type;
+        prefetch_last_time = Date.now();
+        return;
+      }
+
+      let needs_full_scan =
+        signature !== prefetch_list_signature ||
+        !prefetch_full_scan_clear ||
+        !page_cached;
+      let all_trades = needs_full_scan
+        ? await fetch_all_trade_ids(type, first_page)
+        : first_page.trades;
       prefetch_last_tab = type;
       prefetch_last_time = Date.now();
+      prefetch_list_signature = signature;
       let uncached = all_trades.filter(
         (t) => !(t.id in cached) && !row_trade_cache[t.id],
       );
+      prefetch_full_scan_clear = uncached.length === 0;
       if (uncached.length) {
         start_background_trade_fetch(uncached, type);
       }
@@ -8148,7 +8361,7 @@
   }
 
   function start_background_trade_fetch(trades, type) {
-    if (bg_fetch_running) return;
+    if (bg_fetch_running || document.hidden) return;
     trades = (Array.isArray(trades) ? trades : []).slice(0, bg_fetch_max);
     if (!trades.length) return;
     bg_fetch_running = true;
@@ -10453,6 +10666,7 @@
       cancelAnimationFrame(nte_trade_dominance_frame);
     nte_trade_dominance_frame = requestAnimationFrame(() => {
       nte_trade_dominance_frame = 0;
+      if (document.hidden) return;
       let now = Date.now();
       if (now - nte_trade_dominance_last_run < NTE_TRADE_DOMINANCE_THROTTLE_MS)
         return;
@@ -10547,6 +10761,7 @@
     trade_ui_refresh_running = null,
     trade_ui_refresh_pending = !1;
   async function run_trade_ui_refresh_now() {
+    if (document.hidden) return;
     if (trade_ui_refresh_running)
       return (trade_ui_refresh_pending = !0), trade_ui_refresh_running;
     trade_ui_refresh_running = (async () => {
@@ -10574,6 +10789,7 @@
     }
   }
   async function N() {
+    if (document.hidden) return;
     await sync_trade_profit_mode();
     get_trade_list_filter_anchor() || clear_trade_list_filter_ui();
     (0, u.default)();
@@ -10707,12 +10923,16 @@
         cancel_background_trade_fetch();
         prefetch_last_tab = null;
         prefetch_last_time = 0;
+        prefetch_list_signature = null;
+        prefetch_full_scan_clear = false;
         row_trade_cache = {};
+        row_trade_cache_order = [];
         row_trade_pending = {};
         row_trade_raw_cache = window.__nte_trade_row_raw_cache = {};
         try {
           document.dispatchEvent(new CustomEvent("nru_trade_thumb_clear"));
         } catch {}
+        clear_trade_search_caches();
         row_fetch_q = [];
         row_fetch_fast_q = [];
         row_active_requests = 0;
@@ -10737,6 +10957,20 @@
       },
     );
     setInterval(check_tab_switch, 1500);
+    let trade_page_visibility_last = document.hidden;
+    document.addEventListener("visibilitychange", () => {
+      let hidden = document.hidden;
+      if (hidden === trade_page_visibility_last) return;
+      trade_page_visibility_last = hidden;
+      if (hidden) {
+        cancel_background_trade_fetch();
+        try {
+          document.dispatchEvent(new CustomEvent("nru_trade_thumb_clear"));
+        } catch {}
+      } else {
+        schedule_trade_ui_refresh(0, !1);
+      }
+    });
   })();
   async function rerender_open_trade_history_panel() {
     let btn = document.querySelector(".nte-history-btn--active");

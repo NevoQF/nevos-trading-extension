@@ -794,9 +794,15 @@ async function trade_ads_build_post_body(
       .filter((x) => typeof x !== "string" || !x.startsWith("tag:"))
       .map(Number)
       .filter((n) => Number.isFinite(n) && n > 0);
-    let manual_tags = manual
-      .filter((x) => typeof x === "string" && x.startsWith("tag:"))
-      .map((x) => x.slice(4));
+    let manual_tags = [];
+    let seen_manual_tags = new Set();
+    for (let x of manual) {
+      if (typeof x !== "string" || !x.startsWith("tag:")) continue;
+      let tag = x.slice(4);
+      if (!tag || seen_manual_tags.has(tag)) continue;
+      seen_manual_tags.add(tag);
+      manual_tags.push(tag);
+    }
     if (!manual_ids.length && !manual_tags.length) {
       throw new Error(
         'Choose wanted items, or turn on "Randomize requests each ad".',

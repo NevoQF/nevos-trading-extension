@@ -117,7 +117,7 @@ const extension_update_state_key = "nte_extension_update_state";
 const extension_update_last_check_key = "nte_extension_update_last_check";
 const extension_update_check_cooldown_ms = 4 * 60 * 60 * 1000;
 const chrome_web_store_item_url =
-  "https://chromewebstore.google.com/detail/dmgmmbmbfdgkdeacblplamhipbgjfidl";
+  "https://chromewebstore.google.com/detail/nevos-trading-extension/afenbjoagijnedghjbidpbkhdmbobaid";
 const firefox_addons_item_url =
   "https://addons.mozilla.org/firefox/addon/nevos-trading-extension/";
 const popup_theme_storage_key = "popup_theme";
@@ -924,6 +924,36 @@ function is_chromium_extension_runtime() {
   return get_extension_runtime_scheme() === "chrome-extension:";
 }
 
+const nte_discord_banner_dismissed_key = "nte_discord_banner_dismissed";
+const nte_rate_banner_dismissed_key = "nte_rate_banner_dismissed";
+
+function get_extension_store_review_info() {
+  if (is_firefox_extension_runtime()) {
+    return { label: "Firefox Add-ons", url: firefox_addons_item_url };
+  }
+  if (is_chromium_extension_runtime()) {
+    return { label: "Chrome Web Store", url: chrome_web_store_item_url };
+  }
+  return null;
+}
+
+async function append_options_prompt_banner(container, config) {
+  let storage_key = config.storageKey;
+  let dismissed = await get_storage([storage_key]);
+  if (dismissed?.[storage_key]) return;
+
+  let banner = document.createElement("div");
+  banner.className = config.className;
+  banner.innerHTML = config.html;
+  banner
+    .querySelector(config.closeSelector)
+    .addEventListener("click", async () => {
+      await set_storage({ [storage_key]: true });
+      banner.remove();
+    });
+  container.append(banner);
+}
+
 function get_update_notice_copy(next_version = "") {
   let next = String(next_version || "").trim();
   if (is_firefox_extension_runtime()) {
@@ -1024,19 +1054,14 @@ function paint_about_update_status(state) {
 function render_about_review_cta() {
   let root = document.getElementById("aboutReviewRoot");
   if (!root) return;
-  let store_label = "";
-  let store_url = "";
-  if (is_firefox_extension_runtime()) {
-    store_label = "Firefox Add-ons";
-    store_url = firefox_addons_item_url;
-  } else if (is_chromium_extension_runtime()) {
-    store_label = "Chrome Web Store";
-    store_url = chrome_web_store_item_url;
-  } else {
+  let store = get_extension_store_review_info();
+  if (!store) {
     root.innerHTML = "";
     root.classList.add("hidden");
     return;
   }
+  let store_label = store.label;
+  let store_url = store.url;
   root.classList.remove("hidden");
   root.innerHTML = `
     <a href="${store_url}" data-open-new-tab="true" rel="noopener noreferrer" class="review-cta">
@@ -1888,6 +1913,15 @@ async function trade_ads_fetch_status_from_bg() {
   return trade_ads_fetch_status_light_from_bg();
 }
 
+function trade_ads_request_tag_used_in_slots(slots, tag, exclude_index) {
+  if (!tag || !Array.isArray(slots)) return false;
+  let key = "tag:" + tag;
+  return slots.some(
+    (s, i) =>
+      i !== exclude_index && typeof s === "string" && s === key,
+  );
+}
+
 function trade_ads_attach_picker(root, opts) {
   let {
     side,
@@ -1895,9 +1929,12 @@ function trade_ads_attach_picker(root, opts) {
     inventoryPromise,
     onPick,
     onInventoryError,
-    requestTags,
+    requestSlots,
+    slotIndex,
   } = opts;
-  let cfg_pick_tags = Array.isArray(requestTags) ? requestTags : [];
+  let pick_request_slots = Array.isArray(requestSlots) ? requestSlots : [];
+  let pick_slot_index =
+    Number.isFinite(Number(slotIndex)) ? Number(slotIndex) : -1;
   let overlay = document.createElement("div");
   overlay.className = "ta-overlay";
   let ph =
@@ -1926,7 +1963,13 @@ function trade_ads_attach_picker(root, opts) {
             ]
               .map(([tag, label]) => {
                 let img = `https://www.rolimons.com/images/tradetag${tag}-420.png`;
-                return `<button type="button" class="ta-tag-cell" data-tag="${tag}" title="${label}"><img src="${img}" alt="${label}" loading="lazy" decoding="async" /></button>`;
+                let used = trade_ads_request_tag_used_in_slots(
+                  pick_request_slots,
+                  tag,
+                  pick_slot_index,
+                );
+                let used_note = used ? " (already used)" : "";
+                return `<button type="button" class="ta-tag-cell${used ? " is-used" : ""}" data-tag="${tag}" title="${label}${used_note}"${used ? " disabled" : ""}><img src="${img}" alt="${label}" loading="lazy" decoding="async" /></button>`;
               })
               .join("")}</div>`
           : ""
@@ -1981,10 +2024,22 @@ function trade_ads_attach_picker(root, opts) {
   overlay.querySelector(".ta-sheet-close").addEventListener("click", close);
 
   if (side === "request") {
-    overlay.querySelectorAll(".ta-tag-cell").forEach((cell) => {
+    overlay.querySelectorAll(".ta-tag-cell:not(.is-used)").forEach((cell) => {
       cell.addEventListener("click", async () => {
         let tag = cell.dataset.tag;
         if (!tag) return;
+        if (
+          trade_ads_request_tag_used_in_slots(
+            pick_request_slots,
+            tag,
+            pick_slot_index,
+          )
+        ) {
+          set_footer(
+            `<span class="ta-strip-hint ta-strip-hint-warn">That tag is already in another slot.</span>`,
+          );
+          return;
+        }
         close();
         await onPick("tag:" + tag);
       });
@@ -2642,8 +2697,26 @@ async function render_trade_ads_composer(root, status) {
           side: "request",
           index: idx,
           inventory: [],
-          requestTags: cfg.request_tags || [],
+          requestSlots: cfg.request_slots || [],
+          slotIndex: idx,
           onPick: async (id) => {
+            if (
+              typeof id === "string" &&
+              id.startsWith("tag:") &&
+              trade_ads_request_tag_used_in_slots(
+                cfg.request_slots || [],
+                id.slice(4),
+                idx,
+              )
+            ) {
+              let status_line = panel.querySelector("#ta-post-status");
+              if (status_line) {
+                status_line.textContent =
+                  "Each tag can only be used once (Rolimons allows one per ad).";
+                status_line.className = "ta-status-line ta-err";
+              }
+              return;
+            }
             let slots = cfg.request_slots.slice();
             slots[idx] = id;
             void render_trade_ads_composer(root, {
@@ -3172,24 +3245,33 @@ async function render_options() {
   const container = document.getElementById("options-container");
   container.innerHTML = "";
 
-  let banner_dismissed = await get_storage(["nte_discord_banner_dismissed"]);
-  if (!banner_dismissed?.nte_discord_banner_dismissed) {
-    let banner = document.createElement("div");
-    banner.className = "nte-discord-banner";
-    banner.innerHTML = `
+  await append_options_prompt_banner(container, {
+    storageKey: nte_discord_banner_dismissed_key,
+    className: "nte-discord-banner",
+    closeSelector: ".nte-discord-banner-close",
+    html: `
       <div class="nte-discord-banner-text">
         <svg width="16" height="12" viewBox="0 0 71 55" fill="currentColor"><path d="M60.1045 4.8978C55.5792 2.8214 50.7265 1.2916 45.6527 0.41542C45.5603 0.39851 45.468 0.440769 45.4204 0.525289C44.7963 1.6353 44.105 3.0834 43.6209 4.2216C38.1637 3.4046 32.7345 3.4046 27.3892 4.2216C26.905 3.0581 26.1886 1.6353 25.5617 0.525289C25.5141 0.443589 25.4218 0.40133 25.3294 0.41542C20.2584 1.2886 15.4057 2.8184 10.8776 4.8978C10.8384 4.9147 10.8048 4.9429 10.7825 4.9795C1.57795 18.7309 -0.943561 32.1443 0.293408 45.3914C0.299005 45.4562 0.335386 45.5182 0.385761 45.5576C6.45866 50.0174 12.3413 52.7249 18.1147 54.5195C18.2071 54.5477 18.305 54.5132 18.3638 54.4378C19.7295 52.5728 20.9469 50.6063 21.9907 48.5383C22.0523 48.4172 21.9935 48.2735 21.8676 48.2256C19.9366 47.4931 18.0979 46.6 16.3292 45.5856C16.1893 45.5041 16.1781 45.304 16.3068 45.2082C16.679 44.9293 17.0513 44.6391 17.4067 44.3461C17.471 44.2926 17.5606 44.2813 17.6362 44.3151C29.2558 49.6202 41.8354 49.6202 53.3179 44.3151C53.3935 44.2784 53.4831 44.2897 53.5502 44.3432C53.9057 44.6362 54.2779 44.9293 54.6529 45.2082C54.7816 45.304 54.7732 45.5041 54.6333 45.5856C52.8646 46.6197 51.0259 47.4931 49.0921 48.2228C48.9662 48.2707 48.9047 48.4172 48.969 48.5383C50.039 50.6034 51.2564 52.5699 52.5951 54.435C52.6519 54.5132 52.7526 54.5477 52.845 54.5195C58.6464 52.7249 64.529 50.0174 70.6019 45.5576C70.6551 45.5182 70.6887 45.459 70.6943 45.3942C72.1747 30.0791 68.2147 16.7757 60.1968 4.98527C60.1772 4.94286 60.1436 4.91469 60.1045 4.8978ZM23.7259 37.3253C20.2276 37.3253 17.3451 34.1136 17.3451 30.1693C17.3451 26.225 20.1717 23.0133 23.7259 23.0133C27.308 23.0133 30.1346 26.2524 30.1066 30.1693C30.1066 34.1136 27.28 37.3253 23.7259 37.3253ZM47.3178 37.3253C43.8196 37.3253 40.9371 34.1136 40.9371 30.1693C40.9371 26.225 43.7637 23.0133 47.3178 23.0133C50.9 23.0133 53.7266 26.2524 53.6985 30.1693C53.6985 34.1136 50.9 37.3253 47.3178 37.3253Z"/></svg>
         <span>Join our <a href="https://discord.gg/4XWE7yy2uE" target="_blank" rel="noopener noreferrer">Discord</a> for support and updates</span>
       </div>
       <button type="button" class="nte-discord-banner-close" title="Dismiss">×</button>
-    `;
-    banner
-      .querySelector(".nte-discord-banner-close")
-      .addEventListener("click", async () => {
-        await set_storage({ nte_discord_banner_dismissed: true });
-        banner.remove();
-      });
-    container.append(banner);
+    `,
+  });
+
+  let store = get_extension_store_review_info();
+  if (store) {
+    await append_options_prompt_banner(container, {
+      storageKey: nte_rate_banner_dismissed_key,
+      className: "nte-rate-banner",
+      closeSelector: ".nte-rate-banner-close",
+      html: `
+        <div class="nte-rate-banner-text">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+          <span>Enjoying the extension? <a href="${escape_html_attr(store.url)}" data-open-new-tab="true" rel="noopener noreferrer">Leave a quick review</a> on the ${escape_html(store.label)} if you like it.</span>
+        </div>
+        <button type="button" class="nte-rate-banner-close" title="Dismiss">×</button>
+      `,
+    });
   }
 
   const option_names = [...get_option_names(), profile_value_display_mode_key];
@@ -4264,6 +4346,8 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     set_status("Click Upload theme to choose a file.");
     setTimeout(() => card.scrollIntoView({ block: "center" }), 0);
   }
+
+  bind_popup_external_links();
 }
 
 function restore_defaults() {
@@ -4458,6 +4542,11 @@ const ta_actions = [
     label: "Cancel all outbound trades",
     section: "outbound",
   },
+  {
+    id: "cancel_outbound_older_than",
+    label: "Cancel outbound trades older than…",
+    section: "outbound",
+  },
 ];
 
 let ta_poll_timer = null;
@@ -4498,6 +4587,76 @@ function ta_show_confirm(action_label, on_confirm) {
   overlay.querySelector(".ta-confirm-go").addEventListener("click", () => {
     overlay.remove();
     on_confirm();
+  });
+}
+
+function ta_parse_duration_ms(amount, unit) {
+  let value = Math.max(0, parseFloat(amount) || 0);
+  if (!(value > 0)) return 0;
+  if (unit === "minutes") return Math.round(value * 60 * 1000);
+  if (unit === "days") return Math.round(value * 24 * 60 * 60 * 1000);
+  return Math.round(value * 60 * 60 * 1000);
+}
+
+function ta_format_duration_ms(ms) {
+  let minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  let hours = Math.round(ms / 3600000);
+  if (hours < 48) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  let days = Math.round(ms / 86400000);
+  return `${days} day${days === 1 ? "" : "s"}`;
+}
+
+function ta_show_duration_config(action_label, on_confirm) {
+  let existing = document.querySelector(".ta-confirm-overlay");
+  if (existing) existing.remove();
+
+  let overlay = document.createElement("div");
+  overlay.className = "ta-confirm-overlay";
+  overlay.innerHTML = `
+    <div class="ta-confirm-box">
+      <div class="ta-confirm-title">Configure duration</div>
+      <div class="ta-confirm-msg">${escape_html(action_label)}.</div>
+      <div class="ta-filter-row">
+        <span class="ta-filter-label">Cancel outbound trades older than</span>
+        <span class="ta-filter-input-wrap">
+          <input class="ta-filter-input" type="number" min="1" max="9999" step="1" value="24" id="ta-duration-input">
+          <select class="ta-filter-unit-select" id="ta-duration-unit">
+            <option value="minutes">minutes</option>
+            <option value="hours" selected>hours</option>
+            <option value="days">days</option>
+          </select>
+        </span>
+      </div>
+      <div class="ta-confirm-actions">
+        <button class="ta-confirm-btn ta-confirm-cancel">Cancel</button>
+        <button class="ta-confirm-btn ta-confirm-go">Do it</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  let input = overlay.querySelector("#ta-duration-input");
+  let unit = overlay.querySelector("#ta-duration-unit");
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") overlay.querySelector(".ta-confirm-go").click();
+  });
+  requestAnimationFrame(() => input.focus());
+
+  overlay
+    .querySelector(".ta-confirm-cancel")
+    .addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  overlay.querySelector(".ta-confirm-go").addEventListener("click", () => {
+    let max_trade_age_ms = ta_parse_duration_ms(input.value, unit.value);
+    if (!(max_trade_age_ms > 0)) {
+      input.focus();
+      return;
+    }
+    overlay.remove();
+    on_confirm(max_trade_age_ms);
   });
 }
 
@@ -4731,9 +4890,17 @@ async function render_actions_tab() {
     btn.addEventListener("click", () => {
       if (btn.disabled || btn.classList.contains("ta-running")) return;
       let is_overpay = action.id.endsWith("_overpaying");
-      let show = is_overpay ? ta_show_overpay_config : ta_show_confirm;
-      show(action.label, async (min_overpay_pct = 0) => {
-        await ta_send("ta_start", { action: action.id, min_overpay_pct });
+      let is_duration = action.id === "cancel_outbound_older_than";
+      let show = is_overpay
+        ? ta_show_overpay_config
+        : is_duration
+          ? ta_show_duration_config
+          : ta_show_confirm;
+      show(action.label, async (param = 0) => {
+        let payload = { action: action.id };
+        if (is_overpay) payload.min_overpay_pct = param;
+        if (is_duration) payload.max_trade_age_ms = param;
+        await ta_send("ta_start", payload);
         ta_start_polling();
         let p = await ta_send("ta_progress");
         ta_update_buttons(p);

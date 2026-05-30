@@ -70,6 +70,8 @@ const cached_trades_key = "cachedTrades";
 const item_data_key = "data";
 const item_data_time_key = "lastRequestForData";
 const item_data_url = "https://api.rolimons.com/items/v2/itemdetails";
+const server_item_data_url = "https://nevos-extension.com/api/rolimons/items";
+const trade_ad_item_data_max_age_ms = 180000;
 const routility_data_key = "routilityData";
 const routility_data_time_key = "lastRoutilityRequest";
 const routility_data_url = "https://routility.io/api/public/items";
@@ -627,6 +629,35 @@ async function fetch_routility_data() {
   return { items };
 }
 
+async function sync_item_data_from_server() {
+  try {
+    let response = await fetch(server_item_data_url, {
+      headers: { Accept: "application/json", "From-Extension": "1" },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    let body = await parse_json_response_safe(response, "Server Rolimons items");
+    if (!body?.ok || !has_item_data(body)) return null;
+
+    let server_at = Number(body.fetchedAt) || 0;
+    let payload = { items: body.items };
+    if (body.success !== undefined) payload.success = body.success;
+
+    let { [item_data_time_key]: local_at } = await get_local_values([
+      item_data_time_key,
+    ]);
+    if (server_at > 0 && server_at < Number(local_at || 0)) return null;
+
+    await set_local_values({
+      [item_data_key]: payload,
+      [item_data_time_key]: server_at > 0 ? server_at : Date.now(),
+    });
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 async function get_cached_item_data(max_age_ms = 300000) {
   let { [item_data_key]: data, [item_data_time_key]: last_request } =
     await get_local_values([item_data_key, item_data_time_key]);
@@ -639,10 +670,12 @@ async function get_cached_item_data(max_age_ms = 300000) {
     return data;
   }
 
-  let fresh_data = null;
-  try {
-    fresh_data = await fetch_item_data();
-  } catch {}
+  let fresh_data = await sync_item_data_from_server();
+  if (!fresh_data) {
+    try {
+      fresh_data = await fetch_item_data();
+    } catch {}
+  }
   if (fresh_data) {
     return cache_item_data(fresh_data);
   }
@@ -654,6 +687,11 @@ async function get_cached_item_data(max_age_ms = 300000) {
 
   start_item_data_retry();
   return null;
+}
+
+async function get_trade_ad_notification_item_data() {
+  await sync_item_data_from_server();
+  return get_cached_item_data(trade_ad_item_data_max_age_ms);
 }
 
 async function get_ui_item_data(max_age_ms = 300000) {
@@ -856,6 +894,104 @@ function get_trade_item_name(item) {
   );
 }
 
+const TRADE_OFFER_ITEM_KEYS = [
+  "userAssets",
+  "assets",
+  "userItems",
+  "items",
+  "userCollectibles",
+  "collectibles",
+];
+
+function get_trade_asset_id(item) {
+  let id =
+    item?.assetId ??
+    item?.itemTarget?.targetId ??
+    item?.targetId ??
+    item?.itemId ??
+    item?.asset?.id ??
+    item?.item?.id ??
+    item?.id;
+  if (id == null) return null;
+  let parsed = parseInt(id, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function patch_trade_asset_pricing(item, item_data) {
+  if (!item || typeof item !== "object" || !item_data) return item;
+
+  let asset_id = get_trade_asset_id(item);
+  let entry = get_rolimons_item(
+    item_data,
+    asset_id,
+    get_trade_item_name(item),
+  );
+  if (!Array.isArray(entry)) return item;
+
+  let rap =
+    typeof entry[2] === "number" && Number.isFinite(entry[2]) ? entry[2] : null;
+  if (rap === null) return item;
+
+  return {
+    ...item,
+    recentAveragePrice: rap,
+    rap,
+  };
+}
+
+function patch_trade_offer_pricing(offer, item_data) {
+  if (!offer || typeof offer !== "object") return offer;
+  let next = { ...offer };
+
+  for (let key of TRADE_OFFER_ITEM_KEYS) {
+    if (!Array.isArray(next[key])) continue;
+    next[key] = next[key].map((item) =>
+      patch_trade_asset_pricing(item, item_data),
+    );
+  }
+
+  if (Array.isArray(next.items)) {
+    next.items = next.items.map((item) =>
+      patch_trade_asset_pricing(item, item_data),
+    );
+  }
+
+  return next;
+}
+
+function apply_fresh_pricing_to_trade(trade, item_data) {
+  if (!trade || typeof trade !== "object") return trade;
+  if (!item_data?.items) return trade;
+
+  let next = { ...trade };
+
+  if (Array.isArray(next.offers)) {
+    next.offers = next.offers.map((offer) =>
+      patch_trade_offer_pricing(offer, item_data),
+    );
+  }
+  if (next.participantAOffer) {
+    next.participantAOffer = patch_trade_offer_pricing(
+      next.participantAOffer,
+      item_data,
+    );
+  }
+  if (next.participantBOffer) {
+    next.participantBOffer = patch_trade_offer_pricing(
+      next.participantBOffer,
+      item_data,
+    );
+  }
+
+  return next;
+}
+
+async function get_priced_cached_trade(trade) {
+  if (!trade) return trade;
+  let item_data = await get_cached_item_data();
+  return apply_fresh_pricing_to_trade(trade, item_data);
+}
+
 function get_item_value_from_data(item_data, asset_id, rap, item_name) {
   let entry = get_rolimons_item(item_data, asset_id, item_name);
   if (Array.isArray(entry) && typeof entry[4] === "number") return entry[4];
@@ -1040,18 +1176,28 @@ function get_trade_timestamp_ms(trade, trade_type = "") {
           trade?.updatedAt,
           trade?.updatedTime,
         ]
-      : [
-          trade?.completed,
-          trade?.completedAt,
-          trade?.completedTime,
-          trade?.timestamp,
-          trade?.updated,
-          trade?.updatedAt,
-          trade?.updatedTime,
-          trade?.created,
-          trade?.createdAt,
-          trade?.createdTime,
-        ];
+      : trade_type === "outbound"
+        ? [
+            trade?.created,
+            trade?.createdAt,
+            trade?.createdTime,
+            trade?.timestamp,
+            trade?.updated,
+            trade?.updatedAt,
+            trade?.updatedTime,
+          ]
+        : [
+            trade?.completed,
+            trade?.completedAt,
+            trade?.completedTime,
+            trade?.timestamp,
+            trade?.updated,
+            trade?.updatedAt,
+            trade?.updatedTime,
+            trade?.created,
+            trade?.createdAt,
+            trade?.createdTime,
+          ];
   for (let value of candidates) {
     if (value === undefined || value === null || value === "") continue;
     let numeric_string =
@@ -2880,7 +3026,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       let id = String(message.tradeId || "").trim();
       if (!id) return respond(null);
       let cached = await get_pruned_cached_trades();
-      respond(cached[id] || null);
+      let trade = cached[id] || null;
+      respond(trade ? await get_priced_cached_trade(trade) : null);
     })();
     return true;
   }
@@ -3178,7 +3325,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   }
 
   if (message?.type === "ta_start") {
-    ta_run_action(message.action, message.min_overpay_pct || 0);
+    ta_run_action(
+      message.action,
+      message.min_overpay_pct || 0,
+      message.max_trade_age_ms || 0,
+    );
     respond({ ok: true });
     return false;
   }
@@ -3562,7 +3713,14 @@ async function ta_user_owns_asset(user_id, target_id) {
   }
 }
 
-async function ta_run_action(action, min_overpay_pct = 0) {
+function ta_trade_is_older_than(trade, max_age_ms, list_trade_type) {
+  if (!(max_age_ms > 0)) return true;
+  let ts = get_trade_timestamp_ms(trade, list_trade_type);
+  if (!ts) return false;
+  return ts <= Date.now() - max_age_ms;
+}
+
+async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) {
   if (ta_state.running) return;
   ta_state = {
     running: true,
@@ -3576,6 +3734,7 @@ async function ta_run_action(action, min_overpay_pct = 0) {
     error: "",
     wait_until: 0,
     min_overpay_pct,
+    max_trade_age_ms,
   };
   ta_abort = false;
 
@@ -3583,7 +3742,9 @@ async function ta_run_action(action, min_overpay_pct = 0) {
     let is_inbound = action.startsWith("cancel_inbound");
     let overpaying_only = action.endsWith("_overpaying");
     let unowned_check = action.endsWith("_unowned");
+    let age_filter = action === "cancel_outbound_older_than";
     let trade_type = is_inbound ? "inbound" : "outbound";
+    let list_trade_type = is_inbound ? "inbound" : "outbound";
 
     let csrf = await ta_get_csrf();
 
@@ -3790,6 +3951,26 @@ async function ta_run_action(action, min_overpay_pct = 0) {
           continue;
         }
 
+        let result = await ta_decline_trade(trade.id, csrf);
+        if (ta_abort) {
+          ta_state.error = "Cancelled by user";
+          break;
+        }
+        if (result.csrf) csrf = result.csrf;
+        ta_state.done++;
+      }
+    } else if (age_filter) {
+      ta_state.phase = "checking";
+      for (let trade of trades) {
+        if (ta_abort) {
+          ta_state.error = "Cancelled by user";
+          break;
+        }
+        ta_state.checked++;
+        if (!ta_trade_is_older_than(trade, max_trade_age_ms, list_trade_type)) {
+          ta_state.skipped++;
+          continue;
+        }
         let result = await ta_decline_trade(trade.id, csrf);
         if (ta_abort) {
           ta_state.error = "Cancelled by user";

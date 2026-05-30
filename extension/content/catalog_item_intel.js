@@ -5,6 +5,18 @@
   let styles_injected = false;
   let item_check_cache = {};
   let bundle_detail_cache = {};
+  const bundle_detail_cache_max_entries = 250;
+  const bundle_detail_cache_trim_count = 50;
+  const item_check_cache_max_entries = 4000;
+  const item_check_cache_trim_count = 400;
+
+  function trim_catalog_cache_object(cache, max_entries, trim_count) {
+    let keys = Object.keys(cache);
+    if (keys.length <= max_entries) return;
+    let remove = Math.min(trim_count, keys.length - max_entries);
+    for (let i = 0; i < remove; i++) delete cache[keys[i]];
+  }
+
   let rolimons_item_data_promise = null;
   let state = {
     asset_id: "",
@@ -106,6 +118,11 @@
     } catch {
       item_check_cache[id] = false;
     }
+    trim_catalog_cache_object(
+      item_check_cache,
+      item_check_cache_max_entries,
+      item_check_cache_trim_count,
+    );
     return item_check_cache[id];
   }
 
@@ -120,6 +137,11 @@
     } catch {
       bundle_detail_cache[id] = null;
     }
+    trim_catalog_cache_object(
+      bundle_detail_cache,
+      bundle_detail_cache_max_entries,
+      bundle_detail_cache_trim_count,
+    );
     return bundle_detail_cache[id];
   }
 

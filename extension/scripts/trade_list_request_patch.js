@@ -10,6 +10,29 @@
     trade_thumb_image_pending = {},
     trade_thumb_image_seen = {},
     trade_thumb_image_refs = [];
+  const trade_thumb_cache_max_entries = 1200;
+  const trade_thumb_cache_trim_count = 200;
+
+  function trim_trade_thumb_caches() {
+    let keys = Object.keys(trade_thumb_cache);
+    if (keys.length <= trade_thumb_cache_max_entries) return;
+    let remove = Math.min(
+      trade_thumb_cache_trim_count,
+      keys.length - trade_thumb_cache_max_entries,
+    );
+    for (let i = 0; i < remove; i++) {
+      let key = keys[i],
+        url = String(trade_thumb_cache[key]?.imageUrl || "").trim();
+      delete trade_thumb_cache[key];
+      delete trade_thumb_pending[key];
+      if (url) delete trade_thumb_image_seen[url];
+    }
+    keys = Object.keys(trade_thumb_image_seen);
+    if (keys.length > trade_thumb_cache_max_entries + 200) {
+      let seen_remove = keys.length - (trade_thumb_cache_max_entries + 200);
+      for (let i = 0; i < seen_remove; i++) delete trade_thumb_image_seen[keys[i]];
+    }
+  }
 
   let trade_thumb_proxy_style_bound = false;
   function ensure_trade_thumb_proxy_style() {
@@ -201,6 +224,7 @@
   }
 
   function preload_thumb_image(url) {
+    if (document.hidden) return Promise.resolve();
     let key = String(url || "").trim();
     if (!key) return Promise.resolve();
     if (trade_thumb_image_seen[key]) return Promise.resolve();
@@ -249,7 +273,10 @@
       imageUrl: String(entry?.imageUrl || ""),
       version: String(entry?.version || ""),
     };
-    return (trade_thumb_cache[key] = cached), is_bad_trade_thumb_url(cached.imageUrl) || preload_thumb_image(cached.imageUrl), cached;
+    trade_thumb_cache[key] = cached;
+    trim_trade_thumb_caches();
+    is_bad_trade_thumb_url(cached.imageUrl) || preload_thumb_image(cached.imageUrl);
+    return cached;
   }
 
   function get_cached_trade_thumbs(requests) {
@@ -306,6 +333,7 @@
       normalized && !seen.has(normalized.key) && (seen.add(normalized.key), requests.push(normalized));
     }
     if (!requests.length) return Promise.resolve();
+    if (document.hidden) return Promise.resolve();
     let pending = [],
       uncached = [];
     for (let request of requests) {
@@ -489,6 +517,7 @@
   }
 
   document.addEventListener("nru_trade_thumb_prewarm", (event) => {
+    if (document.hidden) return;
     let detail = parse_bridge_detail(event.detail),
       thumb_requests = Array.isArray(detail?.thumb_requests)
         ? detail.thumb_requests
@@ -513,6 +542,12 @@
   });
 
   bind_trade_thumb_dom_observer();
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) return;
+    trade_thumb_image_pending = {};
+    trade_thumb_image_refs = [];
+  });
 
   async function get_cached_trade_response(input, init) {
     if ("GET" !== get_request_method(input, init)) return null;

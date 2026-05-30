@@ -46,6 +46,18 @@
   let rolimons_name_cache = null;
   let rolimons_name_cache_source = null;
   let bundle_detail_cache = {};
+  const bundle_detail_cache_max_entries = 250;
+  const bundle_detail_cache_trim_count = 50;
+
+  function trim_bundle_detail_cache() {
+    let keys = Object.keys(bundle_detail_cache);
+    if (keys.length <= bundle_detail_cache_max_entries) return;
+    let remove = Math.min(
+      bundle_detail_cache_trim_count,
+      keys.length - bundle_detail_cache_max_entries,
+    );
+    for (let i = 0; i < remove; i++) delete bundle_detail_cache[keys[i]];
+  }
 
   function send_message(message, callback) {
     try {
@@ -97,6 +109,7 @@
     } catch {
       bundle_detail_cache[id] = null;
     }
+    trim_bundle_detail_cache();
     return bundle_detail_cache[id];
   }
 

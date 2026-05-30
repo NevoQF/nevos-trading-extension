@@ -1,6 +1,7 @@
 (function () {
   "use strict";
-  const trade_ad_notif_poll_ms = 190000;
+  const trade_ad_notif_poll_ms = 60000;
+  const trade_ad_notif_scroll_load_threshold_px = 48;
   const trade_ad_notif_tag_slug_by_code = {
     1: "demand",
     2: "rares",
@@ -332,13 +333,6 @@
     </article>`;
   }
 
-  function trade_ad_notif_inventory_meta(state) {
-    let n = Number(state?.ownedCount) || 0;
-    if (n <= 0) return "";
-    let label = n === 1 ? "item" : "items";
-    return `${n.toLocaleString()} ${label}`;
-  }
-
   function trade_ad_notif_countdown_label(state) {
     if (state?.enabled !== true) return "Auto refresh: off";
     let last = Number(state?.lastPollAt || 0);
@@ -350,6 +344,86 @@
     let mm = Math.floor(sec / 60);
     let ss = sec % 60;
     return `Next refresh: ${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+  }
+
+  function trade_ad_notif_normalize_ignore_names(list) {
+    let out = [];
+    let seen = new Set();
+    for (let raw of Array.isArray(list) ? list : []) {
+      let value = String(raw || "").trim();
+      if (!value) continue;
+      let key = value.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(value);
+    }
+    return out.slice(0, 200);
+  }
+
+  function trade_ad_notif_open_ignore_modal(current_names) {
+    return new Promise((resolve) => {
+      let existing = document.getElementById("ta-notif-ignore-overlay");
+      if (existing) existing.remove();
+
+      let overlay = document.createElement("div");
+      overlay.id = "ta-notif-ignore-overlay";
+      overlay.className = "ta-notif-ignore-overlay";
+      let initial_value = trade_ad_notif_normalize_ignore_names(current_names).join("\n");
+      overlay.innerHTML = `
+        <div class="ta-notif-ignore-card" role="dialog" aria-modal="true" aria-labelledby="ta-notif-ignore-title">
+          <div class="ta-notif-ignore-head">
+            <div>
+              <h3 id="ta-notif-ignore-title" class="ta-notif-ignore-title">Ignore List</h3>
+              <p class="ta-notif-ignore-subtitle">One username per line. Ignored users ads will not show up.</p>
+            </div>
+            <button type="button" class="ta-notif-ignore-close" aria-label="Close ignore list">✕</button>
+          </div>
+          <div class="ta-notif-ignore-body">
+            <textarea id="ta-notif-ignore-input" class="ta-notif-ignore-input" spellcheck="false" placeholder="TraderOne&#10;TraderTwo">${escape_html(initial_value)}</textarea>
+            <div class="ta-notif-ignore-hint">Case-insensitive. Duplicates are removed automatically.</div>
+          </div>
+          <div class="ta-notif-ignore-actions">
+            <button type="button" class="ta-notif-ignore-btn ta-notif-ignore-btn-cancel" data-role="cancel">Cancel</button>
+            <button type="button" class="ta-notif-ignore-btn ta-notif-ignore-btn-save" data-role="save">Save List</button>
+          </div>
+        </div>
+      `;
+      document.body.append(overlay);
+
+      let card = overlay.querySelector(".ta-notif-ignore-card");
+      let input = overlay.querySelector("#ta-notif-ignore-input");
+      let close_btn = overlay.querySelector(".ta-notif-ignore-close");
+      let cancel_btn = overlay.querySelector('[data-role="cancel"]');
+      let save_btn = overlay.querySelector('[data-role="save"]');
+
+      let finish = (result) => {
+        overlay.remove();
+        resolve(result);
+      };
+
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) finish(null);
+      });
+      card.addEventListener("click", (event) => event.stopPropagation());
+      close_btn.addEventListener("click", () => finish(null));
+      cancel_btn.addEventListener("click", () => finish(null));
+      overlay.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          finish(null);
+        }
+      });
+
+      save_btn.addEventListener("click", () => {
+        let lines = String(input.value || "")
+          .split(/\r?\n/g)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        finish(trade_ad_notif_normalize_ignore_names(lines));
+      });
+
+      setTimeout(() => input.focus(), 0);
+    });
   }
 
   function trade_ad_notif_start_countdown(root, state) {
@@ -374,48 +448,63 @@
     return res.state || {};
   }
 
-  function trade_ad_notif_render_shell(root, state) {
-    let matches = Array.isArray(state?.matches) ? state.matches : [];
-    let err = state?.lastError ? String(state.lastError) : "";
-    let meta = trade_ad_notif_inventory_meta(state);
-    let enabled = state?.enabled === true;
-    let list =
-      !enabled
-        ? `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Notifications are off</p><p class="ta-notifs-empty-copy">Enable alerts to start scanning trade ads.</p></div>`
-        : matches.length > 0
-        ? matches.map(trade_ad_notif_card_html).join("")
-        : `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Nothing yet</p></div>`;
+  function trade_ad_notif_dedupe_matches(matches) {
+    let seen = new Set();
+    let out = [];
+    for (let row of Array.isArray(matches) ? matches : []) {
+      let id = row?.adId != null ? String(row.adId) : "";
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(row);
+    }
+    return out;
+  }
 
-    root.innerHTML = `
-      <div class="ta-notif-panel">
-        <div class="ta-notif-head">
-          <div class="ta-notif-title">Overpay alerts</div>
-          ${meta ? `<span class="ta-notif-meta">${escape_html(meta)}</span>` : ""}
-          <span class="ta-notif-next" id="ta-notif-next"></span>
-          <div class="ta-notif-head-actions">
-            <label class="ta-notif-toggle" title="Enable trade ad notifications">
-              <input type="checkbox" id="ta-notif-enabled" ${enabled ? "checked" : ""} />
-              <span class="ta-notif-toggle-track"><span class="ta-notif-toggle-knob"></span></span>
-            </label>
-          </div>
-        </div>
-        ${err ? `<p class="ta-notif-error">${escape_html(err)}</p>` : ""}
-        <div class="ta-notif-list" id="ta-notif-list">${list}</div>
-      </div>`;
+  function trade_ad_notif_feed_progress_label(state) {
+    if (state?.enabled !== true) return "";
+    let total = Math.max(0, Number(state?.feedAdCount) || 0);
+    let checked = Math.max(
+      Number(state?.feedAdsChecked) || 0,
+      Number(state?.feedScanOffset) || 0,
+    );
+    if (total > 0) checked = Math.min(total, checked);
+    let total_label = total > 0 ? String(total) : "?";
+    if (state?.feedExhausted === true && total > 0 && checked >= total) {
+      return `Checked all ${total_label} ads`;
+    }
+    return `Checked ${checked} of ${total_label} ads`;
+  }
 
-    root.querySelector("#ta-notif-enabled")?.addEventListener("change", async (ev) => {
-      let on = ev.currentTarget?.checked === true;
-      let res = await trade_ad_notif_send("trade_ad_notifications_set_enabled", {
-        enabled: on,
-      });
-      if (res?.ok && res.state) {
-        trade_ad_notif_render_shell(root, res.state);
-      } else {
-        trade_ad_notif_refresh_ui(root).catch(() => {});
-      }
-    });
+  function trade_ad_notif_update_status(root, state, loading = false) {
+    let status = root?.querySelector("#ta-notif-status");
+    if (!status) return;
+    if (state?.enabled !== true) {
+      status.hidden = true;
+      return;
+    }
+    status.hidden = false;
+    let text_el = status.querySelector(".ta-notif-status-text");
+    let btn = status.querySelector("#ta-notif-load-more-btn");
+    let label = trade_ad_notif_feed_progress_label(state);
+    if (text_el) text_el.textContent = label;
+    if (btn) {
+      let show_btn =
+        state?.enabled === true &&
+        state?.feedExhausted !== true &&
+        !loading;
+      btn.hidden = !show_btn;
+      btn.disabled = !!root?.__taNotifLoadMoreInFlight;
+    }
+    if (state?.lastError && text_el) {
+      text_el.textContent = `${label} · ${String(state.lastError)}`;
+    }
+  }
 
-    root.querySelectorAll(".ta-notif-send-trade").forEach((btn) => {
+  function trade_ad_notif_bind_send_trade_buttons(scope) {
+    if (!scope) return;
+    scope.querySelectorAll(".ta-notif-send-trade").forEach((btn) => {
+      if (btn.dataset.taSendBound === "1") return;
+      btn.dataset.taSendBound = "1";
       btn.addEventListener("click", async () => {
         let partner_id = Number(btn.dataset.partnerId || 0);
         let wanted_id = Number(btn.dataset.wantedId || 0);
@@ -447,15 +536,265 @@
         }, 700);
       });
     });
+  }
 
+  function trade_ad_notif_list_is_near_bottom(list) {
+    if (!list) return false;
+    return (
+      list.scrollTop + list.clientHeight >=
+      list.scrollHeight - trade_ad_notif_scroll_load_threshold_px
+    );
+  }
+
+  function trade_ad_notif_restore_list_scroll(list, at_bottom, previous_top = 0) {
+    if (!list) return;
+    let can_scroll = list.scrollHeight > list.clientHeight + 1;
+    if (at_bottom && can_scroll) {
+      list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
+      return;
+    }
+    if (!at_bottom) {
+      list.scrollTop = Math.max(0, previous_top);
+    }
+  }
+
+  function trade_ad_notif_update_list_footer(root, state, loading = false) {
+    trade_ad_notif_update_status(root, state, loading);
+  }
+
+  async function trade_ad_notif_ensure_feed_scanned(root) {
+    if (!root || root.__taNotifScanAllInFlight) return;
+    let state = globalThis.__taNotifLastState;
+    if (!state?.enabled || state.feedExhausted === true) return;
+    root.__taNotifScanAllInFlight = true;
+    try {
+      await trade_ad_notif_try_load_more(root);
+    } finally {
+      root.__taNotifScanAllInFlight = false;
+    }
+  }
+
+  function trade_ad_notif_append_matches(root, state, from_index = 0) {
+    let list = root?.querySelector("#ta-notif-list");
+    if (!list) return 0;
+    let matches = trade_ad_notif_dedupe_matches(state?.matches);
+    let start = Math.max(0, Number(from_index) || 0);
+    if (start >= matches.length) return start;
+    let chunk = matches.slice(start);
+    if (!chunk.length) return start;
+    let at_bottom = trade_ad_notif_list_is_near_bottom(list);
+    let previous_top = list.scrollTop;
+    list.querySelector(".ta-notifs-empty-card")?.remove();
+    list.insertAdjacentHTML(
+      "beforeend",
+      chunk.map(trade_ad_notif_card_html).join(""),
+    );
+    trade_ad_notif_bind_send_trade_buttons(list);
+    void trade_ad_notif_resolve_thumbs(list);
+    trade_ad_notif_restore_list_scroll(list, at_bottom, previous_top);
+    return matches.length;
+  }
+
+  function trade_ad_notif_sync_open_panel(mount, state) {
+    let panel = mount?.querySelector(".ta-notif-panel");
+    if (!panel) return false;
+    globalThis.__taNotifLastState = state;
+
+    let err = state?.lastError ? String(state.lastError) : "";
+    let err_el = mount.querySelector(".ta-notif-error");
+    if (err) {
+      if (!err_el) {
+        let list = mount.querySelector("#ta-notif-list");
+        if (list) {
+          list.insertAdjacentHTML(
+            "beforebegin",
+            `<p class="ta-notif-error">${escape_html(err)}</p>`,
+          );
+        }
+      } else {
+        err_el.textContent = err;
+      }
+    } else {
+      err_el?.remove();
+    }
+
+    let enabled_input = mount.querySelector("#ta-notif-enabled");
+    if (enabled_input) enabled_input.checked = state?.enabled === true;
+    trade_ad_notif_start_countdown(mount, state);
+    return true;
+  }
+
+  async function trade_ad_notif_try_load_more(root, chain_depth = 0) {
+    if (!root || root.__taNotifLoadMoreInFlight) return;
+    let state = globalThis.__taNotifLastState;
+    if (!state || state.enabled !== true) return;
+    if (state.feedExhausted === true) return;
+
+    root.__taNotifLoadMoreInFlight = true;
+    root.__taNotifSuppressStorageRefresh = true;
+    trade_ad_notif_update_list_footer(root, state, true);
+    try {
+      let res = await trade_ad_notif_send("trade_ad_notifications_load_more");
+      if (!res?.ok) throw new Error(res?.error || "Could not load more ads.");
+      state = res.state || state;
+      globalThis.__taNotifLastState = state;
+      let prev_count = Number(root.__taNotifRenderedCount) || 0;
+      let next_count = trade_ad_notif_append_matches(root, state, prev_count);
+      root.__taNotifRenderedCount = next_count;
+      trade_ad_notif_update_list_footer(root, state, false);
+
+      let added = next_count - prev_count;
+      if (
+        !state.feedExhausted &&
+        added === 0 &&
+        chain_depth < 24 &&
+        state.enabled === true
+      ) {
+        await trade_ad_notif_try_load_more(root, chain_depth + 1);
+      }
+    } catch (err) {
+      state = globalThis.__taNotifLastState || state;
+      state.lastError = err?.message || "Could not load more ads.";
+      globalThis.__taNotifLastState = state;
+      trade_ad_notif_update_list_footer(root, state, false);
+    } finally {
+      root.__taNotifLoadMoreInFlight = false;
+      setTimeout(() => {
+        root.__taNotifSuppressStorageRefresh = false;
+      }, 100);
+    }
+  }
+
+  function trade_ad_notif_bind_list_scroll(root) {
+    let list = root?.querySelector("#ta-notif-list");
+    if (!list) return;
+    if (!list.__taNotifScrollBound) {
+      list.__taNotifScrollBound = true;
+      let scroll_timer = null;
+      list.addEventListener(
+        "scroll",
+        () => {
+          if (scroll_timer) clearTimeout(scroll_timer);
+          scroll_timer = setTimeout(() => {
+            if (root.__taNotifLoadMoreInFlight) return;
+            let state = globalThis.__taNotifLastState;
+            if (!state || state.enabled !== true || state.feedExhausted === true) {
+              return;
+            }
+            if (!trade_ad_notif_list_is_near_bottom(list)) return;
+            trade_ad_notif_try_load_more(root).catch(() => {});
+          }, 100);
+        },
+        { passive: true },
+      );
+    }
+    let load_btn = root.querySelector("#ta-notif-load-more-btn");
+    if (load_btn && load_btn.dataset.taLoadBound !== "1") {
+      load_btn.dataset.taLoadBound = "1";
+      load_btn.addEventListener("click", () => {
+        trade_ad_notif_try_load_more(root).catch(() => {});
+      });
+    }
+  }
+
+  function trade_ad_notif_render_shell(root, state) {
+    let matches = trade_ad_notif_dedupe_matches(state?.matches);
+    let err = state?.lastError ? String(state.lastError) : "";
+    let enabled = state?.enabled === true;
+    let list =
+      !enabled
+        ? `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Notifications are off</p><p class="ta-notifs-empty-copy">Enable alerts to start scanning trade ads.</p></div>`
+        : matches.length > 0
+        ? matches.map(trade_ad_notif_card_html).join("")
+        : `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Nothing yet</p><p class="ta-notifs-empty-copy">Shows ads that want one of your items and offer at least 2.5% overpay (2,000+ value). Multi-item wants and Any/Adds tags are skipped.</p></div>`;
+    root.__taNotifRenderedCount = matches.length;
+    root.innerHTML = `
+      <div class="ta-notif-panel">
+        <div class="ta-notif-head">
+          <div class="ta-notif-head-copy">
+            <div class="ta-notif-title">Overpay alerts</div>
+            <span class="ta-notif-next" id="ta-notif-next"></span>
+          </div>
+          <div class="ta-notif-head-actions">
+            <button type="button" class="ta-notif-ignore-btn-head" id="ta-notif-ignore-btn">Ignore List</button>
+            <label class="ta-notif-toggle" title="Enable trade ad notifications">
+              <input type="checkbox" id="ta-notif-enabled" ${enabled ? "checked" : ""} />
+              <span class="ta-notif-toggle-track"><span class="ta-notif-toggle-knob"></span></span>
+            </label>
+          </div>
+        </div>
+        ${err ? `<p class="ta-notif-error">${escape_html(err)}</p>` : ""}
+        <div class="ta-notif-list" id="ta-notif-list">${list}</div>
+        <div class="ta-notif-status" id="ta-notif-status">
+          <span class="ta-notif-status-text"></span>
+          <button type="button" class="ta-notif-load-more-btn" id="ta-notif-load-more-btn" hidden>Load more</button>
+        </div>
+      </div>`;
+
+    root.querySelector("#ta-notif-enabled")?.addEventListener("change", async (ev) => {
+      let on = ev.currentTarget?.checked === true;
+      let res = await trade_ad_notif_send("trade_ad_notifications_set_enabled", {
+        enabled: on,
+      });
+      if (res?.ok && res.state) {
+        trade_ad_notif_render_shell(root, res.state);
+      } else {
+        trade_ad_notif_refresh_ui(root).catch(() => {});
+      }
+    });
+
+    root.querySelector("#ta-notif-ignore-btn")?.addEventListener("click", async () => {
+      let next_names = await trade_ad_notif_open_ignore_modal(state?.ignoredUsers || []);
+      if (!next_names) return;
+      let res = await trade_ad_notif_send("trade_ad_notifications_set_ignored_users", {
+        ignoredUsers: next_names,
+      });
+      if (res?.ok && res.state) {
+        trade_ad_notif_render_shell(root, res.state);
+      } else {
+        trade_ad_notif_refresh_ui(root).catch(() => {});
+      }
+    });
+
+    trade_ad_notif_bind_send_trade_buttons(root);
+    trade_ad_notif_bind_list_scroll(root);
+    trade_ad_notif_update_status(root, state, false);
     trade_ad_notif_start_countdown(root, state);
+    globalThis.__taNotifLastState = state;
     void trade_ad_notif_resolve_thumbs(root);
+    if (enabled && state.feedExhausted !== true) {
+      trade_ad_notif_ensure_feed_scanned(root).catch(() => {});
+    }
   }
 
   async function trade_ad_notif_refresh_ui(mount) {
     if (!mount) return;
+    if (mount.__taNotifLoadMoreInFlight || mount.__taNotifSuppressStorageRefresh) {
+      return;
+    }
     try {
       let state = await trade_ad_notif_fetch_state();
+      globalThis.__taNotifLastState = state;
+      let list = mount.querySelector("#ta-notif-list");
+      if (list && !mount.querySelector("#ta-notif-status")) {
+        trade_ad_notif_render_shell(mount, state);
+        return;
+      }
+      if (list) {
+        let prev_rendered = Number(mount.__taNotifRenderedCount) || 0;
+        let match_count = Array.isArray(state?.matches) ? state.matches.length : 0;
+        if (match_count > prev_rendered) {
+          mount.__taNotifRenderedCount = trade_ad_notif_append_matches(
+            mount,
+            state,
+            prev_rendered,
+          );
+        }
+        trade_ad_notif_update_list_footer(mount, state, false);
+        trade_ad_notif_sync_open_panel(mount, state);
+        trade_ad_notif_bind_list_scroll(mount);
+        return;
+      }
       trade_ad_notif_render_shell(mount, state);
     } catch (err) {
       mount.innerHTML = `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Could not load alerts</p><p class="ta-notifs-empty-copy">${escape_html(err?.message || String(err))}</p></div>`;
@@ -466,8 +805,13 @@
     if (!mount) return;
     if (mount.__taNotifRendering) return;
     mount.__taNotifRendering = true;
-    mount.innerHTML = `<div class="ta-notif-loading">Loading alerts…</div>`;
     try {
+      let cached_state = globalThis.__taNotifLastState;
+      if (cached_state && typeof cached_state === "object") {
+        trade_ad_notif_render_shell(mount, cached_state);
+      } else {
+        mount.innerHTML = `<div class="ta-notif-loading">Loading alerts…</div>`;
+      }
       await trade_ad_notif_refresh_ui(mount);
     } finally {
       mount.__taNotifRendering = false;
@@ -481,6 +825,9 @@
       if (area !== "local") return;
       if (!changes.trade_ad_notifications_state) return;
       if (mount.closest("[data-ta-category-panel='notifs']")?.hidden) return;
+      if (mount.__taNotifLoadMoreInFlight || mount.__taNotifSuppressStorageRefresh) {
+        return;
+      }
       trade_ad_notif_refresh_ui(mount).catch(() => {});
     });
   }

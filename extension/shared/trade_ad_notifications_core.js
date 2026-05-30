@@ -127,6 +127,15 @@
     };
   }
 
+  function sort_matches(matches) {
+    return (Array.isArray(matches) ? matches : []).slice().sort((a, b) => {
+      let ca = Number(a.createdAt) || 0;
+      let cb = Number(b.createdAt) || 0;
+      if (cb !== ca) return cb - ca;
+      return Number(b.overpayAmount) - Number(a.overpayAmount);
+    });
+  }
+
   function scan_ads_for_matches(ads, owned_ids, get_row, viewer_user_id) {
     let matches = [];
     if (!Array.isArray(ads)) return matches;
@@ -134,13 +143,44 @@
       let match = build_match(ad, owned_ids, get_row, viewer_user_id);
       if (match) matches.push(match);
     }
-    matches.sort((a, b) => {
-      let ca = Number(a.createdAt) || 0;
-      let cb = Number(b.createdAt) || 0;
-      if (cb !== ca) return cb - ca;
-      return Number(b.overpayAmount) - Number(a.overpayAmount);
-    });
-    return matches;
+    return sort_matches(matches);
+  }
+
+  function stored_match_to_ad(match) {
+    if (!match || match.adId == null) return null;
+    let offer_ids = (Array.isArray(match.offerItems) ? match.offerItems : [])
+      .map((it) => Number(it?.id))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    let wanted_id = Number(match.wantedItemId);
+    if (!Number.isFinite(wanted_id) || wanted_id <= 0) return null;
+    return {
+      id: match.adId,
+      createdAt: match.createdAt,
+      userId: match.userId,
+      username: match.username,
+      have: {
+        itemIds: offer_ids,
+        robux: Math.max(0, Number(match.haveRobux) || 0),
+        tags: [],
+      },
+      want: {
+        itemIds: [wanted_id],
+        robux: 0,
+        tags: Array.isArray(match.wantTags) ? match.wantTags.slice() : [],
+      },
+      tags: Array.isArray(match.requestTags) ? match.requestTags.slice() : [],
+    };
+  }
+
+  function rescore_stored_matches(matches, owned_ids, get_row, viewer_user_id) {
+    let out = [];
+    for (let match of Array.isArray(matches) ? matches : []) {
+      let ad = stored_match_to_ad(match);
+      if (!ad) continue;
+      let refreshed = build_match(ad, owned_ids, get_row, viewer_user_id);
+      if (refreshed) out.push(refreshed);
+    }
+    return sort_matches(out);
   }
 
   root.TradeAdNotificationsCore = {
@@ -156,5 +196,6 @@
     is_overpay_trade,
     build_match,
     scan_ads_for_matches,
+    rescore_stored_matches,
   };
 })(typeof globalThis !== "undefined" ? globalThis : self);

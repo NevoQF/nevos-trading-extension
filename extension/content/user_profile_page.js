@@ -2405,14 +2405,41 @@
       return text ? `${text},` : "";
     }
 
+    const INV_IMAGE_MAX_COLS = 12;
+
+    function inv_image_cols_options_html() {
+      return Array.from({ length: INV_IMAGE_MAX_COLS - 2 }, (_, i) => {
+        let n = i + 3;
+        return `<option value="${n}"${n === 5 ? " selected" : ""}>${n}</option>`;
+      }).join("");
+    }
+
+    function inv_image_clamp_cols(value) {
+      return Math.max(
+        3,
+        Math.min(INV_IMAGE_MAX_COLS, Math.floor(Number(value) || 5)),
+      );
+    }
+
+    function inv_image_card_size(cols, variant) {
+      if (variant === "v2") {
+        if (cols >= 10) return { card_w: 118, card_h: 186 };
+        if (cols >= 8) return { card_w: 128, card_h: 198 };
+        if (cols >= 7) return { card_w: 142, card_h: 222 };
+        return { card_w: 152, card_h: 234 };
+      }
+      if (cols >= 10) return { card_w: 112, card_h: 178 };
+      if (cols >= 8) return { card_w: 122, card_h: 190 };
+      if (cols >= 7) return { card_w: 136, card_h: 214 };
+      return { card_w: 146, card_h: 228 };
+    }
+
     async function inv_image_create_blob(data) {
       let items = inv_image_items_for_output(data.items, data.limit);
       if (!items.length) throw new Error("No inventory items to image.");
       let dark = utils.getColorMode() !== "light";
-      let requested_cols = Math.floor(Number(data.items_per_row) || 5);
-      let cols = Math.max(3, Math.min(7, requested_cols));
-      let card_w = cols >= 7 ? 136 : 146;
-      let card_h = cols >= 7 ? 214 : 228;
+      let cols = inv_image_clamp_cols(data.items_per_row);
+      let { card_w, card_h } = inv_image_card_size(cols, "v1");
       let gap = 14;
       let pad = 42;
       let header_h = 154;
@@ -2554,11 +2581,6 @@
       let mark_y = height - 42;
       inv_image_draw_logo(ctx, brand_logo, mark_x, mark_y - 4, mark_logo);
       ctx.fillText(mark, mark_x + mark_logo + mark_gap, mark_y);
-      let invite = "discord.gg/4XWE7yy2uE";
-      ctx.fillStyle = dark ? "rgba(255,255,255,.46)" : "rgba(17,24,39,.44)";
-      ctx.font = "800 10px Segoe UI, Arial, sans-serif";
-      let invite_w = ctx.measureText(invite).width;
-      ctx.fillText(invite, width - pad - invite_w, height - 22);
       return inv_image_canvas_blob(canvas);
     }
 
@@ -2566,10 +2588,8 @@
       let items = inv_image_items_for_output(data.items, data.limit);
       if (!items.length) throw new Error("No inventory items to image.");
       let dark = utils.getColorMode() !== "light";
-      let requested_cols = Math.floor(Number(data.items_per_row) || 5);
-      let cols = Math.max(3, Math.min(7, requested_cols));
-      let card_w = cols >= 7 ? 142 : 152;
-      let card_h = cols >= 7 ? 222 : 234;
+      let cols = inv_image_clamp_cols(data.items_per_row);
+      let { card_w, card_h } = inv_image_card_size(cols, "v2");
       let gap = 16;
       let pad = 48;
       let header_h = 168;
@@ -2729,11 +2749,6 @@
       let site = "nevos-extension.com";
       let site_w = ctx.measureText(site).width;
       ctx.fillText(site, (width - site_w) / 2, height - 32);
-      ctx.fillStyle = dark ? "rgba(255,255,255,.30)" : "rgba(17,24,39,.32)";
-      ctx.font = "800 9px Segoe UI, Arial, sans-serif";
-      let invite = "discord.gg/4XWE7yy2uE";
-      let invite_w = ctx.measureText(invite).width;
-      ctx.fillText(invite, (width - invite_w) / 2, height - 18);
       return inv_image_canvas_blob(canvas);
     }
 
@@ -3012,11 +3027,7 @@
               <label class="nte-inv-image-prompt-field">
                 <span class="nte-inv-image-prompt-label">Per Row</span>
                 <select class="nte-inv-image-prompt-input nte-inv-image-prompt-cols">
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5" selected>5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
+                  ${inv_image_cols_options_html()}
                 </select>
               </label>
             </div>
@@ -3043,10 +3054,7 @@
         function value(limit) {
           return {
             limit,
-            items_per_row: Math.max(
-              3,
-              Math.min(7, parseInt(cols.value, 10) || 5),
-            ),
+            items_per_row: inv_image_clamp_cols(cols.value),
             style: "v2",
             show_usd: !!(usd_toggle && usd_toggle.checked),
             show_onhold: !!(onhold_toggle && onhold_toggle.checked),
