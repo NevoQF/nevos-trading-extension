@@ -576,24 +576,155 @@ async function trade_ads_pick_random_offer_ids(inv_raw, item_data, owned_set) {
   return pool.slice(0, 4);
 }
 
-async function trade_ads_resolve_thumb_image_urls(asset_ids) {
+async function trade_ads_thumb_bundle_lookup() {
+  try {
+    let item_data = await get_cached_item_data();
+    return item_data?.bundleIds && typeof item_data.bundleIds === "object"
+      ? item_data.bundleIds
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function trade_ads_normalize_thumb_requests(input) {
+  let out = [];
+  let seen = new Set();
+  for (let row of Array.isArray(input) ? input : []) {
+    let id = Number(row?.thumbId ?? row?.id ?? row?.assetId);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    let key = String(id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let kind = row?.thumbType ?? row?.thumbKind ?? row?.kind ?? "Asset";
+    if (kind === "bundle") kind = "Bundle";
+    out.push({
+      id,
+      thumbType: kind === "Bundle" ? "Bundle" : "Asset",
+    });
+  }
+  return out;
+}
+
+async function trade_ads_fetch_batch_thumbs(requests) {
+  let out = {};
+  if (!requests.length) return out;
+
+  let run = async (reqs, flip) => {
+    for (let i = 0; i < reqs.length; i += 100) {
+      let chunk = reqs.slice(i, i + 100);
+      let body = chunk.map((row, idx) => {
+        let roblox_type =
+          row.thumbType === "Bundle" ? "BundleThumbnail" : "Asset";
+        let type = flip
+          ? roblox_type === "BundleThumbnail"
+            ? "Asset"
+            : "BundleThumbnail"
+          : roblox_type;
+        return {
+          requestId: `${flip ? "r" : "p"}:${type}:${row.id}:${idx}`,
+          type,
+          targetId: row.id,
+          token: "",
+          format: "webp",
+          size: "150x150",
+          version: "",
+        };
+      });
+      let res = await fetch("https://thumbnails.roblox.com/v1/batch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(body),
+      }).catch(() => null);
+      if (!res?.ok) continue;
+      let data = await res.json().catch(() => ({}));
+      for (let row of data.data || []) {
+        let tid = Number(row?.targetId);
+        let url = String(row?.imageUrl || "").trim();
+        if (tid > 0 && url && row?.state === "Completed") {
+          out[String(tid)] = url;
+        }
+      }
+    }
+  };
+
+  await run(requests, false);
+  let missing = requests.filter((row) => !out[String(row.id)]);
+  if (missing.length) await run(missing, true);
+  return out;
+}
+
+async function trade_ads_fetch_roblox_thumb_urls(ids, endpoint_prefix) {
+  let out = {};
+  if (!ids.length) return out;
+  for (let i = 0; i < ids.length; i += 100) {
+    let chunk = ids.slice(i, i + 100);
+    let url = `${endpoint_prefix}${chunk.join(",")}&size=150x150&format=Png&isCircular=false`;
+    let res = await fetch(url).catch(() => null);
+    if (!res?.ok) continue;
+    let data = await res.json().catch(() => ({}));
+    for (let row of data.data || []) {
+      let tid = row?.targetId;
+      if (tid == null) continue;
+      let image_url = String(row?.imageUrl || "").trim();
+      if (image_url) out[String(tid)] = image_url;
+    }
+  }
+  return out;
+}
+
+function trade_ads_thumb_type_for_id(id, bundle_lookup, type_by_id) {
+  let key = String(id);
+  let hinted = type_by_id?.[key];
+  if (hinted === "Bundle" || hinted === "bundle") return "Bundle";
+  if (bundle_lookup?.[key] && hinted !== "Asset" && hinted !== "asset") {
+    return "Bundle";
+  }
+  if (hinted === "Asset" || hinted === "asset") return "Asset";
+  if (bundle_lookup?.[key]) return "Bundle";
+  return "Asset";
+}
+
+async function trade_ads_resolve_thumb_image_urls(
+  asset_ids,
+  bundle_lookup,
+  type_by_id,
+) {
   let ids = [
     ...new Set(
       (asset_ids || []).map(Number).filter((n) => Number.isFinite(n) && n > 0),
     ),
   ];
   if (!ids.length) return {};
-  let out = {};
-  for (let i = 0; i < ids.length; i += 100) {
-    let chunk = ids.slice(i, i + 100);
-    let url = `https://thumbnails.roblox.com/v1/assets?assetIds=${chunk.join(",")}&size=150x150&format=Png&isCircular=false`;
-    let res = await fetch(url);
-    let data = await res.json().catch(() => ({}));
-    if (!res.ok) continue;
-    for (let row of data.data || []) {
-      let tid = row.targetId;
-      if (tid != null && row.imageUrl) out[String(tid)] = row.imageUrl;
-    }
+
+  let requests = ids.map((id) => ({
+    id,
+    thumbType: trade_ads_thumb_type_for_id(id, bundle_lookup, type_by_id),
+  }));
+  let out = await trade_ads_fetch_batch_thumbs(requests);
+
+  let missing = ids.filter((id) => !out[String(id)]);
+  if (missing.length) {
+    Object.assign(
+      out,
+      await trade_ads_fetch_roblox_thumb_urls(
+        missing,
+        "https://thumbnails.roblox.com/v1/assets?assetIds=",
+      ),
+    );
+  }
+  missing = ids.filter((id) => !out[String(id)]);
+  if (missing.length) {
+    Object.assign(
+      out,
+      await trade_ads_fetch_roblox_thumb_urls(
+        missing,
+        "https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=",
+      ),
+    );
   }
   return out;
 }
@@ -631,7 +762,7 @@ async function trade_ads_thumb_cache_persist() {
   );
 }
 
-async function trade_ads_thumb_resolve_with_cache(asset_ids) {
+async function trade_ads_thumb_resolve_with_cache(asset_ids, type_by_id) {
   return trade_ads_thumb_cache_locked(async () => {
     await trade_ads_thumb_cache_ensure_loaded();
     let ids = [
@@ -651,7 +782,13 @@ async function trade_ads_thumb_resolve_with_cache(asset_ids) {
       else need_fetch.push(id);
     }
     if (need_fetch.length) {
-      let fresh = await trade_ads_resolve_thumb_image_urls(need_fetch);
+      let bundle_lookup = await trade_ads_thumb_bundle_lookup();
+      let fetch_types = type_by_id || null;
+      let fresh = await trade_ads_resolve_thumb_image_urls(
+        need_fetch,
+        bundle_lookup,
+        fetch_types,
+      );
       let wrote = false;
       for (let [k, v] of Object.entries(fresh)) {
         if (typeof v === "string" && v.length > 0) {
@@ -670,7 +807,7 @@ async function trade_ads_thumb_resolve_with_cache(asset_ids) {
   });
 }
 
-async function trade_ads_thumb_refetch_one(asset_id) {
+async function trade_ads_thumb_refetch_one(asset_id, thumb_kind) {
   let id = Number(asset_id);
   if (!Number.isFinite(id) || id <= 0) return "";
   return trade_ads_thumb_cache_locked(async () => {
@@ -678,7 +815,14 @@ async function trade_ads_thumb_refetch_one(asset_id) {
     let s = String(id);
     delete trade_ads_thumb_cache_mem[s];
     await trade_ads_thumb_cache_persist();
-    let fresh = await trade_ads_resolve_thumb_image_urls([id]);
+    let kind =
+      thumb_kind === "bundle" || thumb_kind === "Bundle" ? "Bundle" : "Asset";
+    let bundle_lookup = await trade_ads_thumb_bundle_lookup();
+    let fresh = await trade_ads_resolve_thumb_image_urls(
+      [id],
+      bundle_lookup,
+      { [s]: kind },
+    );
     let url = fresh[s] || "";
     if (url) trade_ads_thumb_cache_mem[s] = url;
     await trade_ads_thumb_cache_persist();
@@ -717,6 +861,7 @@ async function trade_ads_search_items(item_data, query, limit, offset) {
       value: v,
       valueLine: ui.valueLine,
       rap: ui.rap,
+      thumbType: item_data?.bundleIds?.[String(id)] ? "Bundle" : "Asset",
     });
   }
   rows.sort((a, b) => b.value - a.value);
@@ -1248,7 +1393,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         let raw = await trade_ads_fetch_inventory_collectibles(me.id);
         let item_data = await get_cached_item_data();
         let enriched = raw.map((x) => {
-          let row = get_rolimons_item(item_data, x.assetId);
+          let row = get_rolimons_item(item_data, x.assetId, x.name);
           let acronym = Array.isArray(row) ? String(row[1] || "") : "";
           let v = row ? trade_ads_effective_value(row) : 0;
           let ui = trade_ads_row_ui_metrics(row);
@@ -1259,6 +1404,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
             valueLine: ui.valueLine,
             rap: ui.rap,
             acronym,
+            thumbType: item_data?.bundleIds?.[String(x.assetId)]
+              ? "Bundle"
+              : "Asset",
           };
         });
         enriched.sort((a, b) => b.value - a.value);
@@ -1282,6 +1430,19 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.type === "trade_ads_resolve_thumbs") {
     (async () => {
       try {
+        let thumb_requests = trade_ads_normalize_thumb_requests(
+          message.thumbRequests,
+        );
+        if (thumb_requests.length) {
+          let type_by_id = {};
+          for (let row of thumb_requests) {
+            type_by_id[String(row.id)] = row.thumbType;
+          }
+          let ids = thumb_requests.map((row) => row.id);
+          let urls = await trade_ads_thumb_resolve_with_cache(ids, type_by_id);
+          respond({ ok: true, urls });
+          return;
+        }
         let ids = Array.isArray(message.assetIds) ? message.assetIds : [];
         let urls = await trade_ads_thumb_resolve_with_cache(ids);
         respond({ ok: true, urls });
@@ -1295,7 +1456,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.type === "trade_ads_refetch_thumb") {
     (async () => {
       try {
-        let url = await trade_ads_thumb_refetch_one(message.assetId);
+        let url = await trade_ads_thumb_refetch_one(
+          message.assetId,
+          message.thumbKind,
+        );
         respond({ ok: !!url, url: url || "" });
       } catch (err) {
         respond({ ok: false, error: err?.message || String(err), url: "" });

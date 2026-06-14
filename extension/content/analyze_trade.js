@@ -55,9 +55,11 @@
         .light-theme .nte-analyze-trade-verdict.is-good .nte-analyze-trade-verdict-icon{color:#059669}
         .nte-analyze-trade-verdict.is-warn .nte-analyze-trade-verdict-icon{background:rgba(245,158,11,.14);border-color:rgba(245,158,11,.32);color:#fbbf24}
         .light-theme .nte-analyze-trade-verdict.is-warn .nte-analyze-trade-verdict-icon{color:#d97706}
-        .nte-analyze-trade-verdict-text{flex:1;min-width:0;font-size:18px;font-weight:700;letter-spacing:-.015em;line-height:1.42;color:#f3f4f6}
-        .light-theme .nte-analyze-trade-verdict-text{color:#0f172a}
-        .nte-analyze-trade-verdict-text strong{font-weight:800;color:inherit}
+        .nte-analyze-trade-verdict-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:5px;color:#f3f4f6}
+        .light-theme .nte-analyze-trade-verdict-copy{color:#0f172a}
+        .nte-analyze-trade-verdict-title{font-size:18px;font-weight:850;letter-spacing:0;line-height:1.28;color:inherit}
+        .nte-analyze-trade-verdict-action{font-size:13px;font-weight:600;line-height:1.45;color:#cbd5e1}
+        .light-theme .nte-analyze-trade-verdict-action{color:#475569}
         .nte-analyze-trade-reasons{padding:20px 22px;border-radius:15px;background:#222632;border:1px solid rgba(255,255,255,.06)}
         .light-theme .nte-analyze-trade-reasons{background:#f8fafc;border-color:rgba(15,23,42,.07)}
         .nte-analyze-trade-reasons-title{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.12em;color:#6b7280;margin-bottom:14px}
@@ -131,7 +133,8 @@
           .nte-analyze-trade-verdict,.nte-analyze-trade-reasons,.nte-analyze-trade-side,.nte-analyze-trade-foot{flex-shrink:0}
           .nte-analyze-trade-verdict-icon{width:34px;height:34px}
           .nte-analyze-trade-verdict-icon svg{width:18px;height:18px}
-          .nte-analyze-trade-verdict-text{font-size:15px;line-height:1.38}
+          .nte-analyze-trade-verdict-title{font-size:15px;line-height:1.28}
+          .nte-analyze-trade-verdict-action{font-size:12px;line-height:1.4}
           .nte-analyze-trade-reasons{padding:14px;border-radius:14px}
           .nte-analyze-trade-reasons-title{margin-bottom:10px;font-size:10px;letter-spacing:.08em}
           .nte-analyze-trade-reason-list{gap:9px}
@@ -222,14 +225,50 @@
     }
 
     function reason_html(reason) {
-      return esc(reason || "").replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+      return esc(clean_display_text(reason || "")).replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    }
+
+    function clean_display_text(value) {
+      let text = String(value || "")
+        .replace(/[–—]/g, " - ")
+        .replace(/\s+/g, " ")
+        .trim();
+      text = text.replace(/^DECLINE\s+\(([^)]+)\)\s*-\s*/i, "Decline $1 - ");
+      text = text.replace(/^ACCEPT\s+\(([^)]+)\)\s*-\s*/i, "Accept $1 - ");
+      text = text.replace(/^TAKE\s+\(([^)]+)\)\s*-\s*/i, "Take $1 - ");
+      text = text.replace(
+        /\bthe economics don't justify accepting as-is\.?/i,
+        "the values and risk do not justify accepting this as-is.",
+      );
+      return text.replace(/\b(DECLINE|ACCEPT|TAKE|COUNTER|HOLD)\b/g, (match) => {
+        return match.charAt(0) + match.slice(1).toLowerCase();
+      });
+    }
+
+    function normalize_copy_key(value) {
+      return clean_display_text(value)
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim();
     }
 
     function get_reasons(result, verdict) {
-      if (Array.isArray(verdict?.reasons) && verdict.reasons.length) return verdict.reasons.slice(0, 4);
-      if (Array.isArray(result?.reasons) && result.reasons.length) return result.reasons.slice(0, 4);
-      if (typeof verdict?.reasoning === "string" && verdict.reasoning.trim()) return [verdict.reasoning.trim()];
-      if (typeof result?.reasoning === "string" && result.reasoning.trim()) return [result.reasoning.trim()];
+      let raw = [];
+      if (Array.isArray(verdict?.reasons) && verdict.reasons.length) raw = verdict.reasons;
+      else if (Array.isArray(result?.reasons) && result.reasons.length) raw = result.reasons;
+      else if (typeof verdict?.reasoning === "string" && verdict.reasoning.trim()) raw = [verdict.reasoning];
+      else if (typeof result?.reasoning === "string" && result.reasoning.trim()) raw = [result.reasoning];
+      let action_key = normalize_copy_key(verdict?.recommended_action || verdict?.recommendation || verdict?.action || "");
+      let seen = new Set();
+      let out = [];
+      raw.forEach((reason) => {
+        let text = clean_display_text(reason);
+        let key = normalize_copy_key(text);
+        if (!text || !key || key === action_key || seen.has(key)) return;
+        seen.add(key);
+        out.push(text);
+      });
+      if (out.length) return out.slice(0, 4);
       return [];
     }
 
@@ -319,6 +358,7 @@
         verdict?.label,
         verdict?.action,
         verdict?.decision,
+        verdict?.recommended_action,
         verdict?.recommendation,
         verdict?.message,
         verdict?.summary,
@@ -328,6 +368,7 @@
         result?.label,
         result?.action,
         result?.decision,
+        result?.recommended_action,
         result?.recommendation,
         result?.message,
         result?.summary,
@@ -349,15 +390,34 @@
     }
 
     function get_verdict_message(result, verdict, tone) {
-      if (tone === "is-bad") return "It is advised you do not take this trade.";
       let message = verdict_texts(result, verdict).find((text) => /\s/.test(text) && !/^(good|bad|warn|warning|neutral|equal|even|take|accept|decline|reject)$/i.test(text));
-      if (message) return message;
-      if (tone === "is-good") return "This trade looks like a good deal for you.";
-      return "This trade is roughly even — your call.";
+      if (message) {
+        let cleaned = clean_display_text(message);
+        if (/^risky accept$/i.test(cleaned)) return "Risky to accept";
+        if (/^safe accept$/i.test(cleaned)) return "Looks safe to accept";
+        if (/^strong accept$/i.test(cleaned)) return "Strong accept";
+        return cleaned;
+      }
+      if (tone === "is-bad") return "Decline trade";
+      if (tone === "is-good") return "Worth accepting";
+      return "Roughly even";
     }
 
-    function render_verdict_message(message, tone) {
-      return tone === "is-bad" ? `<strong>${esc(message)}</strong>` : esc(message);
+    function get_verdict_action(verdict, tone) {
+      let action = clean_display_text(verdict?.recommended_action || verdict?.recommendation || verdict?.action || verdict?.advice || "");
+      if (action) return action;
+      if (tone === "is-bad") return "Decline or counter unless the items have a reason you value.";
+      if (tone === "is-good") return "Accept looks reasonable based on the current data.";
+      return "Close enough that item preference and demand should decide it.";
+    }
+
+    function render_verdict_message(title, action) {
+      return `
+        <div class="nte-analyze-trade-verdict-copy">
+          <div class="nte-analyze-trade-verdict-title">${esc(title)}</div>
+          <div class="nte-analyze-trade-verdict-action">${esc(action)}</div>
+        </div>
+      `;
     }
 
     function get_verdict_icon(tone) {
@@ -392,7 +452,7 @@
       if (!reasons.length) return "";
       return `
         <div class="nte-analyze-trade-reasons ${tone}">
-          <div class="nte-analyze-trade-reasons-title">Why</div>
+          <div class="nte-analyze-trade-reasons-title">Key factors</div>
           <ul class="nte-analyze-trade-reason-list">
             ${reasons.map((r) => `<li class="nte-analyze-trade-reason">${reason_html(r)}</li>`).join("")}
           </ul>
@@ -407,7 +467,10 @@
         <div class="nte-analyze-trade-body">
           <div class="nte-analyze-trade-verdict is-warn">
             <div class="nte-analyze-trade-verdict-icon"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10 3v3M10 14v3M3 10h3M14 10h3M5 5l2 2M13 13l2 2M5 15l2-2M13 7l2-2"/></svg></div>
-            <div class="nte-analyze-trade-verdict-text">Analyzing this trade...</div>
+            <div class="nte-analyze-trade-verdict-copy">
+              <div class="nte-analyze-trade-verdict-title">Analyzing trade</div>
+              <div class="nte-analyze-trade-verdict-action">Checking value, demand, risk, and item quality.</div>
+            </div>
           </div>
           <div class="nte-analyze-trade-loader">
             <div class="nte-history-loading-card">
@@ -442,7 +505,10 @@
         <div class="nte-analyze-trade-body">
           <div class="nte-analyze-trade-verdict is-bad">
             <div class="nte-analyze-trade-verdict-icon">${get_verdict_icon("is-bad")}</div>
-            <div class="nte-analyze-trade-verdict-text">${esc(message || "Could not analyze this trade right now.")}</div>
+            <div class="nte-analyze-trade-verdict-copy">
+              <div class="nte-analyze-trade-verdict-title">Analysis failed</div>
+              <div class="nte-analyze-trade-verdict-action">${esc(message || "Could not analyze this trade right now.")}</div>
+            </div>
           </div>
           ${render_credit()}
         </div>
@@ -524,6 +590,7 @@
       let trade = result?.trade || {};
       let tone = get_tone(result, verdict);
       let message = get_verdict_message(result, verdict, tone);
+      let action = get_verdict_action(verdict, tone);
       let icon = get_verdict_icon(tone);
       let reasons = get_reasons(result, verdict);
       panel.className = "nte-analyze-trade-window nte-analyze-trade-panel";
@@ -532,7 +599,7 @@
         <div class="nte-analyze-trade-body">
           <div class="nte-analyze-trade-verdict ${tone}">
             <div class="nte-analyze-trade-verdict-icon">${icon}</div>
-            <div class="nte-analyze-trade-verdict-text">${render_verdict_message(message, tone)}</div>
+            ${render_verdict_message(message, action)}
           </div>
           ${render_reasons(reasons, tone)}
           <div class="nte-analyze-trade-sides">
@@ -558,13 +625,19 @@
       let receive_items = await deps.get_offer_items_enriched(row, "partner").catch(() => deps.get_offer_items("partner"));
       let give_robux = deps.get_robux_total(deps.get_offer_element("self"));
       let receive_robux = deps.get_robux_total(deps.get_offer_element("partner"));
+      let raw_direction = String(deps.get_direction?.() || "").toLowerCase();
+      let direction = ["inbound", "outbound"].includes(raw_direction)
+        ? raw_direction
+        : "";
+      let payload = {
+        give_item_ids: get_asset_ids(give_items),
+        receive_item_ids: get_asset_ids(receive_items),
+        give_robux,
+        receive_robux,
+      };
+      if (direction) payload.direction = direction;
       return {
-        payload: {
-          give_item_ids: get_asset_ids(give_items),
-          receive_item_ids: get_asset_ids(receive_items),
-          give_robux,
-          receive_robux,
-        },
+        payload,
         local_items: {
           give: give_items,
           receive: receive_items,

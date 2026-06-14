@@ -144,7 +144,14 @@
     }
 
     function normalize_rolimons_name(name) {
+      if (
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.normalize_item_name
+      ) {
+        return RolimonsItemDetails.normalize_item_name(name);
+      }
       return String(name || "")
+        .replace(/\s*#\d+\s*$/g, "")
         .toLowerCase()
         .replace(/[#,()\-:'`"]/g, "")
         .replace(/\s+/g, " ")
@@ -178,6 +185,18 @@
       item_name,
       resolve_bundle_by_name_only,
     ) {
+      if (
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.find_item_row
+      ) {
+        return (
+          RolimonsItemDetails.find_item_row(rolimons_data, {
+            robloxId: item_id,
+            name: item_name,
+            isBundle: !!resolve_bundle_by_name_only,
+          }) || null
+        );
+      }
       if (!resolve_bundle_by_name_only && rolimons_data?.items?.[item_id])
         return rolimons_data.items[item_id];
       if (!item_name) return null;
@@ -197,12 +216,24 @@
       return ensure_rolimons_name_cache()[normalized_name]?.id ?? null;
     }
 
-    function is_unsupported_bundle(item_id, item_name) {
-      let normalized_name = normalize_rolimons_name(item_name);
-      return (
-        normalized_name === "signature kicks" ||
-        normalized_name === "the jade catseye"
-      );
+    function get_rolimons_profile_url(id, options) {
+      if (
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.profile_url
+      ) {
+        return RolimonsItemDetails.profile_url(id, rolimons_data, options);
+      }
+      let key = String(id ?? "").trim();
+      if (!key) return "https://www.rolimons.com/";
+      let is_bundle =
+        options?.isBundle === true ||
+        !!(rolimons_data?.bundleIds && rolimons_data.bundleIds[key]);
+      let segment = is_bundle ? "bundle" : "item";
+      return `https://www.rolimons.com/${segment}/${encodeURIComponent(key)}`;
+    }
+
+    function is_unsupported_bundle() {
+      return false;
     }
 
     function get_unsupported_bundle_value(item_id, item_name, fallback_rap) {
@@ -592,6 +623,11 @@
       module.exports,
       "getRolimonsItemId",
       () => get_rolimons_item_id,
+    );
+    define_export(
+      module.exports,
+      "getRolimonsProfileUrl",
+      () => get_rolimons_profile_url,
     );
     define_export(
       module.exports,
@@ -989,7 +1025,7 @@
       if (!utils.checkIfAssetTypeIsOnRolimons(asset_type)) return;
 
       let link = document.createElement("a");
-      link.href = `https://www.rolimons.com/item/${item_id}`;
+      link.href = get_rolimons_profile_url(item_id);
       link.target = "_blank";
       link.style.display = "inline-block";
       link.style.width = "28px";
@@ -1066,7 +1102,9 @@
           continue;
         }
         let link = document.createElement("a");
-        link.href = `https://www.rolimons.com/item/${rolimons_id}`;
+        link.href = get_rolimons_profile_url(rolimons_id, {
+          isBundle: is_bundle,
+        });
         link.target = "_blank";
         Object.assign(link.style, {
           display: "inline-block",
@@ -1698,7 +1736,14 @@
       .nte-thumb-tag{font-size:9px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:4px 8px;border-radius:999px;background:rgba(16,18,22,.82);color:#f5f6f8;border:1px solid rgba(255,255,255,.12);box-shadow:0 4px 16px rgba(0,0,0,.35)}
       .nte-thumb-tag svg{width:11px;height:11px;display:block;flex:0 0 auto}
       .nte-thumb-tag.proj{top:7px;left:7px;background:linear-gradient(180deg,rgba(89,63,30,.96),rgba(45,31,16,.92));color:#ffe3ad;border-color:rgba(255,203,124,.25);box-shadow:0 6px 18px rgba(83,52,16,.28)}
-      .nte-thumb-tag.rare{top:7px;left:7px;width:24px;height:24px;padding:0;border:0;background:transparent;color:inherit;box-shadow:none;font-size:19px;text-shadow:0 2px 8px rgba(0,0,0,.65)}
+      .nte-thumb-tag.hold{top:7px;left:7px;gap:3px;padding:0;min-width:0;height:auto;border-radius:0;background:transparent;border:0;color:#f8fafc;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+      .nte-thumb-tag.hold svg{width:18px;height:18px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.65))}
+      .nte-thumb-tag.hold .nte-thumb-hold-count{font-size:9px;font-weight:800;letter-spacing:.02em;line-height:1;text-shadow:0 2px 8px rgba(0,0,0,.65)}
+      .nte-thumb-tag.hold+.nte-thumb-tag.rare{left:34px}
+      .nte-thumb-tag.hold+.nte-thumb-tag.proj{left:34px}
+      .nte-thumb-tag.hold+.nte-thumb-tag.rare+.nte-thumb-tag.proj{left:61px}
+      .nte-thumb-tag.rare{top:7px;left:7px;gap:0;padding:0;min-width:0;height:auto;border-radius:0;background:transparent;border:0;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
+      .nte-thumb-tag.rare img{width:18px;height:18px;display:block;object-fit:contain;filter:drop-shadow(0 2px 8px rgba(0,0,0,.65))}
       .nte-thumb-tag.rare+.nte-thumb-tag.proj{left:34px}
       .nte-thumb-tag.serial{right:7px;bottom:7px;padding:4px 8px;font-variant-numeric:tabular-nums;font-size:9.5px;letter-spacing:0;text-transform:none;color:#eceef2;background:rgba(16,18,22,.88);border-color:rgba(255,255,255,.1)}
       .nte-thumb-tag.serial .nte-inv-serial{color:inherit!important}
@@ -1826,8 +1871,12 @@
       .light-theme .nte-item-val .r{color:#4b5563}
       .light-theme .nte-thumb-tag{background:rgba(255,255,255,.92);color:#171a1f;border-color:rgba(17,24,39,.1);box-shadow:0 4px 14px rgba(34,55,99,.08)}
       .light-theme .nte-thumb-tag.proj{background:linear-gradient(180deg,rgba(255,245,223,.98),rgba(255,236,193,.95));color:#7d5417;border-color:rgba(220,173,92,.22)}
-      .light-theme .nte-thumb-tag.rare{background:transparent;color:inherit;border-color:transparent;box-shadow:none;text-shadow:0 2px 7px rgba(34,55,99,.18)}
+      .light-theme .nte-thumb-tag.rare{background:transparent;border-color:transparent;box-shadow:none}
+      .light-theme .nte-thumb-tag.rare img{filter:drop-shadow(0 2px 7px rgba(34,55,99,.22))}
       .light-theme .nte-thumb-tag.serial{background:rgba(255,255,255,.95);color:#171a1f;border-color:rgba(17,24,39,.1)}
+      .light-theme .nte-thumb-tag.hold{background:transparent;border:0;box-shadow:none;color:#111827}
+      .light-theme .nte-thumb-tag.hold svg{filter:drop-shadow(0 2px 7px rgba(34,55,99,.18))}
+      .light-theme .nte-thumb-tag.hold .nte-thumb-hold-count{text-shadow:0 2px 7px rgba(34,55,99,.18)}
       .light-theme .nte-item-footer{color:#171a1f}
       .light-theme .nte-item-demand{background:rgba(255,255,255,.96);border-color:rgba(17,24,39,.08);box-shadow:0 1px 2px rgba(15,23,42,.04);color:#171a1f}
       .light-theme .nte-item-demand-dot{background:#8a9099}
@@ -2700,6 +2749,9 @@
       let projected_icon = await inv_image_safe_image(
         utils.getURL("assets/projected.png"),
       );
+      let rare_icon = await inv_image_safe_image(
+        utils.getURL("assets/rare.png"),
+      );
       for (let i = 0; i < items.length; i += 12) {
         let chunk = items.slice(i, i + 12);
         await Promise.all(
@@ -2729,6 +2781,7 @@
           rolimons_icon,
           data.show_usd,
           projected_icon,
+          rare_icon,
           data.show_onhold,
         );
       }
@@ -2764,6 +2817,7 @@
       rolimons_icon,
       show_usd,
       projected_icon,
+      rare_icon,
       show_onhold,
     ) {
       ctx.save();
@@ -2841,6 +2895,11 @@
           indicator_x += 18;
         }
         indicator_x += 4;
+      }
+      if (item.rare && rare_icon) {
+        let ri_s = 18;
+        ctx.drawImage(rare_icon, indicator_x, ty + 4, ri_s, ri_s);
+        indicator_x += ri_s + 4;
       }
       if (item.proj && projected_icon) {
         let pi_s = 20;
@@ -3301,8 +3360,19 @@
           val: val,
           rap: rap,
           proj: rolimons_item && rolimons_item[7] === 1,
-          rare: rolimons_item && rolimons_item[9] === 1,
-          demand: rolimons_item ? rolimons_item[5] : -1,
+          rare:
+            rolimons_item &&
+            typeof RolimonsItemDetails !== "undefined" &&
+            RolimonsItemDetails.is_item_rare
+              ? RolimonsItemDetails.is_item_rare(rolimons_item)
+              : rolimons_item && rolimons_item[9] === 1,
+          demand:
+            typeof RolimonsItemDetails !== "undefined" &&
+            RolimonsItemDetails.get_item_demand
+              ? RolimonsItemDetails.get_item_demand(rolimons_item)
+              : rolimons_item
+                ? rolimons_item[5]
+                : -1,
           serial: item.serialNumber,
           count: 1,
           total_val: val,
@@ -3574,6 +3644,40 @@
           : ctrl_row.insertBefore(inv_image_btn, ctrl_row.firstChild);
       }
 
+      function build_inv_hold_tag(item) {
+        if (!item.onHoldCount || item.onHoldCount <= 0) return "";
+        let partial = item.onHoldCount < item.count;
+        let title = partial
+          ? escape_html(item.onHoldCount + " of " + item.count + " on hold")
+          : "On hold";
+        let count_html = partial
+          ? '<span class="nte-thumb-hold-count">x' +
+            escape_html(String(item.onHoldCount)) +
+            "</span>"
+          : "";
+        return (
+          '<div class="nte-thumb-tag hold" aria-label="' +
+          title +
+          '" title="' +
+          title +
+          '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+          count_html +
+          "</div>"
+        );
+      }
+
+      function build_inv_rare_tag(item) {
+        if (!item.rare) return "";
+        let rare_url = escape_html(utils.getURL("assets/rare.png"));
+        return (
+          '<div class="nte-thumb-tag rare" aria-label="Rare" title="Rare">' +
+          '<img src="' +
+          rare_url +
+          '" alt="" aria-hidden="true">' +
+          "</div>"
+        );
+      }
+
       function render_items(sort_key, query) {
         var filtered = enriched;
         if (query) {
@@ -3635,15 +3739,19 @@
             var proj_tag = item.proj
               ? '<div class="nte-thumb-tag proj">Projected</div>'
               : "";
-            var rare_tag = item.rare
-              ? '<div class="nte-thumb-tag rare" aria-label="Rare"><span aria-hidden="true">&#128142;</span></div>'
-              : "";
+            var hold_tag = build_inv_hold_tag(item);
+            var rare_tag = build_inv_rare_tag(item);
             var card_class =
               "nte-item-card" +
               (item.rare ? " is-rare" : "") +
-              (item.proj ? " is-proj" : "");
+              (item.proj ? " is-proj" : "") +
+              (item.onHoldCount >= item.count && item.onHoldCount > 0
+                ? " is-hold"
+                : "");
             var item_url = item.rolimons_id
-              ? "https://www.rolimons.com/item/" + item.rolimons_id
+              ? utils.getRolimonsProfileUrl(item.rolimons_id, {
+                  isBundle: item.item_type === "Bundle",
+                })
               : item.item_type === "Bundle"
                 ? "https://www.roblox.com/bundles/" + item.id
                 : "https://www.roblox.com/catalog/" + item.id;
@@ -3666,6 +3774,7 @@
                   '">'
                 : "") +
               count_badge +
+              hold_tag +
               rare_tag +
               proj_tag +
               serial_tag +

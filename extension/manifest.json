@@ -48,10 +48,12 @@
     {
       "js": [
         "shared/browser_compat.js",
+        "shared/rolimons_item_details.js",
         "shared/username_lookup_guard.js",
         "shared/nte_icon_utils.js",
         "shared/nte_history_proof_styles.js",
         "shared/nte_icons.js",
+        "shared/tap_tooltip.js",
         "content/analyze_trade.js",
         "content/trade_page.js"
       ],
@@ -88,6 +90,7 @@
     {
       "js": [
         "shared/browser_compat.js",
+        "shared/rolimons_item_details.js",
         "shared/username_lookup_guard.js",
         "shared/nte_icon_utils.js",
         "shared/nte_icons.js",
@@ -163,7 +166,7 @@
     "cookies"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.40",
+  "version": "3.10.41",
   "web_accessible_resources": [
     {
       "matches": [

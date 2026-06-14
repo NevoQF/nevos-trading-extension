@@ -181,6 +181,7 @@
       );
 
       let response = await fetch_trade_api_with_timeout(url, init);
+      void note_trade_daily_limit_trade_api_from_fetch([url, init], response);
       update_trade_api_rate_limit(response);
       return response;
     });
@@ -309,9 +310,8 @@
               ? "userInventory"
               : void 0;
     }
-    function is_unsupported_bundle(e, t) {
-      let r = M(t);
-      return "signature kicks" === r || "the jade catseye" === r;
+    function is_unsupported_bundle() {
+      return false;
     }
     function get_unsupported_bundle_value(e, t, r) {
       if (!is_unsupported_bundle(e, t)) return null;
@@ -413,7 +413,14 @@
         .join("/");
     }
     function M(e) {
+      if (
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.normalize_item_name
+      ) {
+        return RolimonsItemDetails.normalize_item_name(e);
+      }
       return String(e || "")
+        .replace(/\s*#\d+\s*$/g, "")
         .toLowerCase()
         .replace(/[#,()\-:'`"]/g, "")
         .replace(/\s+/g, " ")
@@ -475,9 +482,11 @@
         ).rap || 0
       );
     }
-    function D(e, t) {
-      let r = n?.items?.[e];
-      if (r) return r;
+    function D(e, t, skip_roblox_id_lookup) {
+      if (!skip_roblox_id_lookup) {
+        let r = n?.items?.[String(e)];
+        if (r) return r;
+      }
       if (!t) return null;
       q || (q = {});
       if (!q.__ready) {
@@ -491,10 +500,25 @@
       return q[M(t)]?.item || null;
     }
     function P(e, t, r) {
-      if (!r && n?.items?.[e]) return e;
+      if (!r && n?.items?.[String(e)]) return e;
       if (!t) return null;
       D(e, t);
       return q?.[M(t)]?.id ?? null;
+    }
+    function get_rolimons_profile_url(id, options) {
+      if (
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.profile_url
+      ) {
+        return RolimonsItemDetails.profile_url(id, n, options);
+      }
+      let key = String(id ?? "").trim();
+      if (!key) return "https://www.rolimons.com/";
+      let is_bundle =
+        options?.isBundle === true ||
+        !!(n?.bundleIds && n.bundleIds[key]);
+      let segment = is_bundle ? "bundle" : "item";
+      return `https://www.rolimons.com/${segment}/${encodeURIComponent(key)}`;
     }
     async function S(e, t) {
       await i(".item-card-container");
@@ -694,6 +718,7 @@
       r(e.exports, "getItemIdFromElement", () => I),
       r(e.exports, "getItemNameFromElement", () => R),
       r(e.exports, "resolveRolimonsItemId", () => P),
+      r(e.exports, "getRolimonsProfileUrl", () => get_rolimons_profile_url),
       r(e.exports, "isUnsupportedBundle", () => is_unsupported_bundle),
       r(
         e.exports,
@@ -746,7 +771,7 @@
             n = parseInt(t.getAttribute("data-asset-type"));
           if (a.checkIfAssetTypeIsOnRolimons(n)) {
             let t = document.createElement("a");
-            (t.href = `https://www.rolimons.com/item/${r}`),
+            (t.href = a.getRolimonsProfileUrl(r)),
               (t.target = "_blank"),
               (t.style.display = "inline-block"),
               (t.style.width = "28px"),
@@ -923,7 +948,9 @@
           }
           if (y(card)) continue;
           let link_el = document.createElement("a");
-          (link_el.href = `https://www.rolimons.com/item/${n}`),
+          (link_el.href = a.getRolimonsProfileUrl(n, {
+            isBundle: card_bundle,
+          })),
             (link_el.target = "_blank"),
             (link_el.rel = "noopener noreferrer"),
             (link_el.className = "nte-rolimons-thumb-link"),
@@ -2288,7 +2315,7 @@
       if (offers[0] && offers[1]) {
         let left_rendered = get_trade_offer_rendered_totals(
             offers[0],
-            use_post_tax,
+            false,
           ),
           right_rendered = get_trade_offer_rendered_totals(
             offers[1],
@@ -2306,7 +2333,7 @@
     }
     let e = await get_trade_offer_elements();
     if (!e?.[0] || !e?.[1]) return [!1, NaN];
-    let left_rendered = get_trade_offer_rendered_totals(e[0], use_post_tax),
+    let left_rendered = get_trade_offer_rendered_totals(e[0], false),
       right_rendered = get_trade_offer_rendered_totals(e[1], use_post_tax);
     if (
       Number.isFinite(left_rendered?.value_total) &&
@@ -2316,7 +2343,7 @@
         a = get_trade_percent(n, left_rendered.value_total);
       return [a, n];
     }
-    let t = await v(e[0], use_post_tax),
+    let t = await v(e[0], false),
       r = await v(e[1], use_post_tax);
     if (!Number.isFinite(t) || !Number.isFinite(r)) return [!1, NaN];
     let n = r - t,
@@ -3197,19 +3224,36 @@
     let e = `${item?.collectibleItemInstanceId || ""}:${tid}:${item?.name || item?.itemName || ""}:${item?.rap || item?.recentAveragePrice || 0}`;
     if (item?.__nteSearchMeta && item.__nteSearchMetaKey === e)
       return item.__nteSearchMeta;
-    let t = c.resolveRolimonsItemId(
-        tid,
-        item?.name || item?.itemName,
+    let item_name = item?.name || item?.itemName || "",
+      is_bundle_item =
         item?.itemType === "Bundle" || item?.itemTarget?.itemType === "Bundle",
-      ),
-      r = null != t ? c.getRolimonsData()?.items?.[t] : null,
-      n = normalize_trade_search_text(item?.name),
+      items_data = c.getRolimonsData(),
+      t = c.resolveRolimonsItemId(tid, item_name, is_bundle_item),
+      r =
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.find_item_row
+          ? RolimonsItemDetails.find_item_row(items_data, {
+              rolimonsId: t,
+              robloxId: tid,
+              name: item_name,
+              isBundle: is_bundle_item,
+            })
+          : null != t
+            ? items_data?.items?.[String(t)]
+            : null,
+      n = normalize_trade_search_text(item_name),
       a = n.split(" ").filter(Boolean),
       o = a.join(""),
       i = a.map((e) => e[0] || "").join(""),
       l = compact_trade_search_text(Array.isArray(r) ? r[1] : ""),
       s = Array.isArray(r) && Number(r[3]) >= 0,
-      d = Array.isArray(r) ? Number(r[5]) : -1,
+      d =
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.get_item_demand
+          ? RolimonsItemDetails.get_item_demand(r)
+          : Array.isArray(r)
+            ? Number(r[5])
+            : -1,
       u = Array.isArray(r) ? Number(r[6]) : -1,
       m = {
         rolimonsId: t,
@@ -3224,8 +3268,16 @@
         demandLabel: get_trade_search_demand_label(d),
         trend: u,
         isProjected: 1 === r?.[7],
-        isHyped: 1 === r?.[8],
-        isRare: 1 === r?.[9],
+        isHyped:
+          typeof RolimonsItemDetails !== "undefined" &&
+          RolimonsItemDetails.is_item_hyped
+            ? RolimonsItemDetails.is_item_hyped(r)
+            : 1 === r?.[8] && 1 !== r?.[9],
+        isRare:
+          typeof RolimonsItemDetails !== "undefined" &&
+          RolimonsItemDetails.is_item_rare
+            ? RolimonsItemDetails.is_item_rare(r)
+            : 1 === r?.[9] || (1 === r?.[8] && r && r.length < 11),
         value: c.getValueOrRAP(
           tid,
           item?.name || item?.itemName,
@@ -3321,9 +3373,54 @@
       };
     return null;
   }
+  function get_trade_search_sort_price(item) {
+    let meta = get_trade_search_item_meta(item);
+    if (meta.hasValue && Number(meta.value) > 0) return Number(meta.value);
+    return Number(item?.rap ?? item?.recentAveragePrice ?? 0) || 0;
+  }
+  function build_trade_search_syntax_help_html(open = !1) {
+    let row = (label, chips) =>
+      `<div class="nte-sr-syntax-row"><span class="nte-sr-syntax-label">${label}</span><span class="nte-sr-syntax-cmds">${chips}</span></div>`;
+    let chip = (text) => `<code>${text}</code>`;
+    return `<div class="nte-sr-syntax-panel${open ? " is-open" : ""}">
+      <div class="nte-sr-syntax-rows">
+        ${row("Everything", chip("all"))}
+        ${row("Name", '<span class="nte-sr-syntax-plain">any text</span>')}
+        ${row("Value", [chip("value&gt;50k"), chip("value&lt;100k"), chip("value"), chip("valued")].join(""))}
+        ${row("RAP", [chip("rap&gt;10k"), chip("rap&lt;50k"), chip("rap")].join(""))}
+        ${row("Flags", [chip("rare"), chip("proj"), chip("hold"), chip("offhold")].join(""))}
+        ${row("Demand", chip("demand:high"))}
+        ${row("More", [chip("id:12345"), chip("bundle")].join(""))}
+      </div>
+    </div>`;
+  }
   function parse_trade_search_query(query) {
+    let raw = String(query || "").trim();
+    if (/^all$/i.test(raw)) {
+      return {
+        rawQuery: raw,
+        textTerms: [],
+        showAll: !0,
+        filters: {
+          rare: !1,
+          projected: !1,
+          rapOnly: !1,
+          valued: !1,
+          onHold: !1,
+          offHold: !1,
+          serial: !1,
+          serialNumber: null,
+          hyped: !1,
+          itemType: null,
+          demand: null,
+          valueRange: null,
+          rapRange: null,
+          targetId: null,
+        },
+      };
+    }
     let e = {
-      rawQuery: String(query || ""),
+      rawQuery: raw,
       textTerms: [],
       filters: {
         rare: !1,
@@ -3331,6 +3428,7 @@
         rapOnly: !1,
         valued: !1,
         onHold: !1,
+        offHold: !1,
         serial: !1,
         serialNumber: null,
         hyped: !1,
@@ -3341,10 +3439,7 @@
         targetId: null,
       },
     };
-    let tokens = String(query || "")
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
+    let tokens = raw.split(/\s+/).filter(Boolean);
     for (let idx = 0; idx < tokens.length; idx++) {
       let t = tokens[idx];
       let r = String(t || "")
@@ -3435,7 +3530,9 @@
                 ? ((e.filters.valued = !0), (o = !0))
                 : ["hold", "holds", "onhold", "onholds"].includes(n)
                   ? ((e.filters.onHold = !0), (o = !0))
-                  : ["serial", "serials", "numbered", "numberedonly"].includes(
+                  : ["offhold", "offholds"].includes(n)
+                    ? ((e.filters.offHold = !0), (o = !0))
+                    : ["serial", "serials", "numbered", "numberedonly"].includes(
                         n,
                       )
                     ? ((e.filters.serial = !0), (o = !0))
@@ -3474,6 +3571,7 @@
                     : 99;
   }
   function does_trade_search_item_match(item, parsed) {
+    if (parsed?.showAll) return !0;
     let e = get_trade_search_item_meta(item),
       t = parsed?.filters || {},
       r = Number(
@@ -3491,6 +3589,7 @@
     if (t.rapOnly && e.hasValue) return !1;
     if (t.valued && !e.hasValue) return !1;
     if (t.onHold && !item.isOnHold) return !1;
+    if (t.offHold && item.isOnHold) return !1;
     if (t.serial && null == item.serialNumber) return !1;
     if (null != t.serialNumber && o !== t.serialNumber) return !1;
     if (t.hyped && !e.isHyped) return !1;
@@ -3818,7 +3917,37 @@
       }
       .nte-search-overlay .nte-sr-summary { font-size: 12px; color: #8a8f98; }
       .nte-search-overlay .nte-sr-summary strong { color: inherit; font-weight: 800; }
-      .nte-search-overlay .nte-sr-hint { font-size: 11px; color: #777; text-align: right; }
+      .nte-search-overlay .nte-sr-syntax-btn{
+        flex:0 0 auto;padding:4px 10px;border-radius:999px;border:1px solid rgba(128,128,128,.28);
+        background:rgba(128,128,128,.1);color:inherit;font:inherit;font-size:11px;font-weight:700;
+        line-height:1.2;cursor:pointer;transition:background .15s,border-color .15s,transform .15s;
+      }
+      .nte-search-overlay .nte-sr-syntax-btn:hover{background:rgba(99,102,241,.18);border-color:rgba(99,102,241,.45);transform:translateY(-1px)}
+      .nte-search-overlay .nte-sr-syntax-btn.is-open{background:rgba(99,102,241,.22);border-color:rgba(99,102,241,.5)}
+      .nte-search-overlay .nte-sr-syntax-panel{
+        margin:0 8px 8px;padding:8px 10px;border-radius:8px;
+        background:rgba(128,128,128,.06);border:1px solid rgba(128,128,128,.12);
+      }
+      .nte-search-overlay .nte-sr-syntax-panel:not(.is-open){display:none!important}
+      .nte-search-overlay .nte-sr-syntax-panel.is-open{display:block!important}
+      .nte-search-overlay .nte-sr-syntax-rows{display:flex;flex-direction:column;gap:5px}
+      .nte-search-overlay .nte-sr-syntax-row{
+        display:flex;align-items:center;gap:10px;min-height:22px;
+      }
+      .nte-search-overlay .nte-sr-syntax-label{
+        flex:0 0 68px;font-size:10px;font-weight:700;color:#9ca3af;letter-spacing:.02em;
+      }
+      .nte-search-overlay .nte-sr-syntax-cmds{
+        flex:1;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px;
+      }
+      .nte-search-overlay .nte-sr-syntax-cmds code{
+        padding:2px 7px;border-radius:5px;background:rgba(255,255,255,.08);
+        font-size:10px;font-weight:600;line-height:1.3;color:#e8eaed;white-space:nowrap;
+      }
+      .light-theme .nte-search-overlay .nte-sr-syntax-cmds code{
+        background:rgba(0,0,0,.06);color:#1f2937;
+      }
+      .nte-search-overlay .nte-sr-syntax-plain{font-size:10px;color:#9ca3af}
       .nte-search-overlay .nte-sr-thumb {
         width: 56px; height: 56px; border-radius: 8px; background: rgba(128,128,128,0.12);
         flex-shrink: 0; overflow: hidden; display: flex; align-items: center; justify-content: center;
@@ -3834,7 +3963,6 @@
       .dark-theme .nte-search-overlay .nte-sr-stats { color: #999; }
       .dark-theme .nte-search-overlay .nte-sr-stats strong { color: #ccc; }
       .dark-theme .nte-search-overlay .nte-sr-summary { color: #a7abb2; }
-      .dark-theme .nte-search-overlay .nte-sr-hint { color: #8c9198; }
       .nte-search-overlay .nte-sr-badge {
         display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700;
         margin-left: 6px;
@@ -3906,6 +4034,7 @@
       m = u.getElementsByClassName("rolimons-search")[0];
       let overlay_el = null;
       let search_timer = null;
+      let search_syntax_panel_open = !1;
       let show_values = await c.getOption("Values on Trading Window");
       let show_rare = await c.getOption("Flag Rare Items");
       let show_projected = await c.getOption("Flag Projected Items");
@@ -4366,10 +4495,28 @@
           }
         return !1;
       }
+      function refresh_search_result_thumbs() {
+        if (!overlay_el) return;
+        for (let card of overlay_el.querySelectorAll(".nte-sr-card")) {
+          let idx = parseInt(card.getAttribute("data-sr-idx") || "-1", 10),
+            item = rendered_results[idx];
+          if (!item) continue;
+          let thumb =
+            search_thumb_cache[item.itemType + ":" + item.targetId] || "";
+          if (!thumb) continue;
+          let wrap = card.querySelector(".nte-sr-thumb");
+          if (!wrap) continue;
+          let img = wrap.querySelector("img");
+          if (img) img.src = thumb;
+          else
+            wrap.innerHTML = `<img src="${thumb.replace(/"/g, "&quot;")}" alt="">`;
+        }
+      }
       function render_results(items, query) {
         if (!query.trim()) {
           rendered_results = [];
           active_result_idx = -1;
+          search_syntax_panel_open = !1;
           hide_overlay();
           return;
         }
@@ -4387,17 +4534,13 @@
           return;
         }
         matches.sort((a, b) => {
-          let a_meta = get_trade_search_item_meta(a),
-            b_meta = get_trade_search_item_meta(b),
-            a_rank = get_trade_search_rank(a, parsed_query),
+          let a_rank = get_trade_search_rank(a, parsed_query),
             b_rank = get_trade_search_rank(b, parsed_query);
-          return (
-            a_rank - b_rank ||
-            Number(b_meta.hasValue) - Number(a_meta.hasValue) ||
-            b_meta.value - a_meta.value ||
-            b.rap - a.rap ||
-            a.name.localeCompare(b.name)
-          );
+          if (a_rank !== b_rank) return a_rank - b_rank;
+          let price_diff =
+            get_trade_search_sort_price(b) - get_trade_search_sort_price(a);
+          if (price_diff) return price_diff;
+          return String(a.name || "").localeCompare(String(b.name || ""));
         });
         let visible_results = matches;
         rendered_results = visible_results;
@@ -4408,10 +4551,14 @@
           let key = `${item.itemType}:${item.targetId}:${item.name}`;
           dup_counts.set(key, (dup_counts.get(key) || 0) + 1);
         }
+        let summary_label = parsed_query.showAll
+          ? `<strong>${matches.length}</strong> item${matches.length === 1 ? "" : "s"}`
+          : `<strong>${matches.length}</strong> match${matches.length === 1 ? "" : "es"}`;
+        let syntax_open = search_syntax_panel_open;
         let html = `<div class="nte-sr-header">
-          <div class="nte-sr-summary"><strong>${matches.length}</strong> match${matches.length === 1 ? "" : "es"}</div>
-          <div class="nte-sr-hint">Hover shows sales - Enter adds - Try value&gt;50k rap&lt;10k #1234</div>
-        </div>${visible_results
+          <div class="nte-sr-summary">${summary_label}</div>
+          <button type="button" class="nte-sr-syntax-btn${syntax_open ? " is-open" : ""}" aria-label="Show search syntax" aria-expanded="${syntax_open ? "true" : "false"}">Syntax</button>
+        </div>${build_trade_search_syntax_help_html(syntax_open)}${visible_results
           .map((item, idx) => {
             let thumb =
               search_thumb_cache[item.itemType + ":" + item.targetId] || "";
@@ -4468,6 +4615,22 @@
         if (typeof mount_trade_sales_hover_targets === "function")
           mount_trade_sales_hover_targets(overlay_el);
         overlay_el.onclick = (ev) => {
+          let syntax_btn = ev.target.closest(".nte-sr-syntax-btn");
+          if (syntax_btn) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            let panel = overlay_el.querySelector(".nte-sr-syntax-panel");
+            if (panel) {
+              search_syntax_panel_open = !search_syntax_panel_open;
+              panel.classList.toggle("is-open", search_syntax_panel_open);
+              syntax_btn.classList.toggle("is-open", search_syntax_panel_open);
+              syntax_btn.setAttribute(
+                "aria-expanded",
+                search_syntax_panel_open ? "true" : "false",
+              );
+            }
+            return;
+          }
           let card = ev.target.closest("[data-sr-idx]");
           if (!card) return;
           let item = visible_results[parseInt(card.dataset.srIdx)];
@@ -4475,8 +4638,10 @@
           add_search_item_to_trade(item, a);
         };
         fetch_search_thumbs(visible_results).then((did_fetch) => {
-          if (did_fetch && overlay_el && m.value.trim().toLowerCase() === q)
-            render_results(items, query);
+          if (!did_fetch || !overlay_el || m.value.trim().toLowerCase() !== q)
+            return;
+          if (search_syntax_panel_open) refresh_search_result_thumbs();
+          else render_results(items, query);
         });
       }
       async function add_search_item_to_trade(item, side_idx) {
@@ -6208,17 +6373,32 @@
   async function nte_quick_proof_add_watermark(canvas, no_logo = false) {
     let ctx = canvas.getContext("2d");
     if (!ctx) return canvas;
-    let scale = Math.max(1, Math.min(2, canvas.width / 850)),
-      pad = Math.round(12 * scale),
-      size = Math.round(20 * scale),
-      gap = Math.round(7 * scale),
-      text = "nevos trading extension";
+    let scale = Math.max(1, Math.min(2, canvas.width / 850));
+    let pad = Math.round(12 * scale);
+    let size = Math.round(20 * scale);
+    let gap = Math.round(7 * scale);
+    let title = "nevos trading extension";
+    let site = "nevos-extension.com";
+    let title_size = Math.round(12 * scale);
+    let site_size = Math.round(10 * scale);
+    let line_gap = Math.round(3 * scale);
+
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.font = `900 ${Math.round(12 * scale)}px Inter, Segoe UI, Arial, sans-serif`;
-    let text_w = Math.ceil(ctx.measureText(text).width),
-      x = Math.max(pad, canvas.width - text_w - size - gap - pad),
-      y = Math.max(pad, canvas.height - size - pad);
+    ctx.font = `900 ${title_size}px Inter, Segoe UI, Arial, sans-serif`;
+    let title_w = Math.ceil(ctx.measureText(title).width);
+    ctx.font = `600 ${site_size}px Inter, Segoe UI, Arial, sans-serif`;
+    let site_w = Math.ceil(ctx.measureText(site).width);
+    let text_w = Math.max(title_w, site_w);
+    let text_h = title_size + line_gap + site_size;
+    let block_h = Math.max(no_logo ? text_h : size, text_h);
+    let block_w = (no_logo ? 0 : size + gap) + text_w;
+    let x = Math.max(pad, canvas.width - block_w - pad);
+    let y = Math.max(pad, canvas.height - block_h - pad);
+    let text_x = x + (no_logo ? 0 : size + gap);
+    let title_y = y + (block_h - text_h) / 2 + title_size / 2;
+    let site_y = title_y + title_size / 2 + line_gap + site_size / 2;
+
     let logo = null;
     if (!no_logo) {
       if (nte_quick_proof_logo_cache === null)
@@ -6228,13 +6408,23 @@
           )) || false;
       logo = nte_quick_proof_logo_cache || null;
     }
+
     ctx.shadowColor = "rgba(0, 0, 0, .65)";
     ctx.shadowBlur = Math.round(3 * scale);
     ctx.shadowOffsetY = Math.round(1 * scale);
-    if (!no_logo) nte_quick_proof_draw_mark(ctx, logo || "logo", x, y, size);
-    ctx.fillStyle = "rgba(255, 255, 255, .95)";
+    if (!no_logo) {
+      let logo_y = y + (block_h - size) / 2;
+      nte_quick_proof_draw_mark(ctx, logo || "logo", x, logo_y, size);
+    }
+
+    ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(text, x + size + gap, y + size / 2);
+    ctx.font = `900 ${title_size}px Inter, Segoe UI, Arial, sans-serif`;
+    ctx.fillStyle = "rgba(255, 255, 255, .95)";
+    ctx.fillText(title, text_x, title_y);
+    ctx.font = `600 ${site_size}px Inter, Segoe UI, Arial, sans-serif`;
+    ctx.fillStyle = "rgba(255, 255, 255, .72)";
+    ctx.fillText(site, text_x, site_y);
     ctx.restore();
     return canvas;
   }
@@ -7215,6 +7405,7 @@
         focus_bar.append(focus_btn);
         r._nte_focus_bar = focus_bar;
         left.append(lbl);
+        create_trade_daily_limit_counter(left);
         let col = document.createElement("div");
         col.style.display = "flex";
         col.style.flexDirection = "column";
@@ -7351,6 +7542,10 @@
     )
       r.insertAdjacentElement("afterend", focus_bar);
     bind_trade_focus_selected_observer();
+    ensure_trade_daily_limit_counter(
+      r.querySelector(".trade-quality-label")?.parentElement || r,
+    );
+    schedule_trade_daily_limit_refresh(0);
     return sync_trade_list_filter_ui_state(), r;
   }
   function get_trade_row_filter_metrics(e) {
@@ -10944,6 +11139,7 @@
         if (current === "inbound" || current === "outbound") {
           trade_row_decline_enabled && prime_trade_row_decline();
         }
+        schedule_trade_daily_limit_refresh(0, true);
       }
     }
     new MutationObserver(check_tab_switch).observe(
@@ -11007,6 +11203,432 @@
       }
     }, 25000);
   } catch {}
+
+  const trade_daily_limit_max = 100;
+  const trade_daily_limit_window_ms = 24 * 60 * 60 * 1000;
+  const trade_daily_limit_cache_ttl_ms = 45000;
+  const trade_daily_limit_api_max_pages = 15;
+  let trade_daily_limit_styles_injected = false;
+  let trade_daily_limit_refresh_timer = 0;
+  let trade_daily_limit_countdown_timer = 0;
+  let trade_daily_limit_request_token = 0;
+  let trade_daily_limit_cache = null;
+  let trade_daily_limit_state = { count: 0, at_limit: false, reset_at: null };
+  const trade_daily_limit_counter_storage_key =
+    "nte_trade_daily_limit_counter_trade_ids";
+  const trade_daily_limit_sent_storage_key =
+    "nte_trade_daily_limit_sent_trade_ids";
+  const trade_daily_limit_record_max_age_ms =
+    trade_daily_limit_window_ms + 3600000;
+  let trade_daily_limit_counter_trade_ids_memory = null;
+  let trade_daily_limit_sent_trade_ids_memory = null;
+
+  function prune_trade_daily_limit_id_records(records, now = Date.now()) {
+    if (!records || typeof records !== "object") return {};
+    let pruned = {};
+    for (let [id, at] of Object.entries(records)) {
+      let ts = Number(at);
+      if (
+        !id ||
+        !Number.isFinite(ts) ||
+        now - ts > trade_daily_limit_record_max_age_ms
+      )
+        continue;
+      pruned[String(id)] = ts;
+    }
+    return pruned;
+  }
+
+  function get_trade_daily_limit_counter_records_sync() {
+    return trade_daily_limit_counter_trade_ids_memory || {};
+  }
+
+  function get_trade_daily_limit_sent_records_sync() {
+    return trade_daily_limit_sent_trade_ids_memory || {};
+  }
+
+  async function load_trade_daily_limit_counter_records() {
+    let records = {};
+    try {
+      records = await new Promise((resolve) => {
+        chrome.storage.local.get(
+          [trade_daily_limit_counter_storage_key],
+          (result) => {
+            resolve(result?.[trade_daily_limit_counter_storage_key] || {});
+          },
+        );
+      });
+    } catch {}
+    records = prune_trade_daily_limit_id_records(records);
+    trade_daily_limit_counter_trade_ids_memory = records;
+    return records;
+  }
+
+  async function load_trade_daily_limit_sent_records() {
+    let records = {};
+    try {
+      records = await new Promise((resolve) => {
+        chrome.storage.local.get(
+          [trade_daily_limit_sent_storage_key],
+          (result) => {
+            resolve(result?.[trade_daily_limit_sent_storage_key] || {});
+          },
+        );
+      });
+    } catch {}
+    records = prune_trade_daily_limit_id_records(records);
+    trade_daily_limit_sent_trade_ids_memory = records;
+    return records;
+  }
+
+  function invalidate_trade_daily_limit_cache() {
+    trade_daily_limit_cache = null;
+  }
+
+  async function record_trade_daily_limit_counter_trade_id(trade_id) {
+    let id = String(trade_id ?? "").trim();
+    if (!id) return;
+    let records = { ...get_trade_daily_limit_counter_records_sync() };
+    records[id] = Date.now();
+    records = prune_trade_daily_limit_id_records(records);
+    trade_daily_limit_counter_trade_ids_memory = records;
+    invalidate_trade_daily_limit_cache();
+    try {
+      chrome.storage.local.set(
+        { [trade_daily_limit_counter_storage_key]: records },
+        () => {},
+      );
+    } catch {}
+    schedule_trade_daily_limit_refresh(800, true);
+  }
+
+  async function record_trade_daily_limit_send_trade_id(trade_id) {
+    let id = String(trade_id ?? "").trim();
+    if (!id) return;
+    if (get_trade_daily_limit_counter_records_sync()[id]) return;
+    let records = { ...get_trade_daily_limit_sent_records_sync() };
+    records[id] = Date.now();
+    records = prune_trade_daily_limit_id_records(records);
+    trade_daily_limit_sent_trade_ids_memory = records;
+    invalidate_trade_daily_limit_cache();
+    try {
+      chrome.storage.local.set(
+        { [trade_daily_limit_sent_storage_key]: records },
+        () => {},
+      );
+    } catch {}
+    schedule_trade_daily_limit_refresh(800, true);
+  }
+
+  async function note_trade_daily_limit_trade_api_from_fetch(args, response) {
+    if (!response?.ok) return;
+    let input = args[0];
+    let init = args[1];
+    let url = typeof input === "string" ? input : input?.url || "";
+    let method = String(
+      init?.method || (typeof input !== "string" ? input?.method : "") || "GET",
+    ).toUpperCase();
+    if (method !== "POST") return;
+    let json = await response.clone().json().catch(() => null);
+    let id = json?.id ?? json?.tradeId;
+    if (!id) return;
+    if (
+      /trades\.roblox\.com\/v[12]\/trades\/\d+\/counter(?:\?|$)/i.test(url)
+    ) {
+      await record_trade_daily_limit_counter_trade_id(id);
+      return;
+    }
+    if (/trades\.roblox\.com\/v[12]\/trades\/send(?:\?|$)/i.test(url))
+      await record_trade_daily_limit_send_trade_id(id);
+  }
+
+  function install_trade_daily_limit_fetch_hook() {
+    if (window.__nte_trade_daily_limit_fetch_hook) return;
+    window.__nte_trade_daily_limit_fetch_hook = true;
+    let native_fetch = window.fetch.bind(window);
+    window.fetch = async function (...args) {
+      let response = await native_fetch(...args);
+      try {
+        await note_trade_daily_limit_trade_api_from_fetch(args, response);
+      } catch {}
+      return response;
+    };
+  }
+
+  function is_trade_daily_limit_excluded_trade_id(trade_id, excluded_set) {
+    return excluded_set.has(String(trade_id ?? "").trim());
+  }
+
+  function build_trade_daily_limit_excluded_trade_ids(stored_counter_records) {
+    return new Set(
+      Object.keys(stored_counter_records || {})
+        .map((id) => String(id).trim())
+        .filter(Boolean),
+    );
+  }
+
+  async function paginate_trades_list_for_daily_limit(
+    list_type,
+    cutoff,
+    max_pages,
+  ) {
+    let trades = [];
+    let cursor = "";
+    for (let page = 0; page < max_pages; page++) {
+      let url = `https://trades.roblox.com/v1/trades/${list_type}?limit=100&sortOrder=Desc${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+      let resp = await fetch_trade_api(url, { credentials: "include" });
+      if (!resp.ok) break;
+      let json = await resp.json().catch(() => null);
+      let page_trades = Array.isArray(json?.data) ? json.data : [];
+      if (!page_trades.length) break;
+      let reached_cutoff = false;
+      for (let trade of page_trades) {
+        let created = parse_duplicate_trade_warning_created(trade);
+        if (Number.isFinite(created) && created < cutoff) {
+          reached_cutoff = true;
+          break;
+        }
+        trades.push(trade);
+      }
+      if (reached_cutoff || !json?.nextPageCursor) break;
+      cursor = json.nextPageCursor;
+    }
+    return trades;
+  }
+
+  function merge_trade_daily_limit_created_map(
+    created_by_trade_id,
+    trade,
+    excluded,
+  ) {
+    let trade_id = get_trade_daily_limit_trade_id(trade);
+    if (!trade_id || is_trade_daily_limit_excluded_trade_id(trade_id, excluded))
+      return;
+    let created = parse_duplicate_trade_warning_created(trade);
+    if (!Number.isFinite(created)) return;
+    let existing = created_by_trade_id.get(trade_id);
+    if (!existing || created < existing) created_by_trade_id.set(trade_id, created);
+  }
+
+  function build_trade_daily_limit_timestamps(
+    outbound_trades,
+    local_sent_records,
+    excluded,
+    cutoff,
+  ) {
+    let created_by_trade_id = new Map();
+    for (let trade of outbound_trades)
+      merge_trade_daily_limit_created_map(created_by_trade_id, trade, excluded);
+    for (let [trade_id, sent_at] of Object.entries(local_sent_records || {})) {
+      let id = String(trade_id).trim();
+      let created = Number(sent_at);
+      if (
+        !id ||
+        !Number.isFinite(created) ||
+        created < cutoff ||
+        is_trade_daily_limit_excluded_trade_id(id, excluded) ||
+        created_by_trade_id.has(id)
+      )
+        continue;
+      created_by_trade_id.set(id, created);
+    }
+    return [...created_by_trade_id.values()].sort((a, b) => a - b);
+  }
+
+  function ensure_trade_daily_limit_styles() {
+    if (trade_daily_limit_styles_injected) return;
+    trade_daily_limit_styles_injected = true;
+    let style = document.createElement("style");
+    style.textContent = `
+      #nteTradeDailyLimitCount .nte-trade-limit-help{position:relative;display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:5px;padding:0;border:0;border-radius:50%;background:rgba(128,128,128,.22);color:inherit;font:inherit;font-size:10px;font-weight:700;line-height:1;cursor:pointer;opacity:.85;vertical-align:middle}
+      #nteTradeDailyLimitCount .nte-trade-limit-help:hover,#nteTradeDailyLimitCount .nte-trade-limit-help.is-open{opacity:1;background:rgba(128,128,128,.32)}
+      #nteTradeDailyLimitCount .nte-trade-limit-tooltip{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);width:max-content;max-width:min(240px,calc(100vw - 24px));padding:7px 9px;font-size:11px;font-weight:500;line-height:1.4;text-align:center;color:#f3f4f6;background:#1f2937;border:1px solid rgba(255,255,255,.14);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:0;visibility:hidden;z-index:2147483646;white-space:normal}
+      #nteTradeDailyLimitCount .nte-trade-limit-tooltip::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:rgba(255,255,255,.14)}
+      @media (hover:hover) and (pointer:fine){
+        #nteTradeDailyLimitCount .nte-trade-limit-help:hover .nte-trade-limit-tooltip{opacity:1;visibility:visible}
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function create_trade_daily_limit_counter(parent) {
+    if (!parent) return null;
+    ensure_trade_daily_limit_styles();
+    let existing = document.getElementById("nteTradeDailyLimitCount");
+    if (existing) return existing;
+    let row = document.createElement("div");
+    row.id = "nteTradeDailyLimitCount";
+    row.className = "text-date-hint";
+    row.style.width = "100%";
+    row.style.marginTop = "6px";
+    row.style.paddingLeft = "4px";
+    row.style.textAlign = "left";
+    row.style.whiteSpace = "nowrap";
+    row.style.opacity = "0.85";
+    row.style.display = "flex";
+    row.style.alignItems = "center";
+    let label = document.createElement("span");
+    label.id = "nteTradeDailyLimitCountLabel";
+    label.textContent = `—/${trade_daily_limit_max}`;
+    let help = document.createElement("button");
+    help.type = "button";
+    help.className = "nte-trade-limit-help";
+    help.id = "nteTradeDailyLimitHelp";
+    help.textContent = "?";
+    help.setAttribute("aria-label", "24-hour outbound trade limit info");
+    let tip = document.createElement("span");
+    tip.className = "nte-trade-limit-tooltip";
+    tip.setAttribute("role", "tooltip");
+    tip.textContent = "Loading trade limit…";
+    help.append(tip);
+    row.append(label, help);
+    parent.append(row);
+    if (typeof init_tap_tooltips === "function") init_tap_tooltips(help);
+    return row;
+  }
+
+  function ensure_trade_daily_limit_counter(parent) {
+    return (
+      document.getElementById("nteTradeDailyLimitCount") ||
+      create_trade_daily_limit_counter(parent)
+    );
+  }
+
+  function build_trade_daily_limit_tooltip(state) {
+    let count = Math.max(0, Number(state?.count) || 0);
+    let remaining = Math.max(0, trade_daily_limit_max - count);
+    return `Roblox only allows ${trade_daily_limit_max} trades to be sent in 24 hours. You have ${remaining} left.`;
+  }
+
+  function prune_trade_daily_limit_timestamps(timestamps, now = Date.now()) {
+    let cutoff = now - trade_daily_limit_window_ms;
+    return (Array.isArray(timestamps) ? timestamps : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value >= cutoff)
+      .sort((a, b) => a - b);
+  }
+
+  function compute_trade_daily_limit_state(timestamps, now = Date.now()) {
+    let in_window = prune_trade_daily_limit_timestamps(timestamps, now);
+    let count = in_window.length;
+    let at_limit = count >= trade_daily_limit_max;
+    let reset_at =
+      at_limit && in_window.length
+        ? in_window[0] + trade_daily_limit_window_ms
+        : null;
+    return { count, at_limit, reset_at, timestamps: in_window };
+  }
+
+  function get_trade_daily_limit_trade_id(trade) {
+    let id = trade?.id ?? trade?.tradeId;
+    return id != null && String(id).trim() ? String(id).trim() : "";
+  }
+
+  async function fetch_trade_daily_limit_timestamps_from_api() {
+    let cutoff = Date.now() - trade_daily_limit_window_ms;
+    let [stored_counter_records, stored_sent_records] = await Promise.all([
+      load_trade_daily_limit_counter_records(),
+      load_trade_daily_limit_sent_records(),
+    ]);
+    let excluded = build_trade_daily_limit_excluded_trade_ids(
+      stored_counter_records,
+    );
+    let outbound = await paginate_trades_list_for_daily_limit(
+      "outbound",
+      cutoff,
+      trade_daily_limit_api_max_pages,
+    );
+    return build_trade_daily_limit_timestamps(
+      outbound,
+      stored_sent_records,
+      excluded,
+      cutoff,
+    );
+  }
+
+  function sync_trade_daily_limit_ui() {
+    let label = document.getElementById("nteTradeDailyLimitCountLabel");
+    let help = document.getElementById("nteTradeDailyLimitHelp");
+    if (!label) return;
+    let count = Math.min(
+      trade_daily_limit_max,
+      Math.max(0, Number(trade_daily_limit_state?.count) || 0),
+    );
+    label.textContent = `${count}/${trade_daily_limit_max}`;
+    if (help) {
+      let tip_text = build_trade_daily_limit_tooltip({
+        ...trade_daily_limit_state,
+        count,
+      });
+      let tip = help.querySelector(".nte-trade-limit-tooltip");
+      if (!tip) {
+        tip = document.createElement("span");
+        tip.className = "nte-trade-limit-tooltip";
+        tip.setAttribute("role", "tooltip");
+        help.append(tip);
+      }
+      tip.textContent = tip_text;
+      if (typeof init_tap_tooltips === "function") init_tap_tooltips(help);
+    }
+  }
+
+  async function refresh_trade_daily_limit_state(force = false) {
+    if (
+      !force &&
+      trade_daily_limit_cache &&
+      Date.now() - trade_daily_limit_cache.fetched_at <
+        trade_daily_limit_cache_ttl_ms
+    ) {
+      trade_daily_limit_state = compute_trade_daily_limit_state(
+        trade_daily_limit_cache.timestamps,
+      );
+      sync_trade_daily_limit_ui();
+      return trade_daily_limit_state;
+    }
+
+    let request_token = ++trade_daily_limit_request_token;
+    let api_ts = [];
+    try {
+      api_ts = await fetch_trade_daily_limit_timestamps_from_api();
+    } catch {}
+    if (request_token !== trade_daily_limit_request_token) return trade_daily_limit_state;
+
+    trade_daily_limit_cache = {
+      fetched_at: Date.now(),
+      timestamps: api_ts,
+    };
+    trade_daily_limit_state = compute_trade_daily_limit_state(api_ts);
+    sync_trade_daily_limit_ui();
+    return trade_daily_limit_state;
+  }
+
+  function schedule_trade_daily_limit_refresh(delay = 0, force = false) {
+    clearTimeout(trade_daily_limit_refresh_timer);
+    trade_daily_limit_refresh_timer = setTimeout(() => {
+      trade_daily_limit_refresh_timer = 0;
+      refresh_trade_daily_limit_state(force).catch(() => {
+        sync_trade_daily_limit_ui();
+      });
+    }, delay);
+  }
+
+  function ensure_trade_daily_limit_countdown() {
+    if (trade_daily_limit_countdown_timer) return;
+    trade_daily_limit_countdown_timer = setInterval(() => {
+      if (!document.getElementById("nteTradeDailyLimitCountLabel")) return;
+      if (trade_daily_limit_state?.at_limit) sync_trade_daily_limit_ui();
+    }, 30000);
+  }
+
+  function ensure_trade_daily_limit_observer() {
+    install_trade_daily_limit_fetch_hook();
+    void load_trade_daily_limit_counter_records();
+    void load_trade_daily_limit_sent_records();
+    ensure_trade_daily_limit_countdown();
+    schedule_trade_daily_limit_refresh(0);
+  }
+
+  ensure_trade_daily_limit_observer();
 
   const duplicate_trade_warning_option_name = "Duplicate Trade Warning";
   const duplicate_trade_warning_hours_key = "duplicate_trade_warning_hours";
@@ -11314,6 +11936,7 @@
       return;
     duplicate_trade_warning_cache = null;
     schedule_duplicate_trade_warning_update(2500);
+    schedule_trade_daily_limit_refresh(4000, true);
   }
 
   function ensure_duplicate_trade_warning_observer() {
@@ -11943,18 +12566,6 @@
     else offer_el.insertAdjacentElement("afterbegin", banner);
   }
 
-  function show_ownership_unknown_banner(offer_el) {
-    offer_el
-      .querySelectorAll(".nte-ownership-banner")
-      .forEach((el) => el.remove());
-    let banner = document.createElement("div");
-    banner.className = "nte-ownership-banner nte-ownership-unknown";
-    banner.textContent = "Could not verify current ownership for this user";
-    let header = offer_el.querySelector(".trade-list-detail-offer-header");
-    if (header) header.insertAdjacentElement("afterend", banner);
-    else offer_el.insertAdjacentElement("afterbegin", banner);
-  }
-
   async function run_ownership_check() {
     if (!is_ownership_check_allowed()) return;
     inject_ownership_styles();
@@ -11985,7 +12596,6 @@
       return;
     if (!has_owned_item_state(owned)) {
       clear_ownership_ui();
-      show_ownership_unknown_banner(offer_el);
       return;
     }
 
@@ -12002,10 +12612,7 @@
     }
 
     clear_ownership_ui();
-    if (unowned_names.length > 0 && !owned.is_complete) {
-      show_ownership_unknown_banner(offer_el);
-      return;
-    }
+    if (unowned_names.length > 0 && !owned.is_complete) return;
     if (unowned_names.length > 0)
       show_ownership_banner(offer_el, unowned_names);
   }
@@ -13933,6 +14540,7 @@
       get_offer_items: get_history_offer_items,
       get_offer_element: get_history_offer_element,
       get_robux_total: get_trade_offer_robux_total,
+      get_direction: get_current_trade_tab,
     });
     return nte_analyze_trade_feature;
   }
@@ -14145,7 +14753,7 @@
     let link_html =
       mode === "asset"
         ? item.assetId
-          ? `<div class="nte-history-item-link"><a href="https://www.rolimons.com/item/${nte_history_esc(item.assetId)}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>`
+          ? `<div class="nte-history-item-link"><a href="${nte_history_esc(c.getRolimonsProfileUrl(item.assetId))}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>`
           : ""
         : item.uaid
           ? `<div class="nte-history-item-link"><a href="https://www.rolimons.com/uaid/${nte_history_esc(item.uaid)}" target="_blank" rel="noopener noreferrer">Open UAID on Rolimons</a></div>`

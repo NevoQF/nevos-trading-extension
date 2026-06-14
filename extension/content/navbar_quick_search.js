@@ -106,7 +106,18 @@
       const norm = normalize(row[0]);
       if (!norm) continue;
       const abbr = typeof row[1] === "string" && row[1].trim() && row[1] !== "-1" ? row[1].trim() : "";
-      list.push({ id, name: row[0], norm, abbr, value: Number(row[4]) || 0, rap: Number(row[2]) || 0 });
+      const value = typeof RolimonsItemDetails !== "undefined" && RolimonsItemDetails.get_item_value
+        ? RolimonsItemDetails.get_item_value(row)
+        : Number(row[3]) || Number(row[4]) || 0;
+      list.push({
+        id,
+        name: row[0],
+        norm,
+        abbr,
+        value,
+        rap: Number(row[2]) || 0,
+        is_bundle: !!data.bundleIds?.[String(id)],
+      });
     }
     name_index = list;
     name_index_source = data;
@@ -151,17 +162,39 @@
     return out.slice(0, max_results).map((x) => x.entry);
   }
 
-  async function fetch_thumbs(ids) {
-    const need = ids.filter((id) => !(id in thumb_cache));
+  function thumb_key(entry) {
+    return `${entry.is_bundle ? "bundle" : "asset"}:${entry.id}`;
+  }
+
+  function slug_name(name) {
+    return String(name || "-")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "-";
+  }
+
+  async function fetch_thumb_group(entries, is_bundle) {
+    if (!entries.length) return;
+    const ids = entries.map((entry) => entry.id);
+    const path = is_bundle ? "bundles/thumbnails" : "assets";
+    const param = is_bundle ? "bundleIds" : "assetIds";
+    const size = is_bundle ? "150x150" : "75x75";
+    const url = `https://thumbnails.roblox.com/v1/${path}?${param}=${ids.join(",")}&size=${size}&format=Png&isCircular=false`;
+    const r = await fetch(url, { credentials: "omit" });
+    if (!r.ok) return;
+    const j = await r.json();
+    for (const row of j.data || []) {
+      const hit = entries.find((entry) => Number(entry.id) === Number(row?.targetId));
+      if (hit && row?.imageUrl) thumb_cache[thumb_key(hit)] = row.imageUrl;
+    }
+  }
+
+  async function fetch_thumbs(entries) {
+    const need = entries.filter((entry) => !(thumb_key(entry) in thumb_cache));
     if (!need.length) return;
     try {
-      const url = `https://thumbnails.roblox.com/v1/assets?assetIds=${need.join(",")}&size=75x75&format=Png&isCircular=false`;
-      const r = await fetch(url, { credentials: "omit" });
-      if (!r.ok) return;
-      const j = await r.json();
-      for (const row of j.data || []) {
-        if (row && row.targetId && row.imageUrl) thumb_cache[row.targetId] = row.imageUrl;
-      }
+      await fetch_thumb_group(need.filter((entry) => !entry.is_bundle), false);
+      await fetch_thumb_group(need.filter((entry) => entry.is_bundle), true);
     } catch {}
   }
 
@@ -181,14 +214,16 @@
 
     const a = document.createElement("a");
     a.className = "new-navbar-search-anchor";
-    a.href = `https://www.roblox.com/catalog/${entry.id}/-`;
+    a.href = entry.is_bundle
+      ? `https://www.roblox.com/bundles/${entry.id}/${slug_name(entry.name)}`
+      : `https://www.roblox.com/catalog/${entry.id}/${slug_name(entry.name)}`;
     a.style.cssText = "padding-left:0;";
 
     const icon = document.createElement("span");
     icon.className = `navbar-list-option-icon ${item_class}-icon`;
     icon.style.cssText =
       "display:inline-block;width:48px;height:48px;margin-right:10px;background-size:contain;background-position:center;background-repeat:no-repeat;background-color:rgba(0,0,0,0.12);border-radius:4px;vertical-align:middle;flex:0 0 auto;opacity:1!important;filter:none!important;";
-    const thumb = thumb_cache[entry.id];
+    const thumb = thumb_cache[thumb_key(entry)];
     if (thumb && thumb !== "in-review" && thumb !== "blocked") {
       icon.style.setProperty("background-image", `url("${thumb}")`, "important");
     }
@@ -250,7 +285,7 @@
       clear_injected();
       return;
     }
-    await fetch_thumbs(results.map((r) => r.id));
+    await fetch_thumbs(results);
     if (token !== pending_token) return;
     last_results = results;
     last_query_norm = norm;

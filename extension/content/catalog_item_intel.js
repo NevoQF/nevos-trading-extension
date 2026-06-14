@@ -18,6 +18,27 @@
   }
 
   let rolimons_item_data_promise = null;
+  let rolimons_item_data_cached = null;
+
+  function rolimons_profile_href(id, options) {
+    if (
+      typeof RolimonsItemDetails !== "undefined" &&
+      RolimonsItemDetails.profile_url
+    ) {
+      return RolimonsItemDetails.profile_url(
+        id,
+        rolimons_item_data_cached,
+        options,
+      );
+    }
+    let key = String(id ?? "").trim();
+    if (!key) return "https://www.rolimons.com/";
+    let is_bundle =
+      options?.isBundle === true ||
+      !!(rolimons_item_data_cached?.bundleIds && rolimons_item_data_cached.bundleIds[key]);
+    let segment = is_bundle ? "bundle" : "item";
+    return `https://www.rolimons.com/${segment}/${encodeURIComponent(key)}`;
+  }
   let state = {
     asset_id: "",
     active_view: "",
@@ -166,7 +187,12 @@
 
   function get_rolimons_item_data() {
     if (!rolimons_item_data_promise) {
-      rolimons_item_data_promise = new Promise((resolve) => send_message("getDataPeriodic", (data) => resolve(data || null)));
+      rolimons_item_data_promise = new Promise((resolve) =>
+        send_message("getDataPeriodic", (data) => {
+          rolimons_item_data_cached = data || null;
+          resolve(rolimons_item_data_cached);
+        }),
+      );
     }
     return rolimons_item_data_promise;
   }
@@ -447,7 +473,7 @@
                 <span class="nte-history-pill">${trade_count} trade${trade_count === 1 ? "" : "s"}</span>
                 <span class="nte-history-pill is-note">All copies</span>
               </div>
-              <div class="nte-history-card-link"><a href="https://www.rolimons.com/item/${attr_esc(item.assetId || context.asset_id)}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>
+              <div class="nte-history-card-link"><a href="${attr_esc(rolimons_profile_href(item.assetId || context.asset_id))}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>
             </div>
           </div>
           ${trade_count ? `<div class="nte-history-list">${item.history.map((entry, index) => render_history_entry(entry, index, context)).join("")}</div>` : '<div class="nte-history-empty">No recorded trade history for this item across all copies yet.</div>'}

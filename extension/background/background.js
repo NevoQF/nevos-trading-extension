@@ -38,9 +38,11 @@ if (
 }
 
 if (typeof importScripts === "function") {
+  importScripts("../shared/rolimons_item_details.js");
   importScripts("../shared/trade_ad_notifications_core.js");
   importScripts("trade_ads.js");
   importScripts("trade_ad_notifications.js");
+  importScripts("inbound_trade_webhook_preview.js");
 }
 
 const option_groups = JSON.parse(
@@ -69,7 +71,7 @@ const trade_notification_prefix = "nru_trade_notification_";
 const cached_trades_key = "cachedTrades";
 const item_data_key = "data";
 const item_data_time_key = "lastRequestForData";
-const item_data_url = "https://api.rolimons.com/items/v2/itemdetails";
+const item_data_url = RolimonsItemDetails.ROLIMONS_ITEM_DETAILS_URL;
 const server_item_data_url = "https://nevos-extension.com/api/rolimons/items";
 const trade_ad_item_data_max_age_ms = 180000;
 const routility_data_key = "routilityData";
@@ -561,9 +563,10 @@ async function fetch_item_data() {
   let response = await fetch(item_data_url, {
     headers: { "From-Extension": true },
   });
-  return response.status === 200
-    ? parse_json_response_safe(response, "Rolimons item data")
-    : null;
+  if (response.status !== 200) return null;
+  let parsed = await parse_json_response_safe(response, "Rolimons item data");
+  if (!parsed) return null;
+  return RolimonsItemDetails.normalize_rolimons_item_details_payload(parsed);
 }
 
 let item_data_retry_promise = null;
@@ -1133,7 +1136,7 @@ async function get_trade_notification_value_stats(
   let your_value = compute_offer_value(
     offer_pair.your_offer,
     item_data,
-    use_post_tax_robux,
+    false,
   );
   let their_value = compute_offer_value(
     offer_pair.their_offer,
@@ -1329,20 +1332,6 @@ async function show_trade_notification(
   );
 }
 
-function get_trade_offer_item_names(offer, limit = 4) {
-  let user_assets = Array.isArray(offer?.userAssets) ? offer.userAssets : [];
-  let names = user_assets
-    .map((asset) =>
-      String(
-        asset?.name || asset?.assetName || asset?.itemName || asset?.assetId || "",
-      ).trim(),
-    )
-    .filter(Boolean);
-  if (!names.length) return "No items";
-  if (names.length <= limit) return names.join(", ");
-  return `${names.slice(0, limit).join(", ")} (+${names.length - limit} more)`;
-}
-
 async function get_inbound_trade_webhook_settings() {
   let saved = await get_local_values([
     inbound_trade_notification_webhook_enabled_key,
@@ -1366,92 +1355,6 @@ async function get_inbound_trade_webhook_settings() {
     ping_enabled,
     discord_id,
   };
-}
-
-async function send_inbound_trade_webhook_notification(
-  trade,
-  trade_detail,
-  trade_stats,
-  my_user_id,
-  webhook_settings,
-) {
-  if (!webhook_settings?.webhook_url) return;
-  let stats = trade_stats;
-  if (!stats && trade_detail) {
-    stats = await get_trade_notification_value_stats(trade_detail, my_user_id);
-  }
-
-  let partner_name = String(
-    trade?.user?.displayName || trade?.user?.name || `User ${trade?.user?.id || ""}`,
-  ).trim();
-  let title = `Inbound Trade from ${partner_name || "Unknown User"}`;
-  let description = "A new inbound trade was detected.";
-
-  let fields = [];
-  if (stats) {
-    let diff = Number(stats.diff) || 0;
-    let diff_sign = diff > 0 ? "+" : "";
-    let pct = Number.isFinite(stats.diff_pct_raw)
-      ? `${stats.diff_pct_raw > 0 ? "+" : ""}${Math.round(stats.diff_pct_raw)}%`
-      : diff > 0
-        ? "+INF%"
-        : "0%";
-    description =
-      `Diff: ${diff_sign}${format_number(diff)} (${pct})\n` +
-      `Yours: ${format_number(stats.your_value)} (${stats.your_count} item${stats.your_count === 1 ? "" : "s"})\n` +
-      `Theirs: ${format_number(stats.their_value)} (${stats.their_count} item${stats.their_count === 1 ? "" : "s"})`;
-  }
-
-  if (trade_detail) {
-    let offer_pair = get_trade_notification_offer_pair(trade_detail, my_user_id);
-    if (offer_pair) {
-      fields.push({
-        name: "They offer",
-        value: get_trade_offer_item_names(offer_pair.their_offer),
-        inline: false,
-      });
-      fields.push({
-        name: "For your",
-        value: get_trade_offer_item_names(offer_pair.your_offer),
-        inline: false,
-      });
-    }
-  }
-
-  let payload = {
-    content:
-      webhook_settings.ping_enabled && webhook_settings.discord_id
-        ? `<@${webhook_settings.discord_id}>`
-        : "",
-    embeds: [
-      {
-        title,
-        description,
-        color: (Number(stats?.diff) || 0) > 0 ? 0x57f287 : 0xfaa61a,
-        fields,
-        footer: {
-          text: `Trade ID ${trade?.id || "unknown"} • Nevos Trading Extension`,
-        },
-        timestamp: new Date().toISOString(),
-      },
-    ],
-  };
-
-  try {
-    let response = await fetch(webhook_settings.webhook_url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!response.ok) {
-      console.info(
-        "Nevos Trading Extension: inbound webhook request failed",
-        response.status,
-      );
-    }
-  } catch (error) {
-    console.info("Nevos Trading Extension: inbound webhook send failed", error);
-  }
 }
 
 let inbound_poll_running = false;
@@ -1652,6 +1555,7 @@ async function poll_inbound_trades() {
       }
 
       if (detail) {
+        detail = await get_priced_cached_trade(detail);
         trade_stats = await get_trade_notification_value_stats(
           detail,
           my_user_id,
@@ -2714,7 +2618,13 @@ function normalize_trade_analysis_robux(value) {
   return Math.max(0, Math.min(1000000000, parsed));
 }
 
+function normalize_trade_analysis_direction(value) {
+  let direction = String(value || "").toLowerCase();
+  return ["inbound", "outbound"].includes(direction) ? direction : "";
+}
+
 async function evaluate_trade_analysis(message) {
+  let direction = normalize_trade_analysis_direction(message?.direction);
   let body = {
     give_item_ids: normalize_trade_analysis_item_ids(message?.give_item_ids),
     receive_item_ids: normalize_trade_analysis_item_ids(
@@ -2722,8 +2632,9 @@ async function evaluate_trade_analysis(message) {
     ),
     give_robux: normalize_trade_analysis_robux(message?.give_robux),
     receive_robux: normalize_trade_analysis_robux(message?.receive_robux),
-    engine: "v3.2-profit",
+    engine: "v4",
   };
+  if (direction) body.direction = direction;
   if (!body.give_item_ids.length && body.give_robux <= 0)
     throw new Error("Could not read what you give from this trade.");
   if (!body.receive_item_ids.length && body.receive_robux <= 0)
@@ -3013,6 +2924,129 @@ async function get_trade_history(message) {
       };
     }),
   };
+}
+
+async function send_test_webhook_notification(webhook_override = null) {
+  let settings = webhook_override || (await get_inbound_trade_webhook_settings());
+  if (!settings?.webhook_url) {
+    return {
+      ok: false,
+      error: "No webhook URL configured. Enter your Discord webhook URL first.",
+    };
+  }
+
+  let my_user_id = 0;
+  let my_name = "You";
+  try {
+    let user = await get_authenticated_user_cached();
+    my_user_id = Number(user?.id) || 0;
+    my_name = String(user?.name || "You").trim() || "You";
+  } catch {}
+
+  let demo_detail = {
+    id: 999999,
+    user: {
+      id: 12345,
+      name: "TestUser",
+      displayName: "Test User",
+    },
+    status: "Open",
+    tradeType: "inbound",
+    offers: [
+      {
+        user: {
+          id: my_user_id,
+          name: my_name,
+          displayName: my_name,
+        },
+        robux: 10000,
+        userAssets: [
+          {
+            assetId: 250394771,
+            name: "Green Sidewinder",
+            itemType: "Asset",
+            recentAveragePrice: 2333,
+          },
+          {
+            assetId: 250394771,
+            name: "Green Sidewinder",
+            itemType: "Asset",
+            recentAveragePrice: 2333,
+          },
+          {
+            assetId: 250394771,
+            name: "Green Sidewinder",
+            itemType: "Asset",
+            recentAveragePrice: 2333,
+          },
+        ],
+      },
+      {
+        user: {
+          id: 12345,
+          name: "TestUser",
+          displayName: "Test User",
+        },
+        robux: 10000,
+        userAssets: [
+          {
+            assetId: 250394771,
+            name: "Green Sidewinder",
+            itemType: "Asset",
+            recentAveragePrice: 2333,
+          },
+          {
+            assetId: 250394771,
+            name: "Green Sidewinder",
+            itemType: "Asset",
+            recentAveragePrice: 2333,
+          },
+          {
+            assetId: 250394771,
+            name: "Green Sidewinder",
+            itemType: "Asset",
+            recentAveragePrice: 2333,
+          },
+        ],
+      },
+    ],
+  };
+
+  let trade = {
+    id: demo_detail.id,
+    user: demo_detail.user,
+    status: demo_detail.status,
+    created: Date.now(),
+  };
+
+  try {
+    demo_detail = await get_priced_cached_trade(demo_detail);
+  } catch {}
+
+  let trade_stats = null;
+  try {
+    trade_stats = await get_trade_notification_value_stats(
+      demo_detail,
+      my_user_id,
+    );
+  } catch {}
+
+  try {
+    await send_inbound_trade_webhook_notification(
+      trade,
+      demo_detail,
+      trade_stats,
+      my_user_id,
+      settings,
+    );
+  } catch (error) {
+    return {
+      ok: false,
+      error: `Send failed: ${error?.message || String(error)}`,
+    };
+  }
+
+  return { ok: true };
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
@@ -3390,6 +3424,34 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     );
     return true;
   }
+
+  if (message?.type === "send_test_webhook") {
+    (async () => {
+      try {
+        let override = null;
+        let webhook_url = normalize_inbound_trade_notification_webhook_url(
+          message.webhook_url,
+        );
+        if (webhook_url) {
+          override = {
+            webhook_url,
+            ping_enabled: !!message.ping_enabled,
+            discord_id: normalize_inbound_trade_notification_discord_id(
+              message.discord_id,
+            ),
+          };
+        }
+        respond(await send_test_webhook_notification(override));
+      } catch (error) {
+        respond({
+          ok: false,
+          error: error?.message || String(error),
+        });
+      }
+    })();
+    return true;
+  }
+
   return false;
 });
 

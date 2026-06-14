@@ -130,12 +130,25 @@ GitHub README pages do not play YouTube embeds inline. Use the thumbnail link.
 
 ## Source
 
-The readable extension source is in `extension/`. Internal release packaging tools are intentionally excluded from this public source repo.
+The readable extension source is in `extension/`.
+
+## Build (local)
+
+From the repo root, after installing `terser` in this workspace (or setting `NTE_TERSER_PATH`):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "tools\build-release.ps1"
+```
+
+Outputs minified browser zips under `dist/` (for example `nevos-trading-extension-chrome-v3.10.40.zip`). Unpacked folders in `dist/` are for local loading only.
+
+To refresh website download files after a build, run `nevos-extension.com\tools\sync-download-zips.ps1` from this workspace.
 
 ## Layout
 
 ```text
 extension/            extension source
+tools/                local release build scripts
 docs/media/           demo previews and videos
 ```
 

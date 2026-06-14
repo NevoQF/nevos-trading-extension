@@ -649,8 +649,12 @@ function open_inbound_trade_notification_settings_modal(current) {
           </div>
         </div>
         <div class="inbound-notif-settings-actions">
-          <button type="button" class="btn modern tertiary" data-role="cancel">Cancel</button>
-          <button type="button" class="btn modern primary" data-role="save">Save</button>
+          <button type="button" class="inbound-notif-btn inbound-notif-btn-cancel" data-role="cancel">Cancel</button>
+          <button type="button" class="inbound-notif-btn inbound-notif-btn-save" data-role="save">Save</button>
+          <button type="button" class="inbound-notif-btn inbound-notif-btn-test" data-role="test">
+            <span class="inbound-notif-btn-test-icon" aria-hidden="true">▶</span>
+            <span class="inbound-notif-btn-test-label" data-role="test-label">Test webhook</span>
+          </button>
         </div>
       </div>
     `;
@@ -660,6 +664,7 @@ function open_inbound_trade_notification_settings_modal(current) {
     let close_btn = overlay.querySelector(".inbound-notif-settings-close");
     let cancel_btn = overlay.querySelector('[data-role="cancel"]');
     let save_btn = overlay.querySelector('[data-role="save"]');
+    let test_btn = overlay.querySelector('[data-role="test"]');
     let min_gain_input = overlay.querySelector("#inbound-notif-min-gain");
     let webhook_enabled_input = overlay.querySelector(
       "#inbound-notif-webhook-enabled",
@@ -775,6 +780,64 @@ function open_inbound_trade_notification_settings_modal(current) {
         discord_id,
       });
     });
+
+    if (test_btn) {
+      let test_btn_label = test_btn.querySelector('[data-role="test-label"]');
+      let test_btn_icon = test_btn.querySelector(".inbound-notif-btn-test-icon");
+      function set_test_btn_state(label, show_icon = false) {
+        if (test_btn_label) test_btn_label.textContent = label;
+        if (test_btn_icon) test_btn_icon.hidden = !show_icon;
+      }
+
+      test_btn.addEventListener("click", async () => {
+        let webhook_url = normalize_inbound_trade_notification_webhook_url(
+          webhook_url_input.value,
+        );
+        if (!webhook_url) {
+          window.alert("Enter a Discord webhook URL first.");
+          webhook_url_input.focus();
+          return;
+        }
+        let webhook_enabled = !!webhook_enabled_input.checked;
+        let ping_enabled = webhook_enabled && !!ping_enabled_input.checked;
+        let discord_id = normalize_inbound_trade_notification_discord_id(
+          discord_id_input.value,
+        );
+        if (ping_enabled && !discord_id) {
+          window.alert("Enter a valid Discord user ID to test a ping.");
+          discord_id_input.focus();
+          return;
+        }
+
+        test_btn.disabled = true;
+        set_test_btn_state("Sending…");
+        try {
+          let result = await new Promise((resolve) => {
+            chrome.runtime.sendMessage(
+              {
+                type: "send_test_webhook",
+                webhook_url,
+                ping_enabled,
+                discord_id,
+              },
+              resolve,
+            );
+          });
+          set_test_btn_state(result?.ok ? "Sent!" : "Failed");
+          test_btn.style.color = result?.ok ? "#22c55e" : "#ef4444";
+          if (!result?.ok && result?.error) window.alert(result.error);
+        } catch {
+          set_test_btn_state("Error");
+          test_btn.style.color = "#ef4444";
+        } finally {
+          setTimeout(() => {
+            test_btn.disabled = false;
+            set_test_btn_state("Test webhook", true);
+            test_btn.style.color = "";
+          }, 3000);
+        }
+      });
+    }
 
     sync_webhook_fields();
     sync_pills();
@@ -1032,23 +1095,18 @@ function paint_about_update_status(state) {
   let current_version = String(
     chrome.runtime.getManifest()?.version || "",
   ).trim();
-  let current_label = current_version
-    ? `v${escape_html(current_version)}`
-    : "this build";
-  if (
+  let current_label = current_version ? `v${current_version}` : "dev build";
+  let has_update =
     state?.version &&
     (!current_version ||
-      compare_extension_versions(state.version, current_version) > 0)
-  ) {
-    let next_label = `v${escape_html(state.version)}`;
-    status_el.innerHTML = is_firefox_extension_runtime()
-      ? `Current version ${current_label}.<br>Firefox has a newer store build queued: ${next_label}. Use Update in the banner to restart.`
-      : `Current version ${current_label}.<br>Chrome has a newer store build queued: ${next_label}. Use Update in the banner to restart.`;
+      compare_extension_versions(state.version, current_version) > 0);
+  if (has_update) {
+    status_el.textContent = `${current_label} · v${state.version} available`;
+    status_el.classList.add("is-update");
     return;
   }
-  status_el.innerHTML = is_firefox_extension_runtime()
-    ? `Current version ${current_label}.<br>Firefox store installs update automatically.`
-    : `Current version ${current_label}.<br>Chrome Web Store installs update automatically.`;
+  status_el.textContent = current_label;
+  status_el.classList.remove("is-update");
 }
 
 function render_about_review_cta() {
@@ -1075,7 +1133,7 @@ function render_about_review_cta() {
 
 function bind_popup_external_links() {
   let links = document.querySelectorAll(
-    '[data-open-new-tab="true"], .discord-btn',
+    '[data-open-new-tab="true"], .discord-btn, .about-group-link',
   );
   for (let link of links) {
     if (link.dataset.new_tab_bound === "true") continue;
@@ -1703,7 +1761,11 @@ function trade_ads_attach_thumb_error_handler(img) {
     }
     img.dataset.taThumbRefetched = "1";
     chrome.runtime.sendMessage(
-      { type: "trade_ads_refetch_thumb", assetId: aid },
+      {
+        type: "trade_ads_refetch_thumb",
+        assetId: aid,
+        thumbKind: img.dataset.thumbKind || "",
+      },
       (res) => {
         if (chrome.runtime.lastError || !res?.ok || !res.url) {
           img.src = trade_ads_thumb_placeholder_src;
@@ -1723,17 +1785,28 @@ async function trade_ads_fill_thumbnails(scope_el) {
   if (!scope_el) return;
   let imgs = scope_el.querySelectorAll("img[data-thumb-pending='1']");
   if (!imgs.length) return;
-  let ids = [
-    ...new Set(
-      [...imgs]
-        .map((i) => Number(i.dataset.thumbAid))
-        .filter((n) => Number.isFinite(n) && n > 0),
-    ),
-  ];
-  if (!ids.length) return;
+  let thumb_requests = [];
+  let seen = new Set();
+  for (let img of imgs) {
+    let id = Number(img.dataset.thumbAid);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    let key = String(id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let kind = String(img.dataset.thumbKind || "").toLowerCase();
+    thumb_requests.push({
+      id,
+      thumbType: kind === "bundle" ? "Bundle" : "Asset",
+    });
+  }
+  if (!thumb_requests.length) return;
   let res = await new Promise((resolve) => {
     chrome.runtime.sendMessage(
-      { type: "trade_ads_resolve_thumbs", assetIds: ids },
+      {
+        type: "trade_ads_resolve_thumbs",
+        thumbRequests: thumb_requests,
+        assetIds: thumb_requests.map((row) => row.id),
+      },
       resolve,
     );
   });
@@ -2065,6 +2138,8 @@ function trade_ads_attach_picker(root, opts) {
     img.src = trade_ads_thumb_placeholder_src;
     img.decoding = "async";
     img.dataset.thumbAid = String(id);
+    let thumb_kind = item.thumbType || item.thumbKind || "";
+    if (thumb_kind) img.dataset.thumbKind = thumb_kind;
     img.dataset.thumbPending = "1";
     let rv =
       item.valueLine != null
@@ -2213,6 +2288,7 @@ function trade_ads_attach_picker(root, opts) {
           value: x.value,
           valueLine: x.valueLine,
           rap: x.rap,
+          thumbType: x.thumbType,
         });
         if (el) strip.appendChild(el);
       }
@@ -4919,6 +4995,10 @@ render_permissions_banner();
 document.getElementById("brandImage").src = get_asset_url(
   "assets/icons/logo128.png",
 );
+let about_logo_el = document.getElementById("aboutLogo");
+if (about_logo_el) {
+  about_logo_el.src = get_asset_url("assets/icons/logo64.png");
+}
 
 const manifest = chrome.runtime.getManifest();
 const version_el = document.getElementById("extensionVersion");
@@ -4930,3 +5010,7 @@ render_about_review_cta();
 bind_popup_external_links();
 paint_about_update_status(null);
 render_update_banner();
+
+if (typeof init_tap_tooltips === "function") {
+  init_tap_tooltips(document);
+}

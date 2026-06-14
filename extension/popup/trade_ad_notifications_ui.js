@@ -2,6 +2,105 @@
   "use strict";
   const trade_ad_notif_poll_ms = 60000;
   const trade_ad_notif_scroll_load_threshold_px = 48;
+  let trade_ad_notif_rolimons_item_data = null;
+
+  function trade_ad_notif_ensure_rolimons_item_data() {
+    if (trade_ad_notif_rolimons_item_data) {
+      return Promise.resolve(trade_ad_notif_rolimons_item_data);
+    }
+    return new Promise((resolve) => {
+      try {
+        chrome.runtime.sendMessage("getDataPeriodic", (data) => {
+          trade_ad_notif_rolimons_item_data = data || null;
+          resolve(trade_ad_notif_rolimons_item_data);
+        });
+      } catch {
+        resolve(null);
+      }
+    });
+  }
+
+  function trade_ad_notif_rolimons_item_url(item_id) {
+    if (
+      typeof RolimonsItemDetails !== "undefined" &&
+      RolimonsItemDetails.profile_url
+    ) {
+      return RolimonsItemDetails.profile_url(
+        item_id,
+        trade_ad_notif_rolimons_item_data,
+      );
+    }
+    let key = String(item_id ?? "").trim();
+    if (!key) return "https://www.rolimons.com/";
+    let is_bundle = !!(
+      trade_ad_notif_rolimons_item_data?.bundleIds &&
+      trade_ad_notif_rolimons_item_data.bundleIds[key]
+    );
+    let segment = is_bundle ? "bundle" : "item";
+    return `https://www.rolimons.com/${segment}/${encodeURIComponent(key)}`;
+  }
+
+  function trade_ad_notif_normalize_label(value) {
+    if (
+      typeof RolimonsItemDetails !== "undefined" &&
+      RolimonsItemDetails.normalize_item_name
+    ) {
+      return RolimonsItemDetails.normalize_item_name(value);
+    }
+    return String(value || "")
+      .replace(/\s*#\d+\s*$/g, "")
+      .toLowerCase()
+      .replace(/[#,()\-:'`"]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function trade_ad_notif_find_bundle_thumb_id(asset_id, name, acronym) {
+    let item_data = trade_ad_notif_rolimons_item_data;
+    if (!item_data?.bundleIds || !item_data?.items) return null;
+    let key = String(asset_id);
+    if (item_data.bundleIds[key]) return key;
+
+    let labels = new Set();
+    for (let raw of [acronym, name]) {
+      let norm = trade_ad_notif_normalize_label(raw);
+      if (norm) labels.add(norm);
+    }
+    if (!labels.size) return null;
+
+    for (let rid of Object.keys(item_data.bundleIds)) {
+      let row = item_data.items[rid];
+      if (!Array.isArray(row)) continue;
+      let row_name = trade_ad_notif_normalize_label(row[0]);
+      let row_acr = trade_ad_notif_normalize_label(row[1]);
+      if (labels.has(row_name) || labels.has(row_acr)) return rid;
+    }
+    return null;
+  }
+
+  function trade_ad_notif_resolve_item_thumb(item_id, item) {
+    let num = Number(item_id);
+    if (!Number.isFinite(num) || num <= 0) {
+      return { thumbId: 0, thumbType: "Asset" };
+    }
+    if (Number(item?.thumbId) > 0) {
+      return {
+        thumbId: Number(item.thumbId),
+        thumbType: item.thumbType === "Bundle" ? "Bundle" : "Asset",
+      };
+    }
+    let name = String(item?.name || "").trim();
+    let acronym = String(item?.acronym || "").trim();
+    let bundle_key = trade_ad_notif_find_bundle_thumb_id(num, name, acronym);
+    if (bundle_key) {
+      return { thumbId: Number(bundle_key), thumbType: "Bundle" };
+    }
+    if (trade_ad_notif_rolimons_item_data?.bundleIds?.[String(num)]) {
+      return { thumbId: num, thumbType: "Bundle" };
+    }
+    return { thumbId: num, thumbType: "Asset" };
+  }
+
   const trade_ad_notif_tag_slug_by_code = {
     1: "demand",
     2: "rares",
@@ -210,9 +309,10 @@
         <div class="ta-notif-thumb ta-notif-thumb-empty" aria-hidden="true"></div>
       </div>`;
     }
-    let item_url = `https://www.rolimons.com/item/${encodeURIComponent(String(item_id))}`;
+    let item_url = trade_ad_notif_rolimons_item_url(item_id);
+    let thumb = trade_ad_notif_resolve_item_thumb(item_id, item);
     return `<a class="ta-notif-slot${cls}" href="${item_url}" target="_blank" rel="noopener noreferrer" title="Open item on Rolimons">
-      ${trade_ad_notif_thumb_html(item_id)}
+      ${trade_ad_notif_thumb_html(item_id, "", thumb.thumbType, thumb.thumbId)}
     </a>`;
   }
 
@@ -225,9 +325,47 @@
     </div>`;
   }
 
-  function trade_ad_notif_thumb_html(asset_id, extra_class) {
+  function trade_ad_notif_thumb_kind_for_id(item_id, thumb_type) {
+    if (thumb_type === "Bundle") return "bundle";
+    let key = String(item_id ?? "").trim();
+    if (
+      key &&
+      trade_ad_notif_rolimons_item_data?.bundleIds &&
+      trade_ad_notif_rolimons_item_data.bundleIds[key]
+    ) {
+      return "bundle";
+    }
+    return "asset";
+  }
+
+  function trade_ad_notif_thumb_html(
+    asset_id,
+    extra_class,
+    thumb_type,
+    thumb_id,
+  ) {
     let cls = extra_class ? ` ${extra_class}` : "";
-    return `<img class="ta-notif-thumb${cls}" src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${Number(asset_id)}" data-thumb-pending="1" decoding="async" />`;
+    let tid = Number(thumb_id ?? asset_id);
+    let kind =
+      thumb_type === "Bundle"
+        ? "bundle"
+        : trade_ad_notif_thumb_kind_for_id(tid, thumb_type);
+    return `<img class="ta-notif-thumb${cls}" src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${tid}" data-thumb-kind="${kind}" data-thumb-pending="1" decoding="async" />`;
+  }
+
+  function trade_ad_notif_prefetch_watch_items() {
+    if (globalThis.__taNotifWatchPrefetching) return;
+    globalThis.__taNotifWatchPrefetching = true;
+    trade_ad_notif_send("trade_ad_notifications_get_watch_items")
+      .then((res) => {
+        if (res?.ok && Array.isArray(res.items)) {
+          globalThis.__taNotifWatchItemsCache = res;
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        globalThis.__taNotifWatchPrefetching = false;
+      });
   }
 
   async function trade_ad_notif_resolve_thumbs(root) {
@@ -238,6 +376,7 @@
   function trade_ad_notif_card_html(match) {
     let user = escape_html(match.username || "Trader");
     let partner_id = Number(match.userId);
+    let profile_url = `https://www.roblox.com/users/${encodeURIComponent(String(match.userId || ""))}/profile`;
     let roli = `https://www.rolimons.com/player/${encodeURIComponent(String(match.userId))}`;
     let trades = `https://www.rolimons.com/playertrades/${encodeURIComponent(String(match.userId))}`;
     let wanted = match.wantedItem || {};
@@ -295,7 +434,7 @@
     return `<article class="ta-notif-card" data-ad-id="${escape_html(String(match.adId))}">
       <div class="ta-notif-card-top">
         <div class="ta-notif-user">
-          <span class="ta-notif-username">${user}</span>
+          <a class="ta-notif-username" href="${escape_html(profile_url)}" target="_blank" rel="noopener noreferrer">${user}</a>
           <span class="ta-notif-time">${escape_html(when)}</span>
         </div>
         <div class="ta-notif-overpay-badge" title="Offer total vs your item value">
@@ -335,8 +474,9 @@
 
   function trade_ad_notif_countdown_label(state) {
     if (state?.enabled !== true) return "Auto refresh: off";
+    if (state?.__taNotifScanning === true) return "Scanning feed...";
     let last = Number(state?.lastPollAt || 0);
-    if (!Number.isFinite(last) || last <= 0) return "Next refresh: --:--";
+    if (!Number.isFinite(last) || last <= 0) return "Next refresh: 01:00";
     let next = last + trade_ad_notif_poll_ms;
     let remain = Math.max(0, next - Date.now());
     if (remain <= 1200) return "Refreshing soon...";
@@ -358,6 +498,234 @@
       out.push(value);
     }
     return out.slice(0, 200);
+  }
+
+  function trade_ad_notif_watch_badge_label(state) {
+    let total = Math.max(0, Number(state?.watchableItemCount) || 0);
+    let disabled = Array.isArray(state?.disabledWantItemIds)
+      ? state.disabledWantItemIds.length
+      : 0;
+    if (total > 0) {
+      let enabled = Math.max(0, total - disabled);
+      return `${enabled}/${total}`;
+    }
+    if (disabled > 0) return `−${disabled}`;
+    return "All";
+  }
+
+  function trade_ad_notif_update_watch_badge(root, state) {
+    let badge = root?.querySelector("#ta-notif-watch-badge");
+    if (!badge) return;
+    badge.textContent = trade_ad_notif_watch_badge_label(state);
+    let total = Math.max(0, Number(state?.watchableItemCount) || 0);
+    let disabled = Array.isArray(state?.disabledWantItemIds)
+      ? state.disabledWantItemIds.length
+      : 0;
+    badge.classList.toggle("is-partial", total > 0 && disabled > 0);
+    badge.classList.toggle("is-all", total > 0 && disabled === 0);
+  }
+
+  function trade_ad_notif_watch_loading_html() {
+    return `<div class="ta-notif-watch-loading">
+      <span class="ta-notif-watch-loading-dot"></span>
+      <span>Loading your items…</span>
+    </div>`;
+  }
+
+  async function trade_ad_notif_open_watch_modal() {
+    return new Promise((resolve) => {
+      let existing = document.getElementById("ta-notif-watch-overlay");
+      if (existing) existing.remove();
+
+      let overlay = document.createElement("div");
+      overlay.id = "ta-notif-watch-overlay";
+      overlay.className = "ta-notif-watch-overlay";
+      overlay.innerHTML = `
+        <div class="ta-notif-watch-card" role="dialog" aria-modal="true" aria-labelledby="ta-notif-watch-title">
+          <div class="ta-notif-watch-head">
+            <div>
+              <h3 id="ta-notif-watch-title" class="ta-notif-watch-title">Items</h3>
+              <p class="ta-notif-watch-subtitle">Pick which of your items can trigger overpay alerts.</p>
+            </div>
+            <button type="button" class="ta-notif-watch-close" aria-label="Close watch items">✕</button>
+          </div>
+          <div class="ta-notif-watch-toolbar">
+            <input type="search" id="ta-notif-watch-search" class="ta-notif-watch-search" placeholder="Search items..." spellcheck="false" />
+            <div class="ta-notif-watch-quick">
+              <button type="button" class="ta-notif-watch-quick-btn" data-role="all">Select all</button>
+              <button type="button" class="ta-notif-watch-quick-btn" data-role="none">Deselect all</button>
+            </div>
+          </div>
+          <div class="ta-notif-watch-body">
+            <div class="ta-notif-watch-grid" id="ta-notif-watch-grid">${trade_ad_notif_watch_loading_html()}</div>
+          </div>
+          <div class="ta-notif-watch-foot">
+            <span class="ta-notif-watch-count" id="ta-notif-watch-count"></span>
+            <div class="ta-notif-watch-actions">
+              <button type="button" class="ta-notif-watch-btn ta-notif-watch-btn-cancel" data-role="cancel">Cancel</button>
+              <button type="button" class="ta-notif-watch-btn ta-notif-watch-btn-save" data-role="save">Save</button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.append(overlay);
+
+      let card = overlay.querySelector(".ta-notif-watch-card");
+      let grid = overlay.querySelector("#ta-notif-watch-grid");
+      let search = overlay.querySelector("#ta-notif-watch-search");
+      let count_el = overlay.querySelector("#ta-notif-watch-count");
+      let close_btn = overlay.querySelector(".ta-notif-watch-close");
+      let cancel_btn = overlay.querySelector('[data-role="cancel"]');
+      let save_btn = overlay.querySelector('[data-role="save"]');
+      let all_btn = overlay.querySelector('[data-role="all"]');
+      let none_btn = overlay.querySelector('[data-role="none"]');
+
+      let items = [];
+      let enabled_by_id = new Map();
+
+      let finish = (result) => {
+        overlay.remove();
+        resolve(result);
+      };
+
+      let update_count = () => {
+        let enabled = 0;
+        for (let row of items) {
+          if (enabled_by_id.get(String(row.id)) === true) enabled++;
+        }
+        if (count_el) {
+          count_el.textContent = `${enabled} of ${items.length} items watched`;
+        }
+      };
+
+      let render_grid = () => {
+        if (!grid) return;
+        let query = String(search?.value || "")
+          .trim()
+          .toLowerCase();
+        let visible = items.filter((row) => {
+          if (!query) return true;
+          let hay = `${row.name || ""} ${row.acronym || ""} ${row.id}`.toLowerCase();
+          return hay.includes(query);
+        });
+        if (!visible.length) {
+          grid.innerHTML = `<div class="ta-notif-watch-empty">No items match your search.</div>`;
+          return;
+        }
+        grid.innerHTML = visible
+          .map((row) => {
+            let id = Number(row.id);
+            let enabled = enabled_by_id.get(String(row.id)) === true;
+            let label = escape_html(
+              String(row.acronym || row.name || `Item ${id}`).trim(),
+            );
+            let value = trade_ad_notif_format_number(row.value);
+            return `<button type="button" class="ta-notif-watch-item${enabled ? " is-on" : ""}" data-item-id="${escape_html(String(id))}" aria-pressed="${enabled ? "true" : "false"}" title="${label}">
+              ${trade_ad_notif_thumb_html(id, "ta-notif-watch-thumb", row.thumbType, row.thumbId)}
+              <span class="ta-notif-watch-item-meta">
+                <span class="ta-notif-watch-item-name">${label}</span>
+                <span class="ta-notif-watch-item-value">${escape_html(value)}</span>
+              </span>
+              <span class="ta-notif-watch-item-check" aria-hidden="true"></span>
+            </button>`;
+          })
+          .join("");
+        void trade_ad_notif_resolve_thumbs(grid);
+      };
+
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) finish(null);
+      });
+      card.addEventListener("click", (event) => event.stopPropagation());
+      close_btn.addEventListener("click", () => finish(null));
+      cancel_btn.addEventListener("click", () => finish(null));
+      overlay.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          finish(null);
+        }
+      });
+
+      search?.addEventListener("input", () => {
+        render_grid();
+      });
+
+      all_btn?.addEventListener("click", () => {
+        for (let row of items) enabled_by_id.set(String(row.id), true);
+        render_grid();
+        update_count();
+      });
+      none_btn?.addEventListener("click", () => {
+        for (let row of items) enabled_by_id.set(String(row.id), false);
+        render_grid();
+        update_count();
+      });
+
+      grid?.addEventListener("click", (event) => {
+        let btn = event.target.closest(".ta-notif-watch-item");
+        if (!btn) return;
+        let key = String(btn.dataset.itemId || "");
+        if (!key) return;
+        let next = enabled_by_id.get(key) !== true;
+        enabled_by_id.set(key, next);
+        btn.classList.toggle("is-on", next);
+        btn.setAttribute("aria-pressed", next ? "true" : "false");
+        update_count();
+      });
+
+      save_btn.addEventListener("click", () => {
+        let disabled = [];
+        for (let row of items) {
+          if (enabled_by_id.get(String(row.id)) === true) continue;
+          disabled.push(String(row.id));
+        }
+        finish(disabled);
+      });
+
+      let hydrate_items = (payload) => {
+        items = Array.isArray(payload?.items) ? payload.items.slice() : [];
+        enabled_by_id = new Map();
+        for (let row of items) {
+          enabled_by_id.set(String(row.id), row.enabled !== false);
+        }
+        render_grid();
+        update_count();
+      };
+
+      let load_items = async () => {
+        let cached = globalThis.__taNotifWatchItemsCache;
+        if (cached?.items?.length) {
+          hydrate_items(cached);
+          trade_ad_notif_send("trade_ad_notifications_get_watch_items")
+            .then((fresh) => {
+              if (fresh?.ok && Array.isArray(fresh.items)) {
+                globalThis.__taNotifWatchItemsCache = fresh;
+                if (!overlay.isConnected) return;
+                hydrate_items(fresh);
+              }
+            })
+            .catch(() => {});
+          return;
+        }
+        try {
+          let payload = await trade_ad_notif_send(
+            "trade_ad_notifications_get_watch_items",
+          );
+          if (!payload?.ok) {
+            throw new Error(payload?.error || "Could not load your tradable items.");
+          }
+          globalThis.__taNotifWatchItemsCache = payload;
+          if (!overlay.isConnected) return;
+          hydrate_items(payload);
+        } catch (err) {
+          if (!grid) return;
+          grid.innerHTML = `<div class="ta-notif-watch-empty">${escape_html(err?.message || String(err))}</div>`;
+        }
+      };
+
+      setTimeout(() => search?.focus(), 0);
+      void load_items();
+    });
   }
 
   function trade_ad_notif_open_ignore_modal(current_names) {
@@ -435,7 +803,8 @@
     let el = root.querySelector("#ta-notif-next");
     if (!el) return;
     let update = () => {
-      el.textContent = trade_ad_notif_countdown_label(state);
+      let live = globalThis.__taNotifLastState || state;
+      el.textContent = trade_ad_notif_countdown_label(live);
     };
     update();
     if (state?.enabled !== true) return;
@@ -620,6 +989,7 @@
 
     let enabled_input = mount.querySelector("#ta-notif-enabled");
     if (enabled_input) enabled_input.checked = state?.enabled === true;
+    trade_ad_notif_update_watch_badge(mount, state);
     trade_ad_notif_start_countdown(mount, state);
     return true;
   }
@@ -632,12 +1002,17 @@
 
     root.__taNotifLoadMoreInFlight = true;
     root.__taNotifSuppressStorageRefresh = true;
+    state.__taNotifScanning = true;
+    globalThis.__taNotifLastState = state;
+    trade_ad_notif_start_countdown(root, state);
     trade_ad_notif_update_list_footer(root, state, true);
     try {
       let res = await trade_ad_notif_send("trade_ad_notifications_load_more");
       if (!res?.ok) throw new Error(res?.error || "Could not load more ads.");
       state = res.state || state;
+      delete state.__taNotifScanning;
       globalThis.__taNotifLastState = state;
+      trade_ad_notif_start_countdown(root, state);
       let prev_count = Number(root.__taNotifRenderedCount) || 0;
       let next_count = trade_ad_notif_append_matches(root, state, prev_count);
       root.__taNotifRenderedCount = next_count;
@@ -658,7 +1033,10 @@
       globalThis.__taNotifLastState = state;
       trade_ad_notif_update_list_footer(root, state, false);
     } finally {
+      let live = globalThis.__taNotifLastState;
+      if (live) delete live.__taNotifScanning;
       root.__taNotifLoadMoreInFlight = false;
+      trade_ad_notif_start_countdown(root, live || state);
       setTimeout(() => {
         root.__taNotifSuppressStorageRefresh = false;
       }, 100);
@@ -716,6 +1094,10 @@
             <span class="ta-notif-next" id="ta-notif-next"></span>
           </div>
           <div class="ta-notif-head-actions">
+            <button type="button" class="ta-notif-watch-btn-head" id="ta-notif-watch-btn" title="Choose which items trigger alerts">
+              <span class="ta-notif-watch-btn-label">Items</span>
+              <span class="ta-notif-watch-btn-badge" id="ta-notif-watch-badge">${escape_html(trade_ad_notif_watch_badge_label(state))}</span>
+            </button>
             <button type="button" class="ta-notif-ignore-btn-head" id="ta-notif-ignore-btn">Ignore List</button>
             <label class="ta-notif-toggle" title="Enable trade ad notifications">
               <input type="checkbox" id="ta-notif-enabled" ${enabled ? "checked" : ""} />
@@ -756,14 +1138,34 @@
       }
     });
 
+    trade_ad_notif_update_watch_badge(root, state);
+    root.querySelector("#ta-notif-watch-btn")?.addEventListener("click", async () => {
+      let disabled = await trade_ad_notif_open_watch_modal();
+      if (disabled === null) return;
+      globalThis.__taNotifWatchItemsCache = null;
+      let res = await trade_ad_notif_send(
+        "trade_ad_notifications_set_disabled_want_items",
+        { disabledWantItemIds: disabled },
+      );
+      if (res?.ok && res.state) {
+        root.__taNotifRenderedCount = 0;
+        trade_ad_notif_render_shell(root, res.state);
+      } else {
+        trade_ad_notif_refresh_ui(root).catch(() => {});
+      }
+    });
+
     trade_ad_notif_bind_send_trade_buttons(root);
     trade_ad_notif_bind_list_scroll(root);
     trade_ad_notif_update_status(root, state, false);
     trade_ad_notif_start_countdown(root, state);
     globalThis.__taNotifLastState = state;
     void trade_ad_notif_resolve_thumbs(root);
-    if (enabled && state.feedExhausted !== true) {
-      trade_ad_notif_ensure_feed_scanned(root).catch(() => {});
+    if (enabled) {
+      trade_ad_notif_prefetch_watch_items();
+      if (state.feedExhausted !== true) {
+        trade_ad_notif_ensure_feed_scanned(root).catch(() => {});
+      }
     }
   }
 
@@ -773,7 +1175,14 @@
       return;
     }
     try {
+      await trade_ad_notif_ensure_rolimons_item_data();
       let state = await trade_ad_notif_fetch_state();
+      if (state?.enabled === true && !(Number(state.lastPollAt) > 0)) {
+        let polled = await trade_ad_notif_send("trade_ad_notifications_poll_now", {
+          force: true,
+        });
+        if (polled?.ok && polled.state) state = polled.state;
+      }
       globalThis.__taNotifLastState = state;
       let list = mount.querySelector("#ta-notif-list");
       if (list && !mount.querySelector("#ta-notif-status")) {
@@ -806,6 +1215,7 @@
     if (mount.__taNotifRendering) return;
     mount.__taNotifRendering = true;
     try {
+      await trade_ad_notif_ensure_rolimons_item_data();
       let cached_state = globalThis.__taNotifLastState;
       if (cached_state && typeof cached_state === "object") {
         trade_ad_notif_render_shell(mount, cached_state);
