@@ -1,7 +1,0 @@
-#!/bin/sh
-# Remove Cursor agent co-author trailers from commit messages.
-MSG_FILE="$1"
-[ -f "$MSG_FILE" ] || exit 0
-grep -v -E '^Co-authored-by: (Cursor|cursoragent)' "$MSG_FILE" > "${MSG_FILE}.nte" || exit 0
-mv "${MSG_FILE}.nte" "$MSG_FILE"
-exit 0

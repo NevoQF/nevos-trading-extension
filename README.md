@@ -34,7 +34,6 @@ nevos trading extension is a Roblox trading extension for Chrome, Brave, Edge, O
 ```powershell
 git clone https://github.com/NevoQF/nevos-trading-extension.git
 cd nevos-trading-extension
-git config core.hooksPath githooks
 ```
 
 ## Features
