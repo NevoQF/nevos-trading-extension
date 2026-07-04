@@ -42,6 +42,46 @@ function get_trade_item_copy_count(e) {
     return t > 0 ? t : 1;
 }
 
+function get_trade_item_serial_number(e) {
+    let t = e?.serialNumber ?? e?.layoutOptions?.limitedNumber;
+    if (null != t && "" !== t) {
+        let a = Number(t);
+        if (Number.isFinite(a) && a > 0) return Math.floor(a);
+    }
+    return null;
+}
+
+function build_trade_offer_serial_entries(e, t = 10) {
+    let a = [];
+    for (let r of get_trade_offer_items(e)) {
+        let e = String(get_trade_item_name(r) || "").trim(), i = get_trade_item_asset_id(r);
+        e || (e = i > 0 ? `Asset ${i}` : "Item");
+        let n = Array.isArray(r?.instances) ? r.instances : [];
+        if (n.length) {
+            for (let o of n) {
+                let r = get_trade_item_serial_number(o);
+                if (null != r && (a.push({
+                    name: e,
+                    serial: r
+                }), a.length >= t)) return a;
+            }
+            continue;
+        }
+        let o = get_trade_item_serial_number(r);
+        if (null != o && (a.push({
+            name: e,
+            serial: o
+        }), a.length >= t)) return a;
+    }
+    return a;
+}
+
+function format_trade_offer_serial_block(e, t) {
+    let a = build_trade_offer_serial_entries(e);
+    if (!a.length) return "";
+    return `**${t}:** ${a.map(e => `${e.name} #${format_number(e.serial)}`).join(", ")}`;
+}
+
 function get_trade_offer_item_names(e, t = 4) {
     let a = get_trade_offer_items(e).map(e => {
         let t = String(get_trade_item_name(e) || "").trim();
@@ -106,14 +146,16 @@ async function get_trade_asset_thumb(e) {
 function get_trade_offer_visual_items(e, t = 4) {
     let a = [];
     for (let i of get_trade_offer_items(e)) {
-        let e = get_trade_item_asset_id(i);
-        if (!(e > 0)) continue;
-        let n = String(i?.itemTarget?.itemType || i?.itemType || i?.assetType || "Asset").toLowerCase(), o = "bundle" === n || "bundlethumbnail" === n ? "BundleThumbnail" : "Asset";
-        for (let c = 0; c < get_trade_item_copy_count(i); c++) {
+        let r = get_trade_item_asset_id(i);
+        if (!(r > 0)) continue;
+        let n = String(i?.itemTarget?.itemType || i?.itemType || i?.assetType || "Asset").toLowerCase(), o = "bundle" === n || "bundlethumbnail" === n ? "BundleThumbnail" : "Asset", l = Array.isArray(i?.instances) ? i.instances : [], s = get_trade_item_copy_count(i);
+        for (let c = 0; c < s; c++) {
+            let e = l[c] || (1 === s ? i : null), d = e ? get_trade_item_serial_number(e) : null;
             if (a.push({
-                assetId: e,
-                name: String(get_trade_item_name(i) || `Asset ${e}`).trim(),
-                thumbType: o
+                assetId: r,
+                name: String(get_trade_item_name(i) || `Asset ${r}`).trim(),
+                thumbType: o,
+                serialNumber: d
             }), a.length >= t) break;
         }
         if (a.length >= t) break;
@@ -505,7 +547,14 @@ async function build_inbound_trade_preview_blob(e, t, a) {
             ctx.fillText(line1, lx, cy + NL1);
             const has2 = line2.length > 0;
             if (has2) ctx.fillText(line2, lx, cy + NL1 + LH);
-            const lastBase = cy + NL1 + (has2 ? LH : 0);
+            let serialY = cy + NL1 + (has2 ? LH : 0);
+            if (null != item.serialNumber) {
+                serialY += 14;
+                ctx.fillStyle = "#fbbf24";
+                ctx.font = reg(13);
+                ctx.fillText(`#${format_number(item.serialNumber)}`, lx, serialY);
+            }
+            const lastBase = serialY;
             const remaining = cy + CH - lastBase;
             const blockH = 14 + 8 + 14;
             const blockTop = lastBase + Math.round((remaining - blockH) / 2);
@@ -671,6 +720,10 @@ async function send_inbound_trade_webhook_notification(e, t, a, r, i) {
         g = `${`${r > 0 ? "+" : ""}${format_number(r)} rap`} / ${`${t}${format_number(e)} value (${a})`}`, 
         d > 0 && (g += `\nReceived: <t:${d}:R>`);
     } else d > 0 && (g = `Received: <t:${d}:R>`);
+    if (u) {
+        let e = format_trade_offer_serial_block(u.their_offer, "Serials received"), t = format_trade_offer_serial_block(u.your_offer, "Serials offered");
+        e && (g += `\n${e}`), t && (g += `\n${t}`);
+    }
     let y = {
         username: "nevos trading extension",
         avatar_url: "https://nevos-extension.com/assets/logo-thumb.png?v=2",

@@ -74,6 +74,50 @@
     );
   }
 
+  function find_bundle_item_id(item_data, roblox_id, name, acronym) {
+    if (!item_data?.bundleIds || !item_data?.items) return null;
+    let key = String(roblox_id ?? "").trim();
+    if (key && item_data.bundleIds[key]) return key;
+
+    let labels = new Set();
+    for (let raw of [acronym, name]) {
+      let normalized = normalize_item_name(raw);
+      if (normalized) labels.add(normalized);
+    }
+    if (!labels.size) return null;
+
+    for (let rid of Object.keys(item_data.bundleIds)) {
+      let row = item_data.items[rid];
+      if (!is_item_row(row)) continue;
+      let row_name = normalize_item_name(row[ROW_NAME]);
+      let row_acronym = normalize_item_name(row[ROW_ACRONYM]);
+      if (labels.has(row_name) || labels.has(row_acronym)) return rid;
+    }
+    return null;
+  }
+
+  function resolve_item_id(item_data, roblox_id, name, options) {
+    let bundle_id = find_bundle_item_id(
+      item_data,
+      roblox_id,
+      name,
+      options?.acronym,
+    );
+    if (bundle_id) return bundle_id;
+
+    let key = String(roblox_id ?? "").trim();
+    if (!options?.isBundle && key && item_data?.items?.[key]) return key;
+
+    let normalized_name = normalize_item_name(name);
+    if (!normalized_name || !item_data?.items) return null;
+    for (let [id, row] of Object.entries(item_data.items)) {
+      if (!is_item_row(row)) continue;
+      if (normalize_item_name(row[ROW_NAME]) === normalized_name) return id;
+      if (normalize_item_name(row[ROW_ACRONYM]) === normalized_name) return id;
+    }
+    return null;
+  }
+
   function normalize_item_name(name) {
     return String(name || "")
       .replace(/\s*#\d+\s*$/g, "")
@@ -196,6 +240,8 @@
     is_item_hyped,
     find_item_row,
     is_bundle_id,
+    find_bundle_item_id,
+    resolve_item_id,
     profile_url,
   };
 })(typeof globalThis !== "undefined" ? globalThis : self);

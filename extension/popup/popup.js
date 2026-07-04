@@ -22,7 +22,7 @@ const chevron_svg =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 
 const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]',
+  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]',
 );
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -110,14 +110,14 @@ function normalize_profile_value_display_mode(value) {
 }
 
 const nte_roblox_tab_url_query_patterns = [
-  "https://*.roblox.com/*",
+  "https://www.roblox.com/*",
   "https://roblox.com/*",
 ];
 const extension_update_state_key = "nte_extension_update_state";
 const extension_update_last_check_key = "nte_extension_update_last_check";
 const extension_update_check_cooldown_ms = 4 * 60 * 60 * 1000;
 const chrome_web_store_item_url =
-  "https://chromewebstore.google.com/detail/nevos-trading-extension/afenbjoagijnedghjbidpbkhdmbobaid";
+  "https://chromewebstore.google.com/detail/nevos-trading-extension/afenbjoagijnedghjbidpbkhdmbobaid/reviews";
 const firefox_addons_item_url =
   "https://addons.mozilla.org/firefox/addon/nevos-trading-extension/";
 const popup_theme_storage_key = "popup_theme";
@@ -1633,6 +1633,7 @@ function create_colorblind_mode_selector(current_profile) {
 function create_option_row(option, checked, extra = {}) {
   const row = document.createElement("div");
   row.className = "option-row";
+  row.dataset.optionSearch = build_option_search_text(option.name, option.path);
 
   const label_el = document.createElement("div");
   label_el.className = "option-label";
@@ -1879,7 +1880,69 @@ function trade_ads_default_local_config() {
     notify_on_post: true,
     posting_paused: true,
     auto_interval_minutes: 15,
+    request_tags: [],
+    presets: [null, null, null, null],
+    preset_rotation_enabled: false,
+    preset_rotation_index: 0,
+    preset_editor_index: 0,
   };
+}
+
+function trade_ads_normalize_slots_local(slots) {
+  let out = Array.isArray(slots) ? slots.slice(0, 4) : [];
+  while (out.length < 4) out.push(null);
+  return out.map((x) => {
+    if (typeof x === "string" && x.startsWith("tag:")) return x;
+    let n = Number(x);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  });
+}
+
+function trade_ads_normalize_preset_local(raw, index) {
+  if (!raw || typeof raw !== "object") return null;
+  let name = String(raw.name || `Preset ${index + 1}`).trim();
+  let p = {
+    name: name.slice(0, 28) || `Preset ${index + 1}`,
+    offer_slots: trade_ads_normalize_slots_local(raw.offer_slots),
+    request_slots: trade_ads_normalize_slots_local(raw.request_slots),
+    offer_random: raw.offer_random === true,
+    request_random: raw.request_random !== false,
+    request_demand_min: Math.max(0, Math.min(4, Number(raw.request_demand_min) || 0)),
+    offer_robux: Math.max(0, Math.floor(Number(raw.offer_robux) || 0)),
+    request_tags: Array.isArray(raw.request_tags)
+      ? raw.request_tags.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 4)
+      : [],
+  };
+  let has_offer =
+    p.offer_random || p.offer_robux > 0 || p.offer_slots.some((x) => x != null);
+  let has_request =
+    p.request_random ||
+    p.request_slots.some((x) => x != null) ||
+    p.request_tags.length > 0;
+  return has_offer || has_request ? p : null;
+}
+
+function trade_ads_normalize_presets_local(input) {
+  let raw = Array.isArray(input) ? input : [];
+  let out = [];
+  for (let i = 0; i < 4; i++) out.push(trade_ads_normalize_preset_local(raw[i], i));
+  return out;
+}
+
+function trade_ads_preset_from_config(cfg, index) {
+  return trade_ads_normalize_preset_local(
+    {
+      name: `Preset ${index + 1}`,
+      offer_slots: cfg.offer_slots,
+      request_slots: cfg.request_slots,
+      offer_random: cfg.offer_random,
+      request_random: cfg.request_random,
+      request_demand_min: cfg.request_demand_min,
+      offer_robux: cfg.offer_robux,
+      request_tags: cfg.request_tags,
+    },
+    index,
+  );
 }
 
 function format_trade_ads_duration(total_minutes) {
@@ -1948,6 +2011,18 @@ async function trade_ads_save_merged_config(patch) {
   if (typeof next.posting_paused !== "boolean") next.posting_paused = true;
   if (typeof next.notify_on_post !== "boolean")
     next.notify_on_post = trade_ads_default_local_config().notify_on_post;
+  next.offer_slots = trade_ads_normalize_slots_local(next.offer_slots);
+  next.request_slots = trade_ads_normalize_slots_local(next.request_slots);
+  next.presets = trade_ads_normalize_presets_local(next.presets);
+  next.preset_rotation_enabled = next.preset_rotation_enabled === true;
+  next.preset_rotation_index = Math.max(
+    0,
+    Math.min(3, Math.floor(Number(next.preset_rotation_index)) || 0),
+  );
+  next.preset_editor_index = Math.max(
+    0,
+    Math.min(3, Math.floor(Number(next.preset_editor_index)) || 0),
+  );
   let mins = Math.floor(Number(next.auto_interval_minutes));
   if (!Number.isFinite(mins))
     mins = trade_ads_default_local_config().auto_interval_minutes;
@@ -2458,6 +2533,17 @@ async function render_trade_ads_composer(root, status) {
   let cfg = { ...trade_ads_default_local_config(), ...(status.config || {}) };
   delete cfg.auto_post;
   if (typeof cfg.posting_paused !== "boolean") cfg.posting_paused = true;
+  cfg.offer_slots = trade_ads_normalize_slots_local(cfg.offer_slots);
+  cfg.request_slots = trade_ads_normalize_slots_local(cfg.request_slots);
+  cfg.presets = trade_ads_normalize_presets_local(cfg.presets);
+  cfg.preset_editor_index = Math.max(
+    0,
+    Math.min(3, Math.floor(Number(cfg.preset_editor_index)) || 0),
+  );
+  cfg.preset_rotation_index = Math.max(
+    0,
+    Math.min(3, Math.floor(Number(cfg.preset_rotation_index)) || 0),
+  );
   let im = Math.floor(Number(cfg.auto_interval_minutes));
   cfg.auto_interval_minutes = Math.max(
     trade_ads_interval_min_popup,
@@ -2637,6 +2723,53 @@ async function render_trade_ads_composer(root, status) {
     </div>
   `;
 
+  function preset_summary(preset) {
+    if (!preset) return "Empty";
+    let offer_count = preset.offer_random
+      ? "random offer"
+      : `${preset.offer_slots.filter((x) => x != null).length} offer`;
+    let request_count = preset.request_random
+      ? "random want"
+      : `${preset.request_slots.filter((x) => x != null).length} want`;
+    let robux = Number(preset.offer_robux) > 0 ? ` + ${format_number(preset.offer_robux)} R$` : "";
+    return `${offer_count}${robux} · ${request_count}`;
+  }
+
+  let selected_preset = cfg.preset_editor_index;
+  let filled_preset_count = cfg.presets.filter(Boolean).length;
+  let preset_chips = cfg.presets
+    .map((preset, index) => {
+      let active = index === selected_preset;
+      let next = index === cfg.preset_rotation_index && cfg.preset_rotation_enabled;
+      return `<button type="button" class="ta-preset-chip${active ? " is-active" : ""}${next ? " is-next" : ""}" data-preset-index="${index}">
+        <span class="ta-preset-chip-name">${escape_html(preset?.name || `Slot ${index + 1}`)}</span>
+        <span class="ta-preset-chip-note">${escape_html(preset_summary(preset))}</span>
+      </button>`;
+    })
+    .join("");
+  let presets_html = `
+    <div class="ta-presets${cfg.preset_rotation_enabled ? " is-live" : ""}">
+      <div class="ta-presets-head">
+        <div>
+          <div class="ta-presets-title">Auto ad presets</div>
+          <div class="ta-presets-sub">${filled_preset_count ? `${filled_preset_count}/4 saved · ` : ""}Save ad presets.</div>
+        </div>
+        <label class="ta-preset-rotate-wrap" title="Rotate through saved presets">
+          <span class="ta-switch">
+            <input type="checkbox" id="ta-preset-rotate" ${cfg.preset_rotation_enabled ? "checked" : ""} />
+            <span class="ta-switch-knob" aria-hidden="true"></span>
+          </span>
+        </label>
+      </div>
+      <div class="ta-preset-strip">${preset_chips}</div>
+      <div class="ta-preset-actions">
+        <button type="button" class="ta-btn ta-btn-secondary" id="ta-preset-save">Save to slot ${selected_preset + 1}</button>
+        <button type="button" class="ta-btn ta-btn-ghost" id="ta-preset-load" ${cfg.presets[selected_preset] ? "" : "disabled"}>Load</button>
+        <button type="button" class="ta-btn ta-btn-ghost" id="ta-preset-clear" ${cfg.presets[selected_preset] ? "" : "disabled"}>Clear</button>
+      </div>
+    </div>
+  `;
+
   panel.innerHTML = `
     <div class="ta-card">
       <div class="ta-card-head">
@@ -2646,6 +2779,7 @@ async function render_trade_ads_composer(root, status) {
         </div>
       </div>
       ${rows}
+      ${presets_html}
       <div class="ta-divider"></div>
       <div class="ta-row">
         <label class="ta-toggle-pill"><input type="checkbox" id="ta-offer-random" ${cfg.offer_random ? "checked" : ""}/> Randomize offers each ad</label>
@@ -2718,6 +2852,99 @@ async function render_trade_ads_composer(root, status) {
         : ""
     }</div>
   `;
+
+  async function trade_ads_save_and_render(patch) {
+    await trade_ads_save_merged_config(patch);
+    let fresh = await trade_ads_fetch_status_from_bg();
+    if (fresh?.verified) await render_trade_ads_composer(root, fresh);
+    else await render_trade_ads_tab();
+  }
+
+  function sync_preset_editor_ui(editor_index) {
+    cfg.preset_editor_index = editor_index;
+    panel.querySelectorAll(".ta-preset-chip").forEach((chip) => {
+      let i = Number(chip.dataset.presetIndex) || 0;
+      chip.classList.toggle("is-active", i === editor_index);
+    });
+    let save_btn = panel.querySelector("#ta-preset-save");
+    if (save_btn) save_btn.textContent = `Save to slot ${editor_index + 1}`;
+    let has_preset = !!cfg.presets[editor_index];
+    let load_btn = panel.querySelector("#ta-preset-load");
+    let clear_btn = panel.querySelector("#ta-preset-clear");
+    if (load_btn) load_btn.disabled = !has_preset;
+    if (clear_btn) clear_btn.disabled = !has_preset;
+  }
+
+  function sync_preset_rotate_ui(enabled) {
+    cfg.preset_rotation_enabled = enabled;
+    panel.querySelector(".ta-presets")?.classList.toggle("is-live", enabled);
+    panel.querySelectorAll(".ta-preset-chip").forEach((chip) => {
+      let i = Number(chip.dataset.presetIndex) || 0;
+      chip.classList.toggle(
+        "is-next",
+        enabled && i === cfg.preset_rotation_index,
+      );
+    });
+  }
+
+  panel.querySelectorAll(".ta-preset-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      let index = Math.max(0, Math.min(3, Number(btn.dataset.presetIndex) || 0));
+      if (index === cfg.preset_editor_index) return;
+      sync_preset_editor_ui(index);
+      void trade_ads_save_merged_config({ preset_editor_index: index });
+    });
+  });
+
+  panel.querySelector("#ta-preset-rotate")?.addEventListener("change", (e) => {
+    sync_preset_rotate_ui(e.target.checked);
+    void trade_ads_save_merged_config({
+      preset_rotation_enabled: e.target.checked,
+    });
+  });
+
+  panel.querySelector("#ta-preset-save")?.addEventListener("click", async () => {
+    let presets = trade_ads_normalize_presets_local(cfg.presets);
+    presets[cfg.preset_editor_index] = trade_ads_preset_from_config(
+      cfg,
+      cfg.preset_editor_index,
+    );
+    await trade_ads_save_and_render({
+      presets,
+      preset_editor_index: cfg.preset_editor_index,
+      preset_rotation_index: filled_preset_count
+        ? cfg.preset_rotation_index
+        : cfg.preset_editor_index,
+    });
+  });
+
+  panel.querySelector("#ta-preset-load")?.addEventListener("click", async () => {
+    let preset = cfg.presets[cfg.preset_editor_index];
+    if (!preset) return;
+    await trade_ads_save_and_render({
+      offer_slots: preset.offer_slots,
+      request_slots: preset.request_slots,
+      offer_random: preset.offer_random,
+      request_random: preset.request_random,
+      request_demand_min: preset.request_demand_min,
+      offer_robux: preset.offer_robux,
+      request_tags: preset.request_tags || [],
+      preset_editor_index: cfg.preset_editor_index,
+    });
+  });
+
+  panel.querySelector("#ta-preset-clear")?.addEventListener("click", async () => {
+    let presets = trade_ads_normalize_presets_local(cfg.presets);
+    presets[cfg.preset_editor_index] = null;
+    let next_rotation = presets[cfg.preset_rotation_index]
+      ? cfg.preset_rotation_index
+      : presets.findIndex(Boolean);
+    await trade_ads_save_and_render({
+      presets,
+      preset_editor_index: cfg.preset_editor_index,
+      preset_rotation_index: next_rotation >= 0 ? next_rotation : 0,
+    });
+  });
 
   panel
     .querySelectorAll('.ta-slot[data-side="offer"]:not([data-random="1"])')
@@ -3227,6 +3454,67 @@ async function refresh_all_panels() {
   await render_trade_ads_tab();
 }
 
+function build_option_search_text(...parts) {
+  return parts
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase()
+    .replace(/[()]/g, " ");
+}
+
+function apply_options_search(query = "") {
+  let needle = String(query || "")
+    .trim()
+    .toLowerCase();
+  let empty = !needle;
+  let any_visible = false;
+  for (let section of document.querySelectorAll(
+    "#options-container .option-section",
+  )) {
+    let section_title = section.dataset.sectionTitle || "";
+    let section_match = !empty && section_title.includes(needle);
+    let visible_rows = 0;
+    for (let row of section.querySelectorAll(".option-row")) {
+      let hay = row.dataset.optionSearch || "";
+      let match = empty || section_match || hay.includes(needle);
+      row.hidden = !match;
+      if (match) visible_rows++;
+    }
+    let show_section = empty || section_match || visible_rows > 0;
+    section.hidden = !show_section;
+    if (!empty && show_section) {
+      let header = section.querySelector(".section-header");
+      let options_el = section.querySelector(".section-options");
+      header?.classList.remove("collapsed");
+      options_el?.classList.remove("collapsed");
+    }
+    if (show_section && (empty || visible_rows > 0 || section_match))
+      any_visible = true;
+  }
+  for (let card of document.querySelectorAll(
+    "#options-container .nte-totp-card, #options-container .nte-theme-card",
+  )) {
+    let hay = card.dataset.optionSearch || "";
+    let match = empty || hay.includes(needle);
+    card.hidden = !match;
+    if (match) any_visible = true;
+  }
+  let empty_el = document.getElementById("options-search-empty");
+  if (empty_el) empty_el.hidden = empty || any_visible;
+}
+
+function ensure_options_search_bar() {
+  let input = document.getElementById("options-search");
+  if (!input || input.dataset.bound === "1") return;
+  input.dataset.bound = "1";
+  let timer = 0;
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => apply_options_search(input.value), 80);
+  });
+  input.addEventListener("search", () => apply_options_search(input.value));
+}
+
 const ROBLOX_TOTP_ENABLED_KEY = "roblox_totp_autofill_enabled";
 const ROBLOX_TOTP_SECRET_KEY = "roblox_totp_secret_b32";
 const ROBLOX_TOTP_MODE_KEY = "roblox_totp_storage_mode";
@@ -3395,6 +3683,7 @@ async function render_options() {
       section_option_count = 0;
       const section = document.createElement("div");
       section.className = `option-section ${section_classes[item] || ""}`;
+      section.dataset.sectionTitle = String(item).toLowerCase();
 
       const header = document.createElement("div");
       header.className = "section-header";
@@ -3457,6 +3746,8 @@ async function render_options() {
     theme: saved[trade_page_theme_key],
     custom_themes: saved[trade_page_custom_themes_key],
   });
+  ensure_options_search_bar();
+  apply_options_search(document.getElementById("options-search")?.value || "");
 }
 
 function append_roblox_totp_card(container, totp_snapshot = {}) {
@@ -3465,52 +3756,69 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
 
   card.innerHTML = `
     <div class="nte-totp-header">
-      <span class="nte-totp-title">Roblox 2-step code</span>
-    </div>
-    <p class="nte-totp-hint">Paste your Roblox 2FA <strong>secret</strong> to auto-fill 2FA challenges. Treat it like a password - do not share it with anybody.</p>
-    <label class="nte-totp-row">
-      <input type="checkbox" id="nte-totp-enabled" />
-      <span>Enable 2FA Autofill</span>
-    </label>
-    <div id="nte-totp-pw-toggle-row" class="nte-totp-pw-toggle-row" hidden>
-      <button type="button" class="nte-totp-pw-reveal-btn" id="nte-totp-pw-toggle" aria-expanded="false">
-        <span class="nte-totp-pw-reveal-icon" aria-hidden="true"></span>
-        <span class="nte-totp-pw-reveal-text">
-          <span class="nte-totp-pw-reveal-label" id="nte-totp-pw-reveal-label">Set lock password</span>
-          <span class="nte-totp-pw-reveal-hint" id="nte-totp-pw-reveal-hint">Tap to enter passwords - not shown until you open this</span>
+      <button type="button" class="nte-totp-expand collapsed" id="nte-totp-expand" aria-expanded="false" aria-controls="nte-totp-expanded">
+        <span class="nte-totp-heading-copy">
+          <span class="nte-totp-title">Roblox 2FA Autofill</span>
+          <span class="nte-totp-sub">Autofill the authenticator 2FA Prompts</span>
         </span>
-        <span class="nte-totp-pw-reveal-chev" aria-hidden="true"></span>
+        <span class="nte-totp-expand-chev" aria-hidden="true"></span>
       </button>
     </div>
-    <div id="nte-totp-pw-panel" class="nte-totp-pw-panel" hidden>
-      <div id="nte-totp-curpw-wrap" class="nte-totp-pw-block" hidden>
-        <label class="nte-totp-label" for="nte-totp-curpw">Current lock password</label>
-        <input type="password" id="nte-totp-curpw" class="nte-totp-input" autocomplete="off" spellcheck="false" placeholder="Required to remove lock or change lock password" />
+    <div class="nte-totp-expanded" id="nte-totp-expanded" hidden>
+      <div class="nte-totp-enable-row">
+        <span>Enable autofill</span>
+        <label class="toggle nte-totp-enable-toggle" title="Enable Roblox 2FA Autofill">
+          <input type="checkbox" id="nte-totp-enabled" />
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
       </div>
-      <div id="nte-totp-newpw-wrap" class="nte-totp-pw-block" hidden>
-        <label class="nte-totp-label" for="nte-totp-newpw">New lock password</label>
-        <input type="password" id="nte-totp-newpw" class="nte-totp-input" autocomplete="off" spellcheck="false" placeholder="Choose a strong password" />
-        <label class="nte-totp-label" for="nte-totp-newpw2">Confirm new lock password</label>
-        <input type="password" id="nte-totp-newpw2" class="nte-totp-input" autocomplete="off" spellcheck="false" placeholder="Same as above" />
+      <p class="nte-totp-hint">Paste your Roblox 2FA <strong>secret</strong> to auto-fill 2FA challenges. Treat it like a password - do not share it with anybody.</p>
+      <div id="nte-totp-pw-toggle-row" class="nte-totp-pw-toggle-row" hidden>
+        <button type="button" class="nte-totp-pw-reveal-btn" id="nte-totp-pw-toggle" aria-expanded="false">
+          <span class="nte-totp-pw-reveal-icon" aria-hidden="true"></span>
+          <span class="nte-totp-pw-reveal-text">
+            <span class="nte-totp-pw-reveal-label" id="nte-totp-pw-reveal-label">Set lock password</span>
+            <span class="nte-totp-pw-reveal-hint" id="nte-totp-pw-reveal-hint">Tap to enter passwords - not shown until you open this</span>
+          </span>
+          <span class="nte-totp-pw-reveal-chev" aria-hidden="true"></span>
+        </button>
       </div>
+      <div id="nte-totp-pw-panel" class="nte-totp-pw-panel" hidden>
+        <div id="nte-totp-curpw-wrap" class="nte-totp-pw-block" hidden>
+          <label class="nte-totp-label" for="nte-totp-curpw">Current lock password</label>
+          <input type="password" id="nte-totp-curpw" class="nte-totp-input" autocomplete="off" spellcheck="false" placeholder="Required to remove lock or change lock password" />
+        </div>
+        <div id="nte-totp-newpw-wrap" class="nte-totp-pw-block" hidden>
+          <label class="nte-totp-label" for="nte-totp-newpw">New lock password</label>
+          <input type="password" id="nte-totp-newpw" class="nte-totp-input" autocomplete="off" spellcheck="false" placeholder="Choose a strong password" />
+          <label class="nte-totp-label" for="nte-totp-newpw2">Confirm new lock password</label>
+          <input type="password" id="nte-totp-newpw2" class="nte-totp-input" autocomplete="off" spellcheck="false" placeholder="Same as above" />
+        </div>
+      </div>
+      <label class="nte-totp-label" for="nte-totp-secret">Secret (Base32)</label>
+      <input type="password" id="nte-totp-secret" class="nte-totp-input" autocomplete="off" spellcheck="false" placeholder="Leave blank to keep saved secret" />
+      <div id="nte-totp-protect-prompt" class="nte-totp-protect-prompt" hidden>
+        <span>Protect this secret with a password?</span>
+        <button type="button" class="nte-totp-btn" id="nte-totp-protect-yes">Save with password</button>
+        <button type="button" class="nte-totp-btn nte-totp-btn-ghost" id="nte-totp-protect-no">Save without password</button>
+      </div>
+      <div class="nte-totp-actions">
+        <button type="button" class="nte-totp-btn" id="nte-totp-save">Save</button>
+        <button type="button" class="nte-totp-btn nte-totp-btn-ghost" id="nte-totp-clear">Clear secret</button>
+      </div>
+      <p class="nte-totp-status" id="nte-totp-status" aria-live="polite"></p>
     </div>
-    <label class="nte-totp-label" for="nte-totp-secret">Secret (Base32)</label>
-    <input type="password" id="nte-totp-secret" class="nte-totp-input" autocomplete="off" spellcheck="false" placeholder="Leave blank to keep saved secret" />
-    <div id="nte-totp-protect-prompt" class="nte-totp-protect-prompt" hidden>
-      <span>Protect this secret with a password?</span>
-      <button type="button" class="nte-totp-btn" id="nte-totp-protect-yes">Save with password</button>
-      <button type="button" class="nte-totp-btn nte-totp-btn-ghost" id="nte-totp-protect-no">Save without password</button>
-    </div>
-    <div class="nte-totp-actions">
-      <button type="button" class="nte-totp-btn" id="nte-totp-save">Save</button>
-      <button type="button" class="nte-totp-btn nte-totp-btn-ghost" id="nte-totp-clear">Clear secret</button>
-    </div>
-    <p class="nte-totp-status" id="nte-totp-status" aria-live="polite"></p>
   `;
 
   container.append(card);
+  card.dataset.optionSearch = build_option_search_text(
+    "roblox 2fa autofill totp secret authenticator",
+  );
 
   const enabled_el = card.querySelector("#nte-totp-enabled");
+  const expand_btn = card.querySelector("#nte-totp-expand");
+  const expanded_el = card.querySelector("#nte-totp-expanded");
   const pw_toggle_row = card.querySelector("#nte-totp-pw-toggle-row");
   const pw_toggle_btn = card.querySelector("#nte-totp-pw-toggle");
   const pw_panel = card.querySelector("#nte-totp-pw-panel");
@@ -3544,6 +3852,17 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   const stored_on = totp_snapshot[ROBLOX_TOTP_ENABLED_KEY] === true;
   const stored_off = totp_snapshot[ROBLOX_TOTP_ENABLED_KEY] === false;
   enabled_el.checked = stored_on || (!stored_off && has_secret);
+
+  function set_totp_expanded(open) {
+    expanded_el.hidden = !open;
+    expand_btn.setAttribute("aria-expanded", open ? "true" : "false");
+    expand_btn.classList.toggle("collapsed", !open);
+    card.classList.toggle("is-expanded", open);
+  }
+
+  expand_btn.addEventListener("click", () => {
+    set_totp_expanded(expanded_el.hidden);
+  });
 
   function update_pw_copy() {
     if (pending_encrypt) {
@@ -3622,6 +3941,23 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   function set_status(msg) {
     status_el.textContent = msg || "";
   }
+
+  enabled_el.addEventListener("change", () => {
+    const enabled = enabled_el.checked;
+    chrome.storage.local.set({ [ROBLOX_TOTP_ENABLED_KEY]: enabled }, () => {
+      if (chrome.runtime.lastError) {
+        enabled_el.checked = !enabled;
+        set_status("Could not save.");
+        return;
+      }
+      if (expanded_el.hidden) return;
+      if (enabled && !has_plain && !is_encrypted) {
+        set_status("Enabled. Add a secret to autofill.");
+      } else {
+        set_status(enabled ? "Autofill enabled." : "Autofill disabled.");
+      }
+    });
+  });
 
   function wipe_pw_fields() {
     cur_pw_el.value = "";
@@ -3987,6 +4323,9 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   `;
 
   container.append(card);
+  card.dataset.optionSearch = build_option_search_text(
+    "trade page theme recolor trades upload custom",
+  );
 
   const enabled_el = card.querySelector("#nte-theme-enabled");
   const expanded_el = card.querySelector("#nte-theme-expanded");
@@ -4463,6 +4802,199 @@ function restore_defaults() {
   });
 }
 
+function get_settings_backup_keys() {
+  return [
+    ...get_option_names(),
+    legacy_colorblind_mode_option_name,
+    legacy_post_tax_trade_value_option_name,
+    colorblind_mode_profile_key,
+    inbound_trade_notification_min_gain_key,
+    inbound_trade_notification_webhook_enabled_key,
+    inbound_trade_notification_webhook_url_key,
+    inbound_trade_notification_webhook_ping_enabled_key,
+    inbound_trade_notification_webhook_discord_id_key,
+    duplicate_trade_warning_hours_key,
+    profile_value_display_mode_key,
+    popup_theme_storage_key,
+    trade_page_theme_enabled_key,
+    trade_page_theme_key,
+    trade_page_custom_themes_key,
+    trade_ads_config_storage_key,
+    trade_ads_verify_storage_key,
+    nte_discord_banner_dismissed_key,
+    nte_rate_banner_dismissed_key,
+  ];
+}
+
+function get_settings_backup_defaults() {
+  let defaults = {};
+  option_groups.forEach((option) => {
+    if (typeof option !== "string") defaults[option.name] = option.enabledByDefault;
+  });
+  defaults[legacy_colorblind_mode_option_name] = false;
+  defaults[legacy_post_tax_trade_value_option_name] = false;
+  defaults[colorblind_mode_profile_key] = colorblind_mode_profile_default;
+  defaults[inbound_trade_notification_min_gain_key] =
+    inbound_trade_notification_min_gain_default;
+  defaults[inbound_trade_notification_webhook_enabled_key] = false;
+  defaults[inbound_trade_notification_webhook_url_key] = "";
+  defaults[inbound_trade_notification_webhook_ping_enabled_key] = false;
+  defaults[inbound_trade_notification_webhook_discord_id_key] = "";
+  defaults[duplicate_trade_warning_hours_key] =
+    duplicate_trade_warning_hours_default;
+  defaults[profile_value_display_mode_key] = profile_value_display_mode_default;
+  defaults[popup_theme_storage_key] = popup_theme_default;
+  defaults[trade_page_theme_enabled_key] = false;
+  defaults[trade_page_theme_key] = pack_trade_page_theme(trade_page_theme_default);
+  defaults[trade_page_custom_themes_key] = [];
+  return defaults;
+}
+
+function normalize_imported_setting(key, value) {
+  if (get_option_names().includes(key)) return value === true;
+  if (
+    [
+      legacy_colorblind_mode_option_name,
+      legacy_post_tax_trade_value_option_name,
+      inbound_trade_notification_webhook_enabled_key,
+      inbound_trade_notification_webhook_ping_enabled_key,
+      trade_page_theme_enabled_key,
+      nte_discord_banner_dismissed_key,
+      nte_rate_banner_dismissed_key,
+    ].includes(key)
+  )
+    return value === true;
+  if (key === colorblind_mode_profile_key)
+    return normalize_colorblind_mode_profile(value);
+  if (key === inbound_trade_notification_min_gain_key)
+    return normalize_inbound_trade_notification_min_gain(value);
+  if (key === inbound_trade_notification_webhook_url_key)
+    return normalize_inbound_trade_notification_webhook_url(value);
+  if (key === inbound_trade_notification_webhook_discord_id_key)
+    return normalize_inbound_trade_notification_discord_id(value);
+  if (key === duplicate_trade_warning_hours_key)
+    return normalize_duplicate_trade_warning_hours(value);
+  if (key === profile_value_display_mode_key)
+    return normalize_profile_value_display_mode(value);
+  if (key === popup_theme_storage_key) return normalize_popup_theme(value);
+  if (key === trade_page_theme_key) return pack_trade_page_theme(value);
+  if (key === trade_page_custom_themes_key)
+    return normalize_custom_trade_page_themes(value);
+  return value;
+}
+
+function set_settings_status(message, kind = "") {
+  let status = document.getElementById("settingsImportExportStatus");
+  if (!status) return;
+  status.textContent = message || "";
+  status.classList.toggle("is-ok", kind === "ok");
+  status.classList.toggle("is-error", kind === "error");
+}
+
+async function export_settings_backup() {
+  let keys = get_settings_backup_keys();
+  let saved = await get_storage(keys);
+  let defaults = get_settings_backup_defaults();
+  let settings = {};
+  for (let key of keys) {
+    if (saved[key] !== undefined) settings[key] = saved[key];
+    else if (defaults[key] !== undefined) settings[key] = defaults[key];
+  }
+  let payload = {
+    type: "nevos-trading-extension-settings",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    extensionVersion: chrome.runtime.getManifest().version,
+    excludes: ["roblox_totp_secret_b32", "roblox_totp_encrypted_blob"],
+    settings,
+  };
+  let blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
+  let url = URL.createObjectURL(blob);
+  let date = new Date().toISOString().slice(0, 10);
+  let link = document.createElement("a");
+  link.href = url;
+  link.download = `nevos-extension-settings-${date}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  set_settings_status("Settings exported. TOTP secrets are not included.", "ok");
+}
+
+async function import_settings_backup(file) {
+  if (!file) return;
+  let text = await file.text();
+  let parsed = JSON.parse(text);
+  let raw_settings =
+    parsed?.type === "nevos-trading-extension-settings"
+      ? parsed.settings
+      : parsed?.settings || parsed;
+  if (!raw_settings || typeof raw_settings !== "object" || Array.isArray(raw_settings))
+    throw new Error("Invalid settings file.");
+
+  let allowed = new Set(get_settings_backup_keys());
+  let patch = {};
+  for (let [key, value] of Object.entries(raw_settings)) {
+    if (!allowed.has(key)) continue;
+    patch[key] = normalize_imported_setting(key, value);
+  }
+  if (!Object.keys(patch).length) throw new Error("No importable settings found.");
+
+  await set_storage(patch);
+  apply_popup_theme(patch[popup_theme_storage_key]);
+  await refresh_all_panels();
+  for (let option of option_groups) {
+    if (typeof option !== "string" && option.name in patch)
+      send_option_update(option.name);
+  }
+  if (
+    colorblind_mode_profile_key in patch ||
+    legacy_colorblind_mode_option_name in patch
+  )
+    send_colorblind_mode_update();
+  if (profile_value_display_mode_key in patch) send_option_update("Values");
+  set_settings_status("Settings imported.", "ok");
+}
+
+function init_settings_import_export() {
+  let export_btn = document.getElementById("exportSettingsBtn");
+  let import_btn = document.getElementById("importSettingsBtn");
+  let import_file = document.getElementById("importSettingsFile");
+  if (!export_btn || !import_btn || !import_file) return;
+
+  export_btn.addEventListener("click", async () => {
+    export_btn.disabled = true;
+    try {
+      await export_settings_backup();
+    } catch {
+      set_settings_status("Could not export settings.", "error");
+    } finally {
+      export_btn.disabled = false;
+    }
+  });
+
+  import_btn.addEventListener("click", () => {
+    import_file.value = "";
+    import_file.click();
+  });
+
+  import_file.addEventListener("change", async () => {
+    let file = import_file.files?.[0];
+    if (!file) return;
+    import_btn.disabled = true;
+    try {
+      await import_settings_backup(file);
+    } catch {
+      set_settings_status("Could not import settings. Use a valid JSON backup.", "error");
+    } finally {
+      import_btn.disabled = false;
+      import_file.value = "";
+    }
+  });
+}
+
 const restore_btn = document.getElementById("restoreDefaultSettings");
 restore_btn.addEventListener("click", async () => {
   restore_btn.disabled = true;
@@ -4488,8 +5020,15 @@ const required_origins = (() => {
     "https://rolimons.com/*",
     "https://nevos-extension.com/*",
     "https://www.nevos-extension.com/*",
-    "https://*.roblox.com/*",
+    "https://www.roblox.com/*",
     "https://roblox.com/*",
+    "https://auth.roblox.com/*",
+    "https://trades.roblox.com/*",
+    "https://users.roblox.com/*",
+    "https://inventory.roblox.com/*",
+    "https://catalog.roblox.com/*",
+    "https://economy.roblox.com/*",
+    "https://apis.roblox.com/*",
     "https://thumbnails.roblox.com/*",
   ];
   let manifest_origins = chrome.runtime?.getManifest?.()?.host_permissions;
@@ -4626,6 +5165,7 @@ const ta_actions = [
 ];
 
 let ta_poll_timer = null;
+const ta_locked_trade_ids_key = "nteLockedTradeIds";
 
 function ta_send(type, extra) {
   return new Promise((resolve) => {
@@ -4636,16 +5176,32 @@ function ta_send(type, extra) {
   });
 }
 
-function ta_show_confirm(action_label, on_confirm) {
+function ta_normalize_locked_trade_ids(ids) {
+  if (!Array.isArray(ids)) return [];
+  return [...new Set(ids.map((id) => String(id || "").trim()).filter(Boolean))];
+}
+
+async function ta_get_locked_trade_count() {
+  let saved = await get_storage([ta_locked_trade_ids_key]);
+  return ta_normalize_locked_trade_ids(saved[ta_locked_trade_ids_key]).length;
+}
+
+function ta_locked_count_html(count) {
+  if (!(count > 0)) return "";
+  return `<br>${count} locked trade${count === 1 ? "" : "s"} will be skipped.`;
+}
+
+async function ta_show_confirm(action_label, on_confirm) {
   let existing = document.querySelector(".ta-confirm-overlay");
   if (existing) existing.remove();
+  let locked_count = await ta_get_locked_trade_count();
 
   let overlay = document.createElement("div");
   overlay.className = "ta-confirm-overlay";
   overlay.innerHTML = `
     <div class="ta-confirm-box">
       <div class="ta-confirm-title">Are you sure?</div>
-      <div class="ta-confirm-msg">${escape_html(action_label)}.<br>You can stop it at any time.</div>
+      <div class="ta-confirm-msg">${escape_html(action_label)}.<br>You can stop it at any time.${ta_locked_count_html(locked_count)}</div>
       <div class="ta-confirm-actions">
         <button class="ta-confirm-btn ta-confirm-cancel">Cancel</button>
         <button class="ta-confirm-btn ta-confirm-go">Do it</button>
@@ -4683,16 +5239,17 @@ function ta_format_duration_ms(ms) {
   return `${days} day${days === 1 ? "" : "s"}`;
 }
 
-function ta_show_duration_config(action_label, on_confirm) {
+async function ta_show_duration_config(action_label, on_confirm) {
   let existing = document.querySelector(".ta-confirm-overlay");
   if (existing) existing.remove();
+  let locked_count = await ta_get_locked_trade_count();
 
   let overlay = document.createElement("div");
   overlay.className = "ta-confirm-overlay";
   overlay.innerHTML = `
     <div class="ta-confirm-box">
       <div class="ta-confirm-title">Configure duration</div>
-      <div class="ta-confirm-msg">${escape_html(action_label)}.</div>
+      <div class="ta-confirm-msg">${escape_html(action_label)}.${ta_locked_count_html(locked_count)}</div>
       <div class="ta-filter-row">
         <span class="ta-filter-label">Cancel outbound trades older than</span>
         <span class="ta-filter-input-wrap">
@@ -4736,16 +5293,17 @@ function ta_show_duration_config(action_label, on_confirm) {
   });
 }
 
-function ta_show_overpay_config(action_label, on_confirm) {
+async function ta_show_overpay_config(action_label, on_confirm) {
   let existing = document.querySelector(".ta-confirm-overlay");
   if (existing) existing.remove();
+  let locked_count = await ta_get_locked_trade_count();
 
   let overlay = document.createElement("div");
   overlay.className = "ta-confirm-overlay";
   overlay.innerHTML = `
     <div class="ta-confirm-box">
       <div class="ta-confirm-title">Configure filter</div>
-      <div class="ta-confirm-msg">${escape_html(action_label)}.</div>
+      <div class="ta-confirm-msg">${escape_html(action_label)}.${ta_locked_count_html(locked_count)}</div>
       <div class="ta-filter-row">
         <span class="ta-filter-label">Only cancel if overpaying by more than</span>
         <span class="ta-filter-input-wrap">
@@ -4990,6 +5548,8 @@ async function render_actions_tab() {
 
 sync_mobile_popup_class();
 init_popup_theme_switcher();
+init_settings_import_export();
+ensure_options_search_bar();
 refresh_all_panels();
 render_permissions_banner();
 document.getElementById("brandImage").src = get_asset_url(

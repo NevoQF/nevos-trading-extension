@@ -6,6 +6,9 @@ const trade_ad_notif_inventory_ttl_ms = 900000;
 const trade_ad_notif_max_matches = 120;
 const trade_ad_notif_max_seen = 2500;
 const trade_ad_notif_load_more_batch = 60;
+const trade_ad_notif_catchup_limit = 1000;
+const trade_ad_notif_since_overlap_seconds = 300;
+const trade_ad_notif_max_catchup_pages = 10;
 
 let trade_ad_notif_poll_timer = null;
 let trade_ad_notif_poll_in_flight = false;
@@ -35,6 +38,9 @@ function trade_ad_notif_default_state() {
     feedExhausted: false,
     feedAdCount: 0,
     feedAdsChecked: 0,
+    lastScannedCreatedAt: 0,
+    minOverpayAmount: TradeAdNotificationsCore.OVERPAY_DEFAULT_MIN_DIFF,
+    minOverpayPercent: TradeAdNotificationsCore.OVERPAY_DEFAULT_MIN_PERCENT,
   };
 }
 
@@ -54,8 +60,8 @@ function trade_ad_notif_mark_feed_checked(state, count) {
   trade_ad_notif_cap_feed_checked(state);
 }
 
-function trade_ad_notif_sync_feed_scan_complete(state, ads) {
-  let total = Array.isArray(ads) ? ads.length : 0;
+function trade_ad_notif_sync_feed_scan_complete(state, total_count) {
+  let total = Math.max(0, Number(total_count) || 0);
   if (total <= 0) return;
   if ((Number(state.feedAdsChecked) || 0) >= total) {
     state.feedScanOffset = total;
@@ -106,7 +112,7 @@ async function trade_ad_notif_get_scan_context(force_inventory) {
 
 function trade_ad_notif_apply_scan_results(
   state,
-  ads,
+  total_count,
   batch,
   viewer,
   get_row,
@@ -125,6 +131,7 @@ function trade_ad_notif_apply_scan_results(
     owned,
     get_row,
     viewer.userId,
+    trade_ad_notif_match_options(state),
   );
   new_matches = trade_ad_notif_filter_matches_by_disabled_items(
     trade_ad_notif_filter_matches_by_ignored_users(new_matches, ignored_users),
@@ -138,7 +145,7 @@ function trade_ad_notif_apply_scan_results(
   }
 
   trade_ad_notif_mark_feed_checked(state, batch.length);
-  trade_ad_notif_sync_feed_scan_complete(state, ads);
+  trade_ad_notif_sync_feed_scan_complete(state, total_count);
 }
 
 async function trade_ad_notif_backfill_feed(state, max_batches = 30) {
@@ -157,16 +164,35 @@ async function trade_ad_notif_backfill_feed(state, max_batches = 30) {
 async function trade_ad_notif_load_state() {
   let raw = await get_local_value(trade_ad_notif_state_key);
   if (!raw || typeof raw !== "object") return trade_ad_notif_default_state();
-  return {
+  return trade_ad_notif_normalize_thresholds_on_state({
     ...trade_ad_notif_default_state(),
     ...raw,
     matches: Array.isArray(raw.matches) ? raw.matches : [],
     seenAdIds: Array.isArray(raw.seenAdIds) ? raw.seenAdIds : [],
-  };
+    lastScannedCreatedAt: Math.max(0, Number(raw.lastScannedCreatedAt) || 0),
+  });
 }
 
 async function trade_ad_notif_save_state(state) {
   await set_local_value(trade_ad_notif_state_key, state);
+}
+
+function trade_ad_notif_normalize_thresholds(input) {
+  return TradeAdNotificationsCore.normalize_thresholds({
+    minOverpayAmount: input?.minOverpayAmount,
+    minOverpayPercent: input?.minOverpayPercent,
+  });
+}
+
+function trade_ad_notif_normalize_thresholds_on_state(state) {
+  let thresholds = trade_ad_notif_normalize_thresholds(state);
+  state.minOverpayAmount = thresholds.minOverpayAmount;
+  state.minOverpayPercent = thresholds.minOverpayPercent;
+  return state;
+}
+
+function trade_ad_notif_match_options(state) {
+  return trade_ad_notif_normalize_thresholds(state);
 }
 
 function trade_ad_notif_normalize_ignored_users(input) {
@@ -256,10 +282,22 @@ function trade_ad_notif_filter_matches(state) {
 
 function trade_ad_notif_state_for_ui(state) {
   if (!state || typeof state !== "object") return state;
+  trade_ad_notif_normalize_thresholds_on_state(state);
   return {
     ...state,
     matches: trade_ad_notif_filter_matches(state),
   };
+}
+
+function trade_ad_notif_reset_scan_progress(state) {
+  state.feedScanOffset = 0;
+  state.feedExhausted = false;
+  state.feedAdsChecked = 0;
+  state.feedScanFetchedAt = 0;
+  state.seenAdIds = [];
+  state.matches = [];
+  state.lastScannedCreatedAt = 0;
+  state.lastError = "";
 }
 
 function trade_ad_notif_rescore_matches(state, owned_ids, get_row, viewer_user_id) {
@@ -269,6 +307,7 @@ function trade_ad_notif_rescore_matches(state, owned_ids, get_row, viewer_user_i
     owned,
     get_row,
     viewer_user_id,
+    trade_ad_notif_match_options(state),
   );
 }
 
@@ -286,7 +325,11 @@ async function trade_ad_notif_rescan_feed_for_want_items(
 
   let feed;
   try {
-    feed = await trade_ad_notif_fetch_feed();
+    feed = await trade_ad_notif_fetch_feed({
+      since: 0,
+      limit: 10000,
+      wantIds: targets,
+    });
   } catch {
     return;
   }
@@ -304,6 +347,7 @@ async function trade_ad_notif_rescan_feed_for_want_items(
     owned,
     get_row,
     viewer.userId,
+    trade_ad_notif_match_options(state),
   );
   found = trade_ad_notif_filter_matches_by_ignored_users(found, ignored_users);
   if (!found.length) return;
@@ -572,8 +616,50 @@ async function trade_ad_notif_get_viewer_inventory(force_refresh) {
   return { userId: me.id, owned, itemMeta: item_meta, slotCount: slot_count };
 }
 
-async function trade_ad_notif_fetch_feed() {
-  let res = await fetch(trade_ad_notif_api_url, {
+function trade_ad_notif_feed_total(feed, ads) {
+  let total = Number(feed?.total);
+  if (Number.isFinite(total) && total >= 0) return total;
+  return Array.isArray(ads) ? ads.length : 0;
+}
+
+function trade_ad_notif_ad_created_at_seconds(ad) {
+  let raw = Number(ad?.createdAt) || 0;
+  if (raw > 1e12) return Math.floor(raw / 1000);
+  if (raw > 1e10) return Math.floor(raw / 1000);
+  return Math.max(0, Math.floor(raw));
+}
+
+function trade_ad_notif_max_created_at(ads) {
+  let max_created = 0;
+  for (let ad of Array.isArray(ads) ? ads : []) {
+    max_created = Math.max(max_created, trade_ad_notif_ad_created_at_seconds(ad));
+  }
+  return max_created;
+}
+
+function trade_ad_notif_want_ids_for_feed(owned_ids, disabled_want_items) {
+  let disabled = trade_ad_notif_disabled_want_set(disabled_want_items);
+  let out = [];
+  for (let id of owned_ids instanceof Set ? owned_ids : []) {
+    let key = String(id || "").trim();
+    if (key && !disabled.has(key)) out.push(key);
+  }
+  return out;
+}
+
+async function trade_ad_notif_fetch_feed(options) {
+  let params = new URLSearchParams();
+  let limit = Math.max(1, Number(options?.limit) || trade_ad_notif_catchup_limit);
+  params.set("limit", String(Math.min(10000, Math.floor(limit))));
+  let offset = Math.max(0, Number(options?.offset) || 0);
+  if (offset > 0) params.set("offset", String(Math.floor(offset)));
+  let since = Math.max(0, Number(options?.since) || 0);
+  if (since > 0) params.set("since", String(Math.floor(since)));
+  let want_ids = Array.isArray(options?.wantIds) ? options.wantIds : [];
+  if (want_ids.length) params.set("want_ids", want_ids.join(","));
+
+  let url = `${trade_ad_notif_api_url}?${params.toString()}`;
+  let res = await fetch(url, {
     headers: { Accept: "application/json" },
     cache: "no-store",
   });
@@ -591,40 +677,6 @@ async function trade_ad_notif_load_more_once() {
   let state = await trade_ad_notif_load_state();
   if (!state.enabled) return state;
 
-  let feed;
-  try {
-    feed = await trade_ad_notif_fetch_feed();
-    state.lastError = "";
-  } catch (err) {
-    state.lastError = err?.message || String(err);
-    await trade_ad_notif_save_state(state);
-    return state;
-  }
-
-  let ads = Array.isArray(feed.ads) ? feed.ads : [];
-  state.feedAdCount = ads.length;
-  let fetched_at = Number(feed.fetchedAt) || Date.now();
-  if (fetched_at !== Number(state.feedScanFetchedAt || 0)) {
-    state.feedScanFetchedAt = fetched_at;
-    state.feedScanOffset = 0;
-    state.feedExhausted = false;
-    state.feedAdsChecked = 0;
-  }
-
-  let offset = Math.max(0, Number(state.feedScanOffset) || 0);
-  if (offset >= ads.length) {
-    state.feedExhausted = true;
-    await trade_ad_notif_save_state(state);
-    return state;
-  }
-
-  let batch = ads.slice(offset, offset + trade_ad_notif_load_more_batch);
-  if (!batch.length) {
-    state.feedExhausted = true;
-    await trade_ad_notif_save_state(state);
-    return state;
-  }
-
   let viewer;
   let get_row;
   try {
@@ -640,11 +692,60 @@ async function trade_ad_notif_load_more_once() {
     return state;
   }
 
+  let offset = Math.max(0, Number(state.feedScanOffset) || 0);
+  let want_ids = trade_ad_notif_want_ids_for_feed(
+    viewer.owned,
+    state.disabledWantItemIds,
+  );
+  let feed;
+  try {
+    feed = await trade_ad_notif_fetch_feed({
+      since: 0,
+      offset,
+      limit: trade_ad_notif_load_more_batch,
+      wantIds: want_ids,
+    });
+    state.lastError = "";
+  } catch (err) {
+    state.lastError = err?.message || String(err);
+    await trade_ad_notif_save_state(state);
+    return state;
+  }
+
+  let batch = Array.isArray(feed.ads) ? feed.ads : [];
+  let total = trade_ad_notif_feed_total(feed, batch);
+  state.feedAdCount = total;
+  let fetched_at = Number(feed.fetchedAt) || Date.now();
+  if (fetched_at !== Number(state.feedScanFetchedAt || 0)) {
+    state.feedScanFetchedAt = fetched_at;
+    state.feedScanOffset = 0;
+    state.feedExhausted = false;
+    state.feedAdsChecked = 0;
+    offset = 0;
+    if (Number(feed.offset) > 0) {
+      feed = await trade_ad_notif_fetch_feed({
+        since: 0,
+        offset: 0,
+        limit: trade_ad_notif_load_more_batch,
+        wantIds: want_ids,
+      });
+      batch = Array.isArray(feed.ads) ? feed.ads : [];
+      total = trade_ad_notif_feed_total(feed, batch);
+      state.feedAdCount = total;
+    }
+  }
+
+  if (!batch.length) {
+    state.feedExhausted = true;
+    await trade_ad_notif_save_state(state);
+    return state;
+  }
+
   let ignored_users = trade_ad_notif_normalize_ignored_users(state.ignoredUsers);
   state.ignoredUsers = ignored_users;
   trade_ad_notif_apply_scan_results(
     state,
-    ads,
+    total,
     batch,
     viewer,
     get_row,
@@ -652,7 +753,7 @@ async function trade_ad_notif_load_more_once() {
   );
 
   state.feedScanOffset = offset + batch.length;
-  state.feedExhausted = state.feedScanOffset >= ads.length;
+  state.feedExhausted = state.feedScanOffset >= total || feed.hasMore === false;
   trade_ad_notif_cap_feed_checked(state);
 
   await trade_ad_notif_save_state(state);
@@ -681,26 +782,6 @@ async function trade_ad_notif_poll_once(options) {
     let state = await trade_ad_notif_load_state();
     let seen = new Set((state.seenAdIds || []).map((id) => String(id)));
 
-    let feed;
-    try {
-      feed = await trade_ad_notif_fetch_feed();
-      state.lastError = "";
-      state.lastFeedFetchedAt = Number(feed.fetchedAt) || Date.now();
-      if (
-        Number(state.feedScanFetchedAt || 0) !== Number(state.lastFeedFetchedAt)
-      ) {
-        state.feedScanFetchedAt = Number(state.lastFeedFetchedAt);
-        state.feedScanOffset = 0;
-        state.feedExhausted = false;
-        state.feedAdsChecked = 0;
-      }
-    } catch (err) {
-      state.lastError = err?.message || String(err);
-      state.lastPollAt = Date.now();
-      await trade_ad_notif_save_state(state);
-      return state;
-    }
-
     let viewer;
     let get_row;
     try {
@@ -719,29 +800,84 @@ async function trade_ad_notif_poll_once(options) {
 
     let ignored_users = trade_ad_notif_normalize_ignored_users(state.ignoredUsers);
     state.ignoredUsers = ignored_users;
+    let want_ids = trade_ad_notif_want_ids_for_feed(
+      viewer.owned,
+      state.disabledWantItemIds,
+    );
+    let since_created = Math.max(
+      0,
+      Math.floor(Number(state.lastScannedCreatedAt) || 0) -
+        trade_ad_notif_since_overlap_seconds,
+    );
+    let offset = 0;
+    let max_created = Math.max(0, Number(state.lastScannedCreatedAt) || 0);
+    let caught_up = true;
+    let had_fresh = false;
 
-    let ads = Array.isArray(feed.ads) ? feed.ads : [];
-    state.feedAdCount = ads.length;
-    let fresh_ads = ads.filter((ad) => ad?.id != null && !seen.has(String(ad.id)));
-    if (fresh_ads.length) {
-      trade_ad_notif_apply_scan_results(
-        state,
-        ads,
-        fresh_ads,
-        viewer,
-        get_row,
-        ignored_users,
-      );
-      for (let ad of fresh_ads) {
-        if (ad?.id != null) seen.add(String(ad.id));
+    for (let page = 0; page < trade_ad_notif_max_catchup_pages; page++) {
+      let feed;
+      try {
+        feed = await trade_ad_notif_fetch_feed({
+          since: since_created,
+          offset,
+          limit: trade_ad_notif_catchup_limit,
+          wantIds: want_ids,
+        });
+        state.lastError = "";
+      } catch (err) {
+        state.lastError = err?.message || String(err);
+        state.lastPollAt = Date.now();
+        await trade_ad_notif_save_state(state);
+        return state;
       }
-      state.seenAdIds = trade_ad_notif_trim_seen(Array.from(seen));
-    } else {
+
+      let ads = Array.isArray(feed.ads) ? feed.ads : [];
+      let total = trade_ad_notif_feed_total(feed, ads);
+      state.feedAdCount = total;
+      state.lastFeedFetchedAt = Number(feed.fetchedAt) || Date.now();
+      if (
+        Number(state.feedScanFetchedAt || 0) !== Number(state.lastFeedFetchedAt)
+      ) {
+        state.feedScanFetchedAt = Number(state.lastFeedFetchedAt);
+        state.feedScanOffset = 0;
+        state.feedExhausted = false;
+        state.feedAdsChecked = 0;
+      }
+
+      max_created = Math.max(max_created, trade_ad_notif_max_created_at(ads));
+      let fresh_ads = ads.filter(
+        (ad) => ad?.id != null && !seen.has(String(ad.id)),
+      );
+      if (fresh_ads.length) {
+        had_fresh = true;
+        trade_ad_notif_apply_scan_results(
+          state,
+          total,
+          fresh_ads,
+          viewer,
+          get_row,
+          ignored_users,
+        );
+        for (let ad of fresh_ads) {
+          if (ad?.id != null) seen.add(String(ad.id));
+        }
+        state.seenAdIds = trade_ad_notif_trim_seen(Array.from(seen));
+      }
+
+      if (!feed.hasMore || !ads.length) break;
+      offset += ads.length;
+      if (page === trade_ad_notif_max_catchup_pages - 1) caught_up = false;
+    }
+
+    if (!had_fresh) {
       state.watchableItemCount = viewer.owned.size;
       state.matches = trade_ad_notif_filter_matches_by_ignored_users(
         trade_ad_notif_rescore_matches(state, viewer.owned, get_row, viewer.userId),
         ignored_users,
       );
+    }
+    if (caught_up && max_created > Number(state.lastScannedCreatedAt || 0)) {
+      state.lastScannedCreatedAt = max_created;
     }
     state.lastPollAt = Date.now();
     await trade_ad_notif_save_state(state);
@@ -809,8 +945,10 @@ function trade_ad_notif_handle_message(message, respond) {
       let prev = await trade_ad_notif_load_state();
       let state = trade_ad_notif_default_state();
       state.enabled = prev.enabled === true;
+      state.minOverpayAmount = prev.minOverpayAmount;
+      state.minOverpayPercent = prev.minOverpayPercent;
       await trade_ad_notif_save_state(state);
-      respond({ ok: true, state });
+      respond({ ok: true, state: trade_ad_notif_state_for_ui(state) });
     })();
     return true;
   }
@@ -826,19 +964,37 @@ function trade_ad_notif_handle_message(message, respond) {
       if (!next_enabled) {
         next.lastError = "";
       } else {
-        next.feedScanOffset = 0;
-        next.feedExhausted = false;
-        next.feedAdsChecked = 0;
-        next.feedScanFetchedAt = 0;
-        next.seenAdIds = [];
-        next.matches = [];
-        next.lastError = "";
+        trade_ad_notif_reset_scan_progress(next);
       }
       if (next_enabled) {
         next.lastPollAt = Date.now();
       }
       await trade_ad_notif_save_state(next);
       if (next_enabled) {
+        let state = await trade_ad_notif_backfill_feed(next);
+        respond({ ok: true, state: trade_ad_notif_state_for_ui(state) });
+        return;
+      }
+      respond({ ok: true, state: trade_ad_notif_state_for_ui(next) });
+    })().catch((err) => {
+      respond({ ok: false, error: err?.message || String(err) });
+    });
+    return true;
+  }
+
+  if (message?.type === "trade_ad_notifications_set_thresholds") {
+    (async () => {
+      let prev = await trade_ad_notif_load_state();
+      let thresholds = trade_ad_notif_normalize_thresholds(message);
+      let next = {
+        ...prev,
+        minOverpayAmount: thresholds.minOverpayAmount,
+        minOverpayPercent: thresholds.minOverpayPercent,
+      };
+      trade_ad_notif_reset_scan_progress(next);
+      if (next.enabled) next.lastPollAt = Date.now();
+      await trade_ad_notif_save_state(next);
+      if (next.enabled) {
         let state = await trade_ad_notif_backfill_feed(next);
         respond({ ok: true, state: trade_ad_notif_state_for_ui(state) });
         return;

@@ -159,6 +159,38 @@
       document.head.appendChild(style);
     }
 
+    function trade_offer_has_bundle_item(side) {
+      let offer_el = deps.get_offer_element(side);
+      let cards = offer_el?.querySelectorAll(
+        ".item-card-container[data-collectibleiteminstanceid], .trade-request-item[data-collectibleiteminstanceid]",
+      );
+      if (!cards?.length) return false;
+      for (let card of cards) {
+        if (
+          card.querySelector('a[href*="/bundles/"]') ||
+          card.querySelector('[thumbnail-type="BundleThumbnail"]')
+        ) {
+          return true;
+        }
+        let cached_item = card.__nte_sales_item || null;
+        if (
+          cached_item?.itemType === "Bundle" ||
+          cached_item?.itemTarget?.itemType === "Bundle"
+        ) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function trade_has_faces_or_bundles(local_items) {
+      if (trade_offer_has_bundle_item("self") || trade_offer_has_bundle_item("partner")) {
+        return true;
+      }
+      let items = [...(local_items?.give || []), ...(local_items?.receive || [])];
+      return items.some((item) => item?.isBundle === true);
+    }
+
     function create_button(reference) {
       let btn = reference ? reference.cloneNode(true) : document.createElement("button");
       btn.type = "button";
@@ -661,6 +693,16 @@
       let panel = get_panel(btn);
       let current_token = ++request_token;
       btn.__nte_analyze_trade_key = state_key;
+
+      if (trade_offer_has_bundle_item("self") || trade_offer_has_bundle_item("partner")) {
+        render_error(
+          panel,
+          btn,
+          "Trade analysis can't handle faces yet.",
+        );
+        return;
+      }
+
       set_btn_loading(btn);
       render_loading(panel, btn);
 
@@ -668,6 +710,14 @@
         let row = document.querySelector(".trade-row.selected");
         let trade_data = await get_payload(row);
         if (current_token !== request_token) return;
+        if (trade_has_faces_or_bundles(trade_data.local_items)) {
+          render_error(
+            panel,
+            btn,
+            "Trade analysis can't handle faces yet.",
+          );
+          return;
+        }
         let payload = trade_data.payload;
         if (!payload.give_item_ids.length && payload.give_robux <= 0) throw new Error("Could not read what you give from this trade.");
         if (!payload.receive_item_ids.length && payload.receive_robux <= 0) throw new Error("Could not read what you receive from this trade.");

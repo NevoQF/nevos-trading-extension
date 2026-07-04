@@ -3589,16 +3589,22 @@
                 }
               }
             }
-            let robux_data = await fetch(
-              "https://economy.roblox.com/v1/user/currency",
-              { credentials: "include" },
-            ).then((r) => r.json().catch(() => ({})));
+            let user_id = get_profile_user_id();
+            let own_profile =
+              user_id > 0 &&
+              user_id ===
+                (await utils.getAuthenticatedUserId().catch(() => 0));
+            let robux_data = own_profile
+              ? await fetch("https://economy.roblox.com/v1/user/currency", {
+                  credentials: "include",
+                }).then((r) => r.json().catch(() => ({})))
+              : null;
             let image_data = {
               items: enriched,
               limit: image_opts.limit,
               items_per_row: image_opts.items_per_row,
               username,
-              user_id: get_profile_user_id(),
+              user_id,
               total_value,
               total_rap,
               total_count,
@@ -3609,7 +3615,7 @@
               show_usd: image_opts.show_usd,
               show_onhold: image_opts.show_onhold,
               total_usd: routility_total_usd,
-              robux: robux_data.robux || 0,
+              robux: own_profile ? robux_data?.robux || 0 : null,
             };
             let blob =
               image_opts.style === "v2"

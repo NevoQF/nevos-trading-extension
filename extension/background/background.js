@@ -46,7 +46,7 @@ if (typeof importScripts === "function") {
 }
 
 const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]',
+  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"}]',
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
 const show_routility_usd_values_option_name = "Show Routility USD Values";
@@ -79,7 +79,7 @@ const routility_data_time_key = "lastRoutilityRequest";
 const routility_data_url = "https://routility.io/api/public/items";
 const extension_update_state_key = "nte_extension_update_state";
 const nte_roblox_tab_url_query_patterns = [
-  "https://*.roblox.com/*",
+  "https://www.roblox.com/*",
   "https://roblox.com/*",
 ];
 const inbound_trade_notification_min_gain_key =
@@ -97,8 +97,13 @@ const duplicate_trade_warning_hours_key = "duplicate_trade_warning_hours";
 const duplicate_trade_warning_hours_default = 24;
 const trade_cache_ttl_ms = 5 * 24 * 60 * 60 * 1000;
 const trade_cache_max_entries = 2000;
+const trade_notification_sent_key = "nte_trade_notification_sent_ids";
+const trade_notification_sent_ttl_ms = 7 * 24 * 60 * 60 * 1000;
+const trade_notification_sent_max_entries = 1000;
 
 let notification_click_handler_registered = false;
+let trade_notification_sent_memory = null;
+let trade_notification_pending_keys = new Set();
 
 function normalize_colorblind_mode_profile(value) {
   let normalized = String(value || "")
@@ -560,13 +565,22 @@ async function parse_json_response_safe(response, label) {
 }
 
 async function fetch_item_data() {
-  let response = await fetch(item_data_url, {
-    headers: { "From-Extension": true },
-  });
-  if (response.status !== 200) return null;
-  let parsed = await parse_json_response_safe(response, "Rolimons item data");
-  if (!parsed) return null;
-  return RolimonsItemDetails.normalize_rolimons_item_details_payload(parsed);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      let response = await fetch(item_data_url, {
+        headers: { "From-Extension": true },
+        cache: "no-store",
+      });
+      if (response.status !== 200) continue;
+      let parsed = await parse_json_response_safe(response, "Rolimons item data");
+      if (!parsed) continue;
+      let data =
+        RolimonsItemDetails.normalize_rolimons_item_details_payload(parsed);
+      if (has_item_data(data)) return data;
+    } catch {}
+    if (attempt < 2) await sleep_for(750 * (attempt + 1));
+  }
+  return null;
 }
 
 let item_data_retry_promise = null;
@@ -582,7 +596,7 @@ function has_item_data(data) {
 }
 
 async function cache_item_data(data) {
-  if (!data) return null;
+  if (!has_item_data(data)) return null;
   await set_local_values({
     [item_data_key]: data,
     [item_data_time_key]: Date.now(),
@@ -599,9 +613,11 @@ function retry_item_data_until_success() {
         try {
           data = await fetch_item_data();
         } catch {}
-        if (data?.items && Object.keys(data.items).length) {
+        if (has_item_data(data)) {
           return await cache_item_data(data);
         }
+        let server_data = await sync_item_data_from_server();
+        if (has_item_data(server_data)) return server_data;
         await sleep_for(1000);
       }
     } finally {
@@ -769,6 +785,7 @@ async function trade_row_decline_trade(trade_id) {
     delete cached_trades[numeric_trade_id];
     delete cached_trades[String(numeric_trade_id)];
     await save_cached_trades(cached_trades);
+    await mark_self_declined_trade(numeric_trade_id);
     return { ok: true, status: resp.status };
   } catch (err) {
     return { ok: false, status: 0, error: err?.message || String(err) };
@@ -997,7 +1014,16 @@ async function get_priced_cached_trade(trade) {
 
 function get_item_value_from_data(item_data, asset_id, rap, item_name) {
   let entry = get_rolimons_item(item_data, asset_id, item_name);
-  if (Array.isArray(entry) && typeof entry[4] === "number") return entry[4];
+  if (Array.isArray(entry)) {
+    if (RolimonsItemDetails?.get_item_value) {
+      let value = RolimonsItemDetails.get_item_value(entry);
+      if (value > 0) return value;
+    } else if (typeof entry[4] === "number" && entry[4] > 0) {
+      return entry[4];
+    } else if (typeof entry[3] === "number" && entry[3] > 0) {
+      return entry[3];
+    }
+  }
   return parseInt(rap, 10) || 0;
 }
 
@@ -1175,9 +1201,6 @@ function get_trade_timestamp_ms(trade, trade_type = "") {
           trade?.createdAt,
           trade?.createdTime,
           trade?.timestamp,
-          trade?.updated,
-          trade?.updatedAt,
-          trade?.updatedTime,
         ]
       : trade_type === "outbound"
         ? [
@@ -1233,6 +1256,57 @@ function is_trade_recent_for_notification(
   );
 }
 
+function trade_notification_sent_id(trade, trade_type) {
+  let id = String(trade?.id || "").trim();
+  if (!id) return "";
+  return `${String(trade_type || "trade").toLowerCase()}:${id}`;
+}
+
+function prune_trade_notification_sent_map(raw, now = Date.now()) {
+  let out = {};
+  if (raw && typeof raw === "object") {
+    for (let [key, timestamp] of Object.entries(raw)) {
+      let ts = Number(timestamp) || 0;
+      if (!key || ts <= 0) continue;
+      if (now - ts <= trade_notification_sent_ttl_ms) out[key] = ts;
+    }
+  }
+  let entries = Object.entries(out).sort((a, b) => Number(a[1]) - Number(b[1]));
+  if (entries.length > trade_notification_sent_max_entries) {
+    out = Object.fromEntries(entries.slice(-trade_notification_sent_max_entries));
+  }
+  return out;
+}
+
+async function get_trade_notification_sent_map() {
+  if (trade_notification_sent_memory) return trade_notification_sent_memory;
+  trade_notification_sent_memory = prune_trade_notification_sent_map(
+    await get_local_value(trade_notification_sent_key),
+  );
+  return trade_notification_sent_memory;
+}
+
+async function save_trade_notification_sent_map(map) {
+  trade_notification_sent_memory = prune_trade_notification_sent_map(map);
+  await set_local_value(trade_notification_sent_key, trade_notification_sent_memory);
+}
+
+async function reserve_trade_notification(trade, trade_type) {
+  let key = trade_notification_sent_id(trade, trade_type);
+  if (!key) return false;
+  if (trade_notification_pending_keys.has(key)) return false;
+  trade_notification_pending_keys.add(key);
+  try {
+    let sent = await get_trade_notification_sent_map();
+    if (sent[key]) return false;
+    sent[key] = Date.now();
+    await save_trade_notification_sent_map(sent);
+    return true;
+  } finally {
+    trade_notification_pending_keys.delete(key);
+  }
+}
+
 async function show_trade_notification(
   trade,
   trade_type,
@@ -1244,20 +1318,24 @@ async function show_trade_notification(
 
   switch (trade_type) {
     case "inbound":
-      if (!(await get_local_value("Inbound Trade Notifications"))) return;
+      if (!(await get_local_value("Inbound Trade Notifications"))) return false;
       title = `Trade from ${trade.user.displayName}`;
       break;
     case "inactive":
-      if (!(await get_local_value("Declined Trade Notifications"))) return;
+      if (!(await get_local_value("Declined Trade Notifications"))) return false;
       title = `Trade to ${trade.user.displayName} declined`;
       break;
     case "completed":
-      if (!(await get_local_value("Completed Trade Notifications"))) return;
+      if (!(await get_local_value("Completed Trade Notifications"))) return false;
       title = `Trade with ${trade.user.displayName} accepted`;
       break;
     default:
-      return;
+      return false;
   }
+
+  if (!chrome.notifications?.create) return false;
+  if (!(await can_use_notifications())) return false;
+  if (!(await reserve_trade_notification(trade, trade_type))) return false;
 
   let icon_url = "assets/icons/logo128.png";
 
@@ -1308,10 +1386,7 @@ async function show_trade_notification(
     }
   }
 
-  if (!chrome.notifications?.create) return;
-  if (!(await can_use_notifications())) return;
-
-  let notification_id = `${trade_notification_prefix}${trade_type}_${trade.id}_${Date.now()}`;
+  let notification_id = `${trade_notification_prefix}${trade_type}_${trade.id}`;
   chrome.notifications.create(
     notification_id,
     {
@@ -1330,6 +1405,7 @@ async function show_trade_notification(
       }
     },
   );
+  return true;
 }
 
 async function get_inbound_trade_webhook_settings() {
@@ -1368,24 +1444,86 @@ const TRADE_CACHE_ALARM_PERIOD_MINUTES = 0.5;
 const inbound_poll_alarm_name = "inboundPollAlarm";
 const inbound_poll_state_key = "inboundPollState";
 const trade_status_seed_key = "tradeStatusNotificationSeed";
+const self_declined_trade_ids_key = "selfDeclinedTradeIds";
+const locked_trade_ids_key = "nteLockedTradeIds";
+const INBOUND_POLL_STALE_GAP_MS = 15 * 60 * 1000;
+const SELF_DECLINED_TRADE_ID_TTL_MS = 24 * 60 * 60 * 1000;
+const SELF_DECLINED_TRADE_ID_MAX = 300;
 
 async function get_inbound_poll_state() {
   let state = await get_local_value(inbound_poll_state_key);
   if (!state || typeof state !== "object")
-    return { last_seen_time: 0, notified_ids: [] };
+    return { last_seen_time: 0, last_checked_at: 0, notified_ids: [] };
   return {
     last_seen_time: state.last_seen_time || 0,
+    last_checked_at: state.last_checked_at || 0,
     notified_ids: Array.isArray(state.notified_ids) ? state.notified_ids : [],
   };
 }
 
-async function save_inbound_poll_state(last_seen_time, notified_ids_arr) {
+async function save_inbound_poll_state(
+  last_seen_time,
+  notified_ids_arr,
+  last_checked_at = Date.now(),
+) {
   if (notified_ids_arr.length > INBOUND_POLL_MAX_NOTIFIED)
     notified_ids_arr = notified_ids_arr.slice(notified_ids_arr.length - 100);
   await set_local_value(inbound_poll_state_key, {
     last_seen_time,
+    last_checked_at,
     notified_ids: notified_ids_arr,
   });
+}
+
+async function get_self_declined_trade_ids() {
+  let raw = await get_local_value(self_declined_trade_ids_key);
+  let now = Date.now();
+  let out = {};
+  if (Array.isArray(raw)) {
+    for (let id of raw) out[String(id)] = now;
+  } else if (raw && typeof raw === "object") {
+    for (let [id, time] of Object.entries(raw)) {
+      let ts = Number(time) || 0;
+      if (ts > 0 && now - ts <= SELF_DECLINED_TRADE_ID_TTL_MS)
+        out[String(id)] = ts;
+    }
+  }
+  let entries = Object.entries(out).sort((a, b) => Number(a[1]) - Number(b[1]));
+  if (entries.length > SELF_DECLINED_TRADE_ID_MAX)
+    out = Object.fromEntries(entries.slice(-SELF_DECLINED_TRADE_ID_MAX));
+  return out;
+}
+
+async function save_self_declined_trade_ids(ids) {
+  await set_local_value(self_declined_trade_ids_key, ids || {});
+}
+
+async function mark_self_declined_trade(trade_id) {
+  let id = String(trade_id || "").trim();
+  if (!id) return;
+  let ids = await get_self_declined_trade_ids();
+  ids[id] = Date.now();
+  await save_self_declined_trade_ids(ids);
+}
+
+async function consume_self_declined_trade(trade_id) {
+  let id = String(trade_id || "").trim();
+  if (!id) return false;
+  let ids = await get_self_declined_trade_ids();
+  if (!ids[id]) return false;
+  delete ids[id];
+  await save_self_declined_trade_ids(ids);
+  return true;
+}
+
+async function get_locked_trade_ids() {
+  let raw = await get_local_value(locked_trade_ids_key);
+  let ids = Array.isArray(raw) ? raw : [];
+  return new Set(
+    ids
+      .map((id) => String(id || "").trim())
+      .filter((id) => id && /^\d+$/.test(id)),
+  );
 }
 
 async function get_trade_status_seed_state() {
@@ -1469,8 +1607,14 @@ async function poll_inbound_trades() {
 
     let state = await get_inbound_poll_state();
     let last_seen_time = state.last_seen_time;
+    let last_checked_at = state.last_checked_at || 0;
     let notified_ids = new Set(state.notified_ids);
     let now = Date.now();
+    let stale_poll =
+      last_seen_time > 0 &&
+      (last_checked_at
+        ? now - last_checked_at > INBOUND_POLL_STALE_GAP_MS
+        : now - last_seen_time > INBOUND_POLL_STALE_GAP_MS);
 
     if (last_seen_time === 0) {
       let first_time = get_trade_timestamp_ms(trades[0], "inbound");
@@ -1479,7 +1623,7 @@ async function poll_inbound_trades() {
           ? first_time
           : now;
       for (let t of trades) notified_ids.add(String(t.id));
-      await save_inbound_poll_state(newest, [...notified_ids]);
+      await save_inbound_poll_state(newest, [...notified_ids], now);
       return;
     }
 
@@ -1504,9 +1648,17 @@ async function poll_inbound_trades() {
       );
     });
 
+    if (stale_poll) {
+      for (let t of trades) notified_ids.add(String(t.id));
+      new_trades = new_trades.slice(0, 1);
+    }
+
     if (!new_trades.length) {
-      if (newest_time > last_seen_time)
-        await save_inbound_poll_state(newest_time, [...notified_ids]);
+      await save_inbound_poll_state(
+        Math.max(newest_time, last_seen_time),
+        [...notified_ids],
+        now,
+      );
       return;
     }
 
@@ -1568,14 +1720,14 @@ async function poll_inbound_trades() {
           continue;
       }
 
-      await show_trade_notification(
+      let notification_shown = await show_trade_notification(
         trade,
         "inbound",
         detail,
         trade_stats,
         my_user_id,
       );
-      if (webhook_settings) {
+      if (notification_shown && webhook_settings) {
         await send_inbound_trade_webhook_notification(
           trade,
           detail,
@@ -1587,7 +1739,7 @@ async function poll_inbound_trades() {
     }
 
     await save_cached_trades(cached_trades);
-    await save_inbound_poll_state(newest_time, [...notified_ids]);
+    await save_inbound_poll_state(newest_time, [...notified_ids], now);
   } catch (e) {
     console.info("Nevos Trading Extension: inbound poll error", e);
   } finally {
@@ -1683,10 +1835,13 @@ async function fetch_trade_page(
 
     if (trade_type === "inbound") continue;
 
+    let self_declined =
+      trade_type === "inactive" && (await consume_self_declined_trade(trade.id));
     let should_notify =
-      (previous_type && previous_type !== trade_type) ||
-      trade_type !== "inactive" ||
-      previous_type === "outbound";
+      trade_type === "inactive"
+        ? previous_type === "outbound" && !self_declined
+        : (previous_type && previous_type !== trade_type) ||
+          trade_type !== "inactive";
 
     if (
       should_notify &&
@@ -1723,8 +1878,9 @@ async function fetch_trade_page(
           ],
         };
       }
-      await show_trade_notification(trade, trade_type, detail_v2);
-      sent_notifications.count++;
+      if (await show_trade_notification(trade, trade_type, detail_v2)) {
+        sent_notifications.count++;
+      }
     }
   }
 
@@ -2994,12 +3150,14 @@ async function send_test_webhook_notification(webhook_override = null) {
             name: "Green Sidewinder",
             itemType: "Asset",
             recentAveragePrice: 2333,
+            serialNumber: 42,
           },
           {
             assetId: 250394771,
             name: "Green Sidewinder",
             itemType: "Asset",
             recentAveragePrice: 2333,
+            serialNumber: 187,
           },
           {
             assetId: 250394771,
@@ -3050,6 +3208,11 @@ async function send_test_webhook_notification(webhook_override = null) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (typeof trade_ad_notif_handle_message === "function") {
+    let handled = trade_ad_notif_handle_message(message, respond);
+    if (handled) return handled;
+  }
+
   if (message === "getTradeListData") {
     (async () => respond(await get_pruned_cached_trades()))();
     return true;
@@ -3177,11 +3340,17 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           has_host_access = await request_host_permissions();
         let captured = await capture_tab();
         if (captured?.ok) return respond(captured);
-        if (is_quick_proof_capture_permission_error(captured?.error))
+        if (is_quick_proof_capture_permission_error(captured?.error)) {
+          if (await open_first_roblox_popup(sender)) {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            captured = await capture_tab();
+            if (captured?.ok) return respond(captured);
+          }
           return respond({
             ok: false,
             error: quick_proof_capture_permission_message,
           });
+        }
         if (!has_host_access)
           return respond({
             ok: false,
@@ -3192,11 +3361,17 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         if (
           !captured?.ok &&
           is_quick_proof_capture_permission_error(captured?.error)
-        )
+        ) {
+          if (await open_first_roblox_popup(sender)) {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            captured = await capture_tab();
+            if (captured?.ok) return respond(captured);
+          }
           return respond({
             ok: false,
             error: quick_proof_capture_permission_message,
           });
+        }
         respond(captured);
       } catch (err) {
         respond({
@@ -3389,27 +3564,35 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
 
-  if (message?.type === "open_first_roblox_popup") {
+  if (message?.type === "mark_self_declined_trade") {
+    mark_self_declined_trade(message.trade_id || message.tradeId).then(() =>
+      respond({ ok: true }),
+    );
+    return true;
+  }
+
+  if (message?.type === "open_extension_settings") {
     (async () => {
-      if (
-        /firefox/i.test(navigator.userAgent || "") ||
-        !chrome.action?.openPopup
-      )
-        return respond({ ok: false });
       try {
-        let options =
-          sender?.tab?.windowId === undefined
-            ? undefined
-            : { windowId: sender.tab.windowId };
-        await chrome.action.openPopup(options);
-        respond({ ok: true });
+        if (chrome.runtime?.openOptionsPage) {
+          await chrome.runtime.openOptionsPage();
+          respond({ ok: true });
+          return;
+        }
       } catch (err) {
         respond({
           ok: false,
-          error: err?.message || "Could not open extension popup.",
+          error: err?.message || "Could not open extension settings.",
         });
+        return;
       }
+      respond({ ok: false, error: "openOptionsPage unavailable." });
     })();
+    return true;
+  }
+
+  if (message?.type === "open_first_roblox_popup") {
+    open_first_roblox_popup(sender).then((ok) => respond({ ok }));
     return true;
   }
 
@@ -3517,7 +3700,7 @@ chrome.storage.onChanged.addListener((changes, area_name) => {
 
 const required_host_origins = (() => {
   // Quick Proof only needs Roblox page access for tab capture flow.
-  let quick_proof = ["https://*.roblox.com/*", "https://roblox.com/*"];
+  let quick_proof = ["https://www.roblox.com/*", "https://roblox.com/*"];
   let manifest_origins = chrome.runtime?.getManifest?.()?.host_permissions;
   if (!Array.isArray(manifest_origins) || !manifest_origins.length)
     return quick_proof;
@@ -3527,10 +3710,28 @@ const required_host_origins = (() => {
 })();
 
 const quick_proof_capture_permission_message =
-  "Open the extension popup from the toolbar once, then try Proof again.";
+  "Quick Proof needs one-time tab access. I opened the extension popup for you. If Proof still fails, open Roblox settings, click the extension settings entry, then try Proof again.";
 
 function is_quick_proof_capture_permission_error(error) {
   return /'<all_urls>'|<all_urls>|activeTab/i.test(String(error || ""));
+}
+
+async function open_first_roblox_popup(sender) {
+  if (
+    /firefox/i.test(navigator.userAgent || "") ||
+    !chrome.action?.openPopup
+  )
+    return false;
+  try {
+    let options =
+      sender?.tab?.windowId === undefined
+        ? undefined
+        : { windowId: sender.tab.windowId };
+    await chrome.action.openPopup(options);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function check_host_permissions() {
@@ -3718,6 +3919,7 @@ async function ta_decline_trade(trade_id, csrf) {
   }
   await ta_wait_for_rate_limit(resp);
   if (ta_abort) return { ok: false, csrf, status: 0 };
+  if (resp.ok) await mark_self_declined_trade(trade_id);
   return { ok: resp.ok, csrf, status: resp.status };
 }
 
@@ -3835,6 +4037,9 @@ async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) 
 
     ta_state.total = trades.length;
     let trade_cache = await get_pruned_cached_trades();
+    let locked_trade_ids = await get_locked_trade_ids();
+    let is_locked_trade = (trade) =>
+      locked_trade_ids.has(String(trade?.id || "").trim());
 
     if (overpaying_only) {
       ta_state.phase = "checking";
@@ -3852,6 +4057,10 @@ async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) 
           break;
         }
         ta_state.checked++;
+        if (is_locked_trade(trade)) {
+          ta_state.skipped++;
+          continue;
+        }
 
         let detail = await ta_get_trade_detail(trade.id, trade_cache);
         if (ta_abort) {
@@ -3925,6 +4134,10 @@ async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) 
           break;
         }
         ta_state.checked++;
+        if (is_locked_trade(trade)) {
+          ta_state.skipped++;
+          continue;
+        }
 
         let detail = await ta_get_trade_detail(trade.id, trade_cache);
         if (ta_abort) {
@@ -4029,6 +4242,10 @@ async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) 
           break;
         }
         ta_state.checked++;
+        if (is_locked_trade(trade)) {
+          ta_state.skipped++;
+          continue;
+        }
         if (!ta_trade_is_older_than(trade, max_trade_age_ms, list_trade_type)) {
           ta_state.skipped++;
           continue;
@@ -4047,6 +4264,10 @@ async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) 
         if (ta_abort) {
           ta_state.error = "Cancelled by user";
           break;
+        }
+        if (is_locked_trade(trade)) {
+          ta_state.skipped++;
+          continue;
         }
         let result = await ta_decline_trade(trade.id, csrf);
         if (ta_abort) {

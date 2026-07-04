@@ -24,6 +24,19 @@
       finish(undefined);
     }
   }
+  document.addEventListener("nru_trade_self_declined", (event) => {
+    let detail = null;
+    try {
+      detail =
+        typeof event.detail === "string" ? JSON.parse(event.detail) : event.detail;
+    } catch {}
+    let trade_id = detail?.trade_id || detail?.tradeId;
+    trade_id &&
+      nte_send_message(
+        { type: "mark_self_declined_trade", trade_id },
+        function () {},
+      );
+  });
   const TRADE_API_RATE_LIMIT_BUFFER = 10;
   const TRADE_API_RATE_LIMIT_RESET_PAD_MS = 1000;
   const TRADE_API_RATE_LIMIT_DEFAULT_PAUSE_MS = 60000;
@@ -220,7 +233,7 @@
     (o.parcelRequire94c2 = s));
   var d = s.register;
   d("eFyFE", function (e, t) {
-    let n, q, rt;
+    let n, q, rt, rolimons_refresh_callback = null, rolimons_refresh_failures = 0;
     function a() {
       return n;
     }
@@ -318,9 +331,26 @@
       let n = parseInt(r, 10);
       return isNaN(n) ? 0 : n;
     }
+    function get_value_from_row(row) {
+      if (
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.get_item_value
+      ) {
+        return RolimonsItemDetails.get_item_value(row);
+      }
+      let value = Number(row[3]);
+      if (Number.isFinite(value) && value > 0) return value;
+      let fallback = Number(row[4]);
+      if (Number.isFinite(fallback) && fallback > 0) return fallback;
+      let rap = Number(row[2]);
+      return Number.isFinite(rap) && rap > 0 ? rap : 0;
+    }
+    function has_rolimons_items(data) {
+      return !!(data?.items && Object.keys(data.items).length);
+    }
     function m(e, t, r) {
-      let n = D(e, t);
-      if (Array.isArray(n) && "number" == typeof n[4]) return n[4];
+      let row = D(e, t);
+      if (Array.isArray(row)) return get_value_from_row(row);
       let a = get_unsupported_bundle_value(e, t, r);
       return null !== a ? a : 0;
     }
@@ -500,6 +530,38 @@
       return q[M(t)]?.item || null;
     }
     function P(e, t, r) {
+      if (
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.resolve_item_id
+      ) {
+        let resolved = RolimonsItemDetails.resolve_item_id(n, e, t, {
+          isBundle: !!r,
+        });
+        if (resolved) return resolved;
+      }
+      let bundle_id = null;
+      if (n?.bundleIds && n?.items) {
+        let key = String(e ?? "").trim();
+        if (key && n.bundleIds[key]) bundle_id = key;
+        else if (t) {
+          let labels = new Set();
+          let norm = M(t);
+          if (norm) labels.add(norm);
+          if (labels.size) {
+            for (let rid of Object.keys(n.bundleIds)) {
+              let row = n.items[rid];
+              if (!Array.isArray(row) || typeof row[0] !== "string") continue;
+              let row_name = M(row[0]);
+              let row_acr = M(row[1]);
+              if (labels.has(row_name) || labels.has(row_acr)) {
+                bundle_id = rid;
+                break;
+              }
+            }
+          }
+        }
+      }
+      if (bundle_id) return bundle_id;
       if (!r && n?.items?.[String(e)]) return e;
       if (!t) return null;
       D(e, t);
@@ -677,11 +739,37 @@
         }
       })());
     }
+    function apply_rolimons_data(data, on_ready) {
+      q = void 0;
+      if (has_rolimons_items(data)) {
+        n = data;
+        rolimons_refresh_failures = 0;
+        on_ready?.();
+        return true;
+      }
+      if (has_rolimons_items(n)) {
+        on_ready?.();
+        return false;
+      }
+      return false;
+    }
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== "local" || !changes.data) return;
+        let data = changes.data.newValue;
+        if (!has_rolimons_items(data)) return;
+        n = data;
+        q = void 0;
+        rolimons_refresh_failures = 0;
+        rolimons_refresh_callback?.();
+      });
+    } catch {}
     r(
       e.exports,
       "refreshData",
       () =>
         function e(t) {
+          rolimons_refresh_callback = t;
           let r = "getData";
           void 0 !== n && (r = "getDataPeriodic");
           let rm =
@@ -689,8 +777,18 @@
           nte_send_message(rm, function (d) {
             if (d) rt = d;
           });
-          nte_send_message(r, function (r) {
-            (q = void 0), (n = r) && t(), setTimeout(() => e(t), 6e4);
+          nte_send_message(r, function (data) {
+            if (apply_rolimons_data(data, t)) {
+              setTimeout(() => e(t), 6e4);
+              return;
+            }
+            if (!has_rolimons_items(n)) {
+              rolimons_refresh_failures += 1;
+              let delay = Math.min(30000, 2000 * rolimons_refresh_failures);
+              setTimeout(() => e(t), delay);
+              return;
+            }
+            setTimeout(() => e(t), 6e4);
           });
         },
     ),
@@ -939,9 +1037,11 @@
           let n = a.resolveRolimonsItemId(item_id_raw, item_name, card_bundle);
           if (!n) continue;
           let roli_row = a.getRolimonsData()?.items?.[n],
-            o = l[n];
+            o = l[n],
+            is_bundle_item = !!a.getRolimonsData()?.bundleIds?.[String(n)];
           if ("failed" === o && !roli_row) continue;
-          let asset_type_ok = o && a.checkIfAssetTypeIsOnRolimons(o);
+          let asset_type_ok =
+            is_bundle_item || (o && a.checkIfAssetTypeIsOnRolimons(o));
           if (!(asset_type_ok || roli_row)) {
             void 0 === o && (l[n] = !1);
             continue;
@@ -949,7 +1049,7 @@
           if (y(card)) continue;
           let link_el = document.createElement("a");
           (link_el.href = a.getRolimonsProfileUrl(n, {
-            isBundle: card_bundle,
+            isBundle: card_bundle || is_bundle_item,
           })),
             (link_el.target = "_blank"),
             (link_el.rel = "noopener noreferrer"),
@@ -973,7 +1073,7 @@
           let thumb_wrap = f(card);
           if (thumb_wrap && !is_trade_offer_item) {
             p(link_el, thumb_wrap);
-          } else {
+          } else if (text_div) {
             link_el.dataset.nteInlineLink = "1";
             (link_el.style.display = "inline-block"),
               (link_el.style.paddingLeft = "2px"),
@@ -1006,6 +1106,57 @@
           }
           text_div.classList.add("hasAssetLink");
         }
+        for (let card of document.querySelectorAll(
+          ".trade-request-item, .item-card-container",
+        )) {
+          if (card.querySelector(".nte-rolimons-thumb-link")) continue;
+          if (card.querySelector(".item-card-price, .item-value")) continue;
+          if (card.closest(".trade-request-window-offer")) continue;
+          let item_id_raw = a.getItemIdFromElement(card),
+            item_name = a.getItemNameFromElement(card),
+            card_bundle = is_roblox_bundle_card(card);
+          remove_our_rolimons_links(card);
+          if (a.isUnsupportedBundle(item_id_raw, item_name)) continue;
+          let n = a.resolveRolimonsItemId(item_id_raw, item_name, card_bundle);
+          if (!n) continue;
+          let roli_row = a.getRolimonsData()?.items?.[n],
+            o = l[n],
+            is_bundle_item = !!a.getRolimonsData()?.bundleIds?.[String(n)];
+          if ("failed" === o && !roli_row) continue;
+          let asset_type_ok =
+            is_bundle_item || (o && a.checkIfAssetTypeIsOnRolimons(o));
+          if (!(asset_type_ok || roli_row)) {
+            void 0 === o && (l[n] = !1);
+            continue;
+          }
+          if (y(card)) continue;
+          let thumb_wrap = f(card);
+          if (!thumb_wrap) continue;
+          let link_el = document.createElement("a");
+          (link_el.href = a.getRolimonsProfileUrl(n, {
+            isBundle: card_bundle || is_bundle_item,
+          })),
+            (link_el.target = "_blank"),
+            (link_el.rel = "noopener noreferrer"),
+            (link_el.className = "nte-rolimons-thumb-link"),
+            link_el.setAttribute("aria-label", "Rolimons");
+          let icon_span = document.createElement("span"),
+            svg_asset =
+              "dark" === a.getColorMode()
+                ? "rolimonsLink.svg"
+                : "rolimonsLinkDark.svg";
+          (icon_span.style.backgroundImage = `url(${JSON.stringify(a.getURL(`assets/${svg_asset}`))})`),
+            (icon_span.className = "icon icon-link"),
+            (icon_span.style.display = "block"),
+            (icon_span.style.backgroundSize = "cover"),
+            (icon_span.style.width = "18px"),
+            (icon_span.style.height = "18px"),
+            (icon_span.style.cursor = "pointer"),
+            (icon_span.style.backgroundColor = "transparent"),
+            (icon_span.style.pointerEvents = "none");
+          link_el.appendChild(icon_span);
+          p(link_el, thumb_wrap);
+        }
         h(),
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -1019,7 +1170,10 @@
               .map((e) => parseInt(e)),
             t = { items: [] };
           e.forEach((e) => {
-            t.items.length < 100 && t.items.push({ itemType: 1, id: e });
+            if (t.items.length >= 100) return;
+            let item_data = a.getRolimonsData();
+            let is_bundle = !!item_data?.bundleIds?.[String(e)];
+            t.items.push({ itemType: is_bundle ? 2 : 1, id: e });
           }),
             void 0 === n &&
               (n = document
@@ -5383,6 +5537,9 @@
         line-height: 1.35;
         color: rgba(226, 232, 240, .75);
       }
+      .nte-proof-toast--permission {
+        width: min(380px, calc(100vw - 32px));
+      }
       .nte-proof-toast--text {
         width: min(360px, calc(100vw - 32px));
       }
@@ -5686,6 +5843,10 @@
         event.stopPropagation();
         run_nte_quick_proof(btn).catch((err) => {
           console.debug("NTE quick proof failed", err);
+          if (nte_quick_proof_needs_permission_help(err?.message)) {
+            nte_quick_proof_permission_toast(err?.message);
+            return;
+          }
           nte_quick_proof_toast(
             "Proof failed",
             err?.message || "Could not copy the proof.",
@@ -5710,6 +5871,32 @@
     toast.className = "nte-proof-toast";
     toast.innerHTML = `<button type="button" class="nte-proof-toast-close" aria-label="Close">x</button><div class="nte-proof-toast-title">${nte_quick_proof_esc(title)}</div><div class="nte-proof-toast-sub">${nte_quick_proof_esc(sub || "")}</div>`;
     if (error) toast.style.borderColor = "rgba(248, 113, 113, .34)";
+    nte_quick_proof_bind_toast_close(toast);
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("is-visible"));
+  }
+
+  function nte_quick_proof_needs_permission_help(message) {
+    return /tab access|Roblox settings|activeTab|<all_urls>/i.test(
+      String(message || ""),
+    );
+  }
+
+  function nte_quick_proof_permission_toast(message) {
+    let old = document.querySelector(".nte-proof-toast");
+    old?.__nte_proof_cleanup?.();
+    old?.remove();
+    let toast = document.createElement("div");
+    toast.className = "nte-proof-toast nte-proof-toast--permission";
+    toast.innerHTML = `
+      <button type="button" class="nte-proof-toast-close" aria-label="Close">x</button>
+      <div class="nte-proof-toast-title">Quick Proof needs tab access</div>
+      <div class="nte-proof-toast-sub">${nte_quick_proof_esc(
+        message ||
+          "Open the extension once from Roblox settings, then try Proof again.",
+      )}</div>
+    `;
+    toast.style.borderColor = "rgba(129, 140, 248, .44)";
     nte_quick_proof_bind_toast_close(toast);
     document.body.appendChild(toast);
     requestAnimationFrame(() => toast.classList.add("is-visible"));
@@ -6701,6 +6888,7 @@
       { value: "upgrade", label: "Upgrade" },
       { value: "downgrade", label: "Downgrade" },
       { value: "robux", label: "Robux" },
+      { value: "rejected", label: "Rejected", inactive_only: true },
       { value: "item_search", label: "Item search" },
     ],
     trade_filter_state = { value: "all" },
@@ -7125,6 +7313,48 @@
       ) || document.getElementById("trade-row-scroll-container")
     );
   }
+  function get_trade_list_viewport_context() {
+    let scroll = get_trade_list_scroll_element();
+    let list = document.querySelector(".trade-row-list");
+    let listOffset = 0;
+    if (scroll && list) {
+      let el = list;
+      while (el && el !== scroll) {
+        listOffset += el.offsetTop;
+        el = el.offsetParent;
+      }
+    }
+    let scrollTop = scroll?.scrollTop || 0;
+    let scrollBottom = scrollTop + (scroll?.clientHeight || 0);
+    let viewCenter = scrollTop + (scroll?.clientHeight || 0) / 2;
+    return { scroll, listOffset, scrollTop, scrollBottom, viewCenter };
+  }
+  function filter_trade_rows_in_viewport(rows, top_pad = 140, bottom_pad = 220) {
+    let ctx = get_trade_list_viewport_context();
+    if (!ctx.scroll) return rows.length ? rows.slice(0, 14) : rows;
+    let min_top = ctx.scrollTop - top_pad;
+    let max_bottom = ctx.scrollBottom + bottom_pad;
+    let visible = rows.filter((row) => {
+      if (row.classList?.contains("selected")) return !0;
+      let row_top = ctx.listOffset + row.offsetTop;
+      let row_bottom = row_top + row.offsetHeight;
+      return row_bottom >= min_top && row_top <= max_bottom;
+    });
+    return visible.length ? visible : rows.slice(0, 14);
+  }
+  function merge_trade_rows_unique(...groups) {
+    let seen = new Set();
+    let out = [];
+    for (let group of groups) {
+      for (let row of group) {
+        if (!row || seen.has(row)) continue;
+        seen.add(row);
+        out.push(row);
+      }
+    }
+    return out;
+  }
+  const TRADE_FILTER_UNREADY_BATCH = 36;
   function get_trade_rows_for_processing() {
     let e = [...document.querySelectorAll(".trade-row-list .trade-row")];
     if (!e.length) return e;
@@ -7133,48 +7363,50 @@
       let need_names = e.filter((r) => !r.dataset.nteTradeItemNames);
       return need_names.length ? need_names : e.slice(0, 0);
     }
-    if ("all" !== fv) return e;
-    let t = get_trade_list_scroll_element();
-    if (!t) return e.slice(0, 14);
-    let scrollTop = t.scrollTop,
-      scrollBottom = scrollTop + t.clientHeight,
-      n = scrollTop - 140,
-      a = scrollBottom + 220,
-      rowList = t.querySelector(".trade-row-list"),
-      listOffset = 0;
-    if (rowList) {
-      let el = rowList;
-      while (el && el !== t) {
-        listOffset += el.offsetTop;
-        el = el.offsetParent;
+    if (fv === "rejected") return e.slice(0, 0);
+    let viewport_rows = filter_trade_rows_in_viewport(e);
+    if ("all" !== fv) {
+      let unready = e.filter((row) => row.dataset.nteTradeReady !== "1");
+      let unready_batch = [];
+      if (unready.length) {
+        let viewport_set = new Set(viewport_rows);
+        for (let row of unready) {
+          if (viewport_set.has(row)) continue;
+          unready_batch.push(row);
+          if (unready_batch.length >= TRADE_FILTER_UNREADY_BATCH) break;
+        }
       }
+      return merge_trade_rows_unique(viewport_rows, unready_batch);
     }
-    let o = e.filter((e) => {
-      if (e.classList?.contains("selected")) return !0;
-      let rowTop = listOffset + e.offsetTop;
-      let rowBottom = rowTop + e.offsetHeight;
-      return rowBottom >= n && rowTop <= a;
-    });
-    return o.length ? o : e.slice(0, 14);
+    return viewport_rows;
   }
   function sort_trade_rows_by_viewport_priority(rows) {
-    let scroll = get_trade_list_scroll_element();
-    if (!scroll) return rows;
-    let list = document.querySelector(".trade-row-list");
-    let listOffset = 0;
-    if (list) {
-      let el = list;
-      while (el && el !== scroll) {
-        listOffset += el.offsetTop;
-        el = el.offsetParent;
-      }
-    }
-    let viewCenter = scroll.scrollTop + scroll.clientHeight / 2;
+    let ctx = get_trade_list_viewport_context();
+    if (!ctx.scroll) return rows;
     return [...rows].sort((a, b) => {
-      let ca = listOffset + a.offsetTop + a.offsetHeight / 2;
-      let cb = listOffset + b.offsetTop + b.offsetHeight / 2;
-      return Math.abs(ca - viewCenter) - Math.abs(cb - viewCenter);
+      let ca = ctx.listOffset + a.offsetTop + a.offsetHeight / 2;
+      let cb = ctx.listOffset + b.offsetTop + b.offsetHeight / 2;
+      return Math.abs(ca - ctx.viewCenter) - Math.abs(cb - ctx.viewCenter);
     });
+  }
+  let L_filter_backfill_timer = 0;
+  function schedule_trade_list_filter_backfill() {
+    if (
+      "all" === trade_filter_state.value ||
+      trade_search_q ||
+      "rejected" === trade_filter_state.value
+    )
+      return;
+    clearTimeout(L_filter_backfill_timer);
+    L_filter_backfill_timer = setTimeout(() => {
+      L_filter_backfill_timer = 0;
+      if (
+        document.querySelector(
+          '.trade-row-list .trade-row:not([data-nte-trade-ready="1"])',
+        )
+      )
+        L();
+    }, 450);
   }
   function bind_trade_list_scroll_refresh() {
     let e = get_trade_list_scroll_element();
@@ -7184,10 +7416,12 @@
     e.addEventListener(
       "scroll",
       () => {
-        clearTimeout(t),
-          (t = setTimeout(() => {
-            L();
-          }, 120));
+        clearTimeout(t);
+        let row_count = e.querySelectorAll(".trade-row").length;
+        let delay = row_count > 80 ? 260 : row_count > 40 ? 180 : 120;
+        t = setTimeout(() => {
+          L();
+        }, delay);
       },
       { passive: !0 },
     );
@@ -7207,6 +7441,15 @@
     e && (e.style.display = "none"), t?.setAttribute("aria-expanded", "false");
   }
   function sync_trade_list_filter_ui_state() {
+    let inactive_tab = get_current_trade_tab() === "inactive",
+      rejected_li = document.querySelector(
+        '#nteTradeListFilterMenu li[data-value="rejected"]',
+      );
+    rejected_li &&
+      (rejected_li.style.display = inactive_tab ? "" : "none");
+    trade_filter_state.value === "rejected" &&
+      !inactive_tab &&
+      (trade_filter_state.value = "all");
     let e = get_trade_list_filter_option(trade_filter_state.value),
       t = document.getElementById("nteTradeListFilterLabel");
     t && (t.textContent = e.label);
@@ -7610,32 +7853,47 @@
         delete e.dataset.nteTradeRare,
         delete e.dataset.nteTradeRobux);
   }
+  function is_trade_row_rejected(row) {
+    if (!row?.querySelector) return false;
+    let status_line = row.querySelector(".nte-trade-row-status-line");
+    if (status_line && /\brejected\b/i.test(status_line.textContent || ""))
+      return true;
+    let status_hint = row.querySelector(
+      ".text-date-hint:not(.trade-sent-date)",
+    );
+    return !!(
+      status_hint && /\brejected\b/i.test(status_hint.textContent || "")
+    );
+  }
   function does_trade_row_match_filter(e, t) {
     let filter_pass = true;
     if (e && t && "all" !== t) {
-      if ("1" !== e.dataset.nteTradeReady) return false;
-      let r = Number(e.dataset.nteTradeDelta || 0),
-        n = Number(e.dataset.nteTradeGiveCount || 0),
-        a = Number(e.dataset.nteTradeReceiveCount || 0);
-      switch (t) {
-        case "overpay":
-          filter_pass = r > 0;
-          break;
-        case "equal":
-          filter_pass = 0 === r;
-          break;
-        case "underpay":
-          filter_pass = r < 0;
-          break;
-        case "upgrade":
-          filter_pass = n > 1 && 1 === a;
-          break;
-        case "downgrade":
-          filter_pass = 1 === n && a > 1;
-          break;
-        case "robux":
-          filter_pass = "1" === e.dataset.nteTradeRobux;
-          break;
+      if ("rejected" === t) filter_pass = is_trade_row_rejected(e);
+      else {
+        if ("1" !== e.dataset.nteTradeReady) return false;
+        let r = Number(e.dataset.nteTradeDelta || 0),
+          n = Number(e.dataset.nteTradeGiveCount || 0),
+          a = Number(e.dataset.nteTradeReceiveCount || 0);
+        switch (t) {
+          case "overpay":
+            filter_pass = r > 0;
+            break;
+          case "equal":
+            filter_pass = 0 === r;
+            break;
+          case "underpay":
+            filter_pass = r < 0;
+            break;
+          case "upgrade":
+            filter_pass = n > 1 && 1 === a;
+            break;
+          case "downgrade":
+            filter_pass = 1 === n && a > 1;
+            break;
+          case "robux":
+            filter_pass = "1" === e.dataset.nteTradeRobux;
+            break;
+        }
       }
     }
     if (filter_pass && trade_search_q) {
@@ -7683,7 +7941,9 @@
       if (displays[i]) shown++;
     }
     for (let i = 0; i < total; i++) {
-      rows[i].style.display = displays[i] ? "" : "none";
+      let next_display = displays[i] ? "" : "none";
+      if (rows[i].style.display !== next_display)
+        rows[i].style.display = next_display;
     }
     let cnt = document.getElementById("nteTradeListFilterCount");
     if (cnt) cnt.textContent = `Showing ${shown}/${total}`;
@@ -7702,7 +7962,8 @@
       let row = t[i];
       let n = does_trade_row_match_filter(row, fv);
       let visible = should_show_trade_row(row, n);
-      row.style.display = visible ? "" : "none";
+      let next_display = visible ? "" : "none";
+      if (row.style.display !== next_display) row.style.display = next_display;
       if (visible) r++;
     }
     let cnt = document.getElementById("nteTradeListFilterCount");
@@ -7873,6 +8134,7 @@
     (status_line || status_hint).appendChild(a);
   }
   function remove_trade_row_decline_buttons(scope = document) {
+    let rows = new Set();
     for (let wrap of [
       ...scope.querySelectorAll(".nte-trade-row-decline-wrap"),
     ]) {
@@ -7881,7 +8143,9 @@
       row?.classList.remove("nte-trade-row-has-decline");
       wrap.remove();
       status_hint && reset_trade_row_status_hint_flex(status_hint);
+      row && rows.add(row);
     }
+    for (let row of rows) sync_trade_row_lock_position(row);
   }
   function remove_trade_row_decline_button(row) {
     if (!row?.querySelector) return;
@@ -7891,11 +8155,218 @@
     row.classList.remove("nte-trade-row-has-decline");
     row.querySelector(".nte-trade-row-decline-wrap")?.remove();
     status_hint && reset_trade_row_status_hint_flex(status_hint);
+    sync_trade_row_lock_position(row);
   }
   function is_trade_row_decline_tab() {
     let tab = get_current_trade_tab();
     return tab === "inbound" || tab === "outbound";
   }
+  const locked_trade_ids_key = "nteLockedTradeIds";
+  let locked_trade_ids_loaded = false,
+    locked_trade_ids = new Set();
+  function normalize_locked_trade_ids(ids) {
+    return (Array.isArray(ids) ? ids : [])
+      .map((id) => String(id || "").trim())
+      .filter((id, index, arr) => id && /^\d+$/.test(id) && arr.indexOf(id) === index)
+      .slice(-500);
+  }
+  function get_locked_trade_ids_local() {
+    return new Promise((resolve) => {
+      try {
+        chrome.storage.local.get([locked_trade_ids_key], (res) => {
+          resolve(normalize_locked_trade_ids(res?.[locked_trade_ids_key]));
+        });
+      } catch {
+        resolve([]);
+      }
+    });
+  }
+  async function load_locked_trade_ids() {
+    if (locked_trade_ids_loaded) return locked_trade_ids;
+    locked_trade_ids = new Set(await get_locked_trade_ids_local());
+    locked_trade_ids_loaded = true;
+    return locked_trade_ids;
+  }
+  function save_locked_trade_ids() {
+    let ids = normalize_locked_trade_ids([...locked_trade_ids]);
+    locked_trade_ids = new Set(ids);
+    try {
+      chrome.storage.local.set({ [locked_trade_ids_key]: ids }, () => {});
+    } catch {}
+  }
+  function is_trade_row_locked(trade_id) {
+    return locked_trade_ids.has(String(trade_id || "").trim());
+  }
+  function update_trade_row_lock_button(btn, locked) {
+    if (!btn) return;
+    let state = locked ? "1" : "0";
+    btn.classList.toggle("is-locked", !!locked);
+    btn.setAttribute("aria-pressed", locked ? "true" : "false");
+    btn.title = locked
+      ? "Locked: bulk decline will skip this trade"
+      : "Lock: keep this trade during bulk decline";
+    if (btn.dataset.nteLockedState === state) return;
+    btn.dataset.nteLockedState = state;
+    btn.innerHTML = locked
+      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7.5 10V7.6a4.5 4.5 0 0 1 9 0V10"/><rect x="5.4" y="10" width="13.2" height="9.3" rx="2.4"/><path d="M12 14.1v2.1"/></svg>'
+      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 10V7.7a4.2 4.2 0 0 1 7.7-2.3"/><rect x="5.4" y="10" width="13.2" height="9.3" rx="2.4"/><path d="M12 14.1v2.1"/></svg>';
+  }
+  async function toggle_trade_row_lock(row, btn) {
+    if (btn?.dataset.nteLockBusy === "1") return;
+    if (btn) btn.dataset.nteLockBusy = "1";
+    let trade_id = get_selected_trade_id_sync(row);
+    if (!trade_id) {
+      prime_trade_row_id(row);
+      trade_id = await J(row, 8);
+    }
+    try {
+      if (!trade_id) return;
+      await load_locked_trade_ids();
+      let key = String(trade_id);
+      if (locked_trade_ids.has(key)) locked_trade_ids.delete(key);
+      else locked_trade_ids.add(key);
+      save_locked_trade_ids();
+      update_trade_row_lock_button(btn, is_trade_row_locked(key));
+      sync_trade_row_lock_buttons_for_id(key);
+    } finally {
+      if (btn) delete btn.dataset.nteLockBusy;
+    }
+  }
+  function sync_trade_row_lock_buttons_for_id(trade_id) {
+    let key = String(trade_id || "");
+    for (let row of document.querySelectorAll(".trade-row-list .trade-row")) {
+      if (String(get_selected_trade_id_sync(row) || "") !== key) continue;
+      let btn = row.querySelector(".nte-trade-row-lock");
+      update_trade_row_lock_button(btn, is_trade_row_locked(key));
+    }
+  }
+  function sync_trade_row_lock_position(row) {
+    if (!row?.querySelector) return;
+    let lock_wrap = row.querySelector(".nte-trade-row-lock-wrap");
+    if (!lock_wrap) return;
+    let box = row.querySelector(".tradeListValuesBox");
+    let summary_width = box
+      ? Math.ceil(box.getBoundingClientRect().width || box.offsetWidth || 0)
+      : 0;
+    let values_gap = summary_width > 0 ? 6 : 8;
+    let right = summary_width > 0 ? summary_width + values_gap : values_gap;
+    let decline_wrap = row.querySelector(".nte-trade-row-decline-wrap");
+    if (trade_row_decline_enabled && decline_wrap) {
+      let decline_width = Math.ceil(
+        decline_wrap.getBoundingClientRect().width ||
+          decline_wrap.offsetWidth ||
+          0,
+      );
+      if (decline_width > 0) right += decline_width + 2;
+      lock_wrap.style.bottom = "4px";
+    } else {
+      if (!trade_row_decline_enabled && summary_width > 0) right = summary_width + 1;
+      lock_wrap.style.bottom = "6px";
+    }
+    lock_wrap.style.right = `${right}px`;
+  }
+  async function ensure_trade_row_lock_button(row) {
+    if (!row?.querySelector || !is_trade_row_decline_tab()) return;
+    await load_locked_trade_ids();
+    let trade_id = get_selected_trade_id_sync(row);
+    if (!trade_id) {
+      prime_trade_row_id(row);
+      trade_id = await J(row, 3);
+    }
+    if (!trade_id || !row.isConnected) return;
+    row.classList.add("nte-trade-row-lock-host");
+    for (let avatar of row.querySelectorAll(".avatar.nte-trade-row-lock-host")) {
+      avatar.classList.remove("nte-trade-row-lock-host");
+    }
+    let wrap = row.querySelector(".nte-trade-row-lock-wrap");
+    let legacy_btn =
+      row.querySelector(":scope > .nte-trade-row-lock") ||
+      row.querySelector(".avatar .nte-trade-row-lock");
+    if (legacy_btn && legacy_btn.parentElement !== wrap) {
+      legacy_btn.parentElement?.classList.remove("nte-trade-row-lock-host");
+    }
+    if (!wrap) {
+      wrap = document.createElement("div");
+      wrap.className = "nte-trade-row-lock-wrap";
+      for (let ev of ["click", "mousedown", "mouseup", "pointerup", "touchstart", "touchend", "dblclick"]) {
+        wrap.addEventListener(ev, (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+        });
+      }
+      wrap.addEventListener("pointerdown", async (event) => {
+        if (event.button && event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        let current_row = wrap.closest(".trade-row");
+        let current_btn = wrap.querySelector(".nte-trade-row-lock");
+        if (!current_row?.isConnected || !current_btn) return;
+        await toggle_trade_row_lock(current_row, current_btn);
+      });
+    }
+    let btn = wrap.querySelector(".nte-trade-row-lock") || legacy_btn;
+    if (btn && btn.dataset.nteLockBound !== "2") {
+      btn.remove();
+      btn = null;
+    }
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "nte-trade-row-lock";
+      btn.dataset.nteLockBound = "2";
+      btn.setAttribute("aria-label", "Lock trade");
+      for (let ev of ["mousedown", "mouseup", "pointerup", "touchstart", "touchend", "dblclick"]) {
+        btn.addEventListener(ev, (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation();
+        });
+      }
+      btn.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        if (event.detail !== 0) return;
+        let current_row = wrap.closest(".trade-row");
+        if (!current_row?.isConnected) return;
+        await toggle_trade_row_lock(current_row, btn);
+      });
+    }
+    if (btn.parentElement !== wrap) wrap.appendChild(btn);
+    if (wrap.parentElement !== row) row.appendChild(wrap);
+    sync_trade_row_lock_position(row);
+    update_trade_row_lock_button(btn, is_trade_row_locked(trade_id));
+  }
+  function remove_trade_row_lock_buttons(scope = document) {
+    for (let wrap of [...scope.querySelectorAll(".nte-trade-row-lock-wrap")]) {
+      wrap.remove();
+    }
+    for (let btn of [...scope.querySelectorAll(".nte-trade-row-lock")]) {
+      btn.remove();
+    }
+    for (let row of [...scope.querySelectorAll(".trade-row.nte-trade-row-lock-host")]) {
+      row.classList.remove("nte-trade-row-lock-host");
+    }
+  }
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local" || !changes[locked_trade_ids_key]) return;
+      locked_trade_ids = new Set(
+        normalize_locked_trade_ids(changes[locked_trade_ids_key].newValue),
+      );
+      locked_trade_ids_loaded = true;
+      for (let row of document.querySelectorAll(".trade-row-list .trade-row")) {
+        let trade_id = get_selected_trade_id_sync(row);
+        if (!trade_id) continue;
+        update_trade_row_lock_button(
+          row.querySelector(".nte-trade-row-lock"),
+          is_trade_row_locked(trade_id),
+        );
+      }
+    });
+  } catch {}
   let trade_row_decline_prime_started = false;
   let trade_row_decline_enabled = true;
   function prime_trade_row_decline() {
@@ -8130,6 +8601,7 @@
     wrap.style.right =
       summary_width > 0 ? `${summary_width + gap}px` : `${gap}px`;
     wrap.style.bottom = "6px";
+    sync_trade_row_lock_position(row);
   }
   function ensure_trade_row_decline_button(row) {
     if (!row?.querySelector) return;
@@ -8235,6 +8707,7 @@
     let quick_decline_tab =
       trade_row_decline_enabled && is_trade_row_decline_tab();
     quick_decline_tab && prime_trade_row_decline();
+    if (!is_trade_row_decline_tab()) remove_trade_row_lock_buttons();
     document.getElementById("nteTradeListFilter") ||
       ensure_trade_list_filter_ui() ||
       document.getElementById("nteTradeListFilterEmpty")?.remove();
@@ -8268,7 +8741,12 @@
           rows.map((row) => sync_trade_row_decline_button(row, saved_trades)),
         );
       } else remove_trade_row_decline_buttons();
-      return apply_trade_list_filter();
+      if (is_trade_row_decline_tab()) {
+        await Promise.all(rows.map((row) => ensure_trade_row_lock_button(row)));
+      }
+      apply_trade_list_filter();
+      schedule_trade_list_filter_backfill();
+      return;
     }
     await c.waitForElm(".trade-row"),
       nte_send_message("getTradeListData", async function (r) {
@@ -8278,6 +8756,7 @@
         async function t(t, n) {
           if (!t?.isConnected) return;
           show_profile_links && ensure_trade_row_rolimons_link(t);
+          is_trade_row_decline_tab() && ensure_trade_row_lock_button(t);
           let a = t.getAttribute("nruTradeId");
           a || (await H(t, n));
           a = await J(t);
@@ -8318,7 +8797,8 @@
           }
           if (((i += l.offers[1]?.robux || 0), !e)) {
             t.querySelector(".tradeListValuesBox")?.remove();
-            quick_decline_tab && sync_trade_row_decline_position(t);
+            if (quick_decline_tab) sync_trade_row_decline_position(t);
+            else if (is_trade_row_decline_tab()) sync_trade_row_lock_position(t);
             return;
           }
           t.querySelector(".tradeListValuesBox")?.remove();
@@ -8408,7 +8888,8 @@
               ((m.dataset.ntePositionFixed = "1"),
               (m.style.position = "relative")),
             m.appendChild(box));
-          quick_decline_tab && sync_trade_row_decline_position(t);
+          if (quick_decline_tab) sync_trade_row_decline_position(t);
+          else if (is_trade_row_decline_tab()) sync_trade_row_lock_position(t);
         }
         r || (r = {});
         get_current_trade_tab() !== "completed" && prefetch_uncached_trades(r);
@@ -8417,6 +8898,7 @@
         );
         for (let e = 0; e < n.length; e++) t(n[e], e);
         apply_trade_list_filter();
+        schedule_trade_list_filter_backfill();
         show_profile_links && c.initTooltips();
       });
   }
@@ -8444,6 +8926,13 @@
     );
   }
 
+  function is_trade_list_page() {
+    let path = window.location.pathname.toLowerCase().replace(/\/+$/, "");
+    return (
+      path === "/trades" || /^\/[a-z]{2}(?:-[a-z]{2})?\/trades$/.test(path)
+    );
+  }
+
   function build_trade_list_signature(type, trades) {
     if (!trades.length) return `${type}|empty`;
     return `${type}|${trades[0].id}|${trades.length}|${trades[trades.length - 1].id}`;
@@ -8454,7 +8943,7 @@
   }
 
   async function fetch_trade_list_page(type, cursor = "") {
-    if (get_current_trade_tab() !== type) return null;
+    if (!is_trade_list_page() || get_current_trade_tab() !== type) return null;
     let url = `https://trades.roblox.com/v1/trades/${type}?limit=100&sortOrder=Desc`;
     if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
     let resp = await fetch_trade_api(url, { credentials: "include" });
@@ -8496,7 +8985,7 @@
   }
 
   async function prefetch_uncached_trades(cached) {
-    if (prefetch_running || document.hidden) return;
+    if (!is_trade_list_page() || prefetch_running || document.hidden) return;
     let type = get_current_trade_tab();
     if (type === prefetch_last_tab && Date.now() - prefetch_last_time < 120000)
       return;
@@ -9103,34 +9592,40 @@
       .nte-sales-chart-point-tooltip.is-dark{background:rgba(24,26,30,.97); color:#eceef1}
       .nte-sales-chart-point-tooltip.is-light{background:rgba(255,255,255,.97); color:#1f2937; border-color:rgba(15,23,42,.12)}
       .nte-sales-hover-btn{
-        position:absolute; top:6px; left:6px; z-index:7; width:25px; height:25px; border-radius:999px;
+        position:absolute; top:6px; left:6px; z-index:7; width:22px; height:22px; padding:0; border-radius:6px;
         display:flex; align-items:center; justify-content:center; cursor:pointer; box-sizing:border-box;
-        padding:0; appearance:none; -webkit-appearance:none; font:inherit; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
-        background:#494d5a; border:1px solid rgba(255,255,255,.1);
-        box-shadow:0 4px 10px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.09);
-        color:#f4d06f;
+        appearance:none; -webkit-appearance:none; font:inherit; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+        background:linear-gradient(180deg,rgba(58,61,68,.9),rgba(42,44,50,.92));
+        border:1px solid rgba(255,255,255,.1);
+        box-shadow:0 2px 7px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.07);
+        backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+        color:#f0c456;
         transition:transform .12s ease, background .12s ease, border-color .12s ease, box-shadow .12s ease, color .12s ease;
       }
       .nte-sales-hover-btn:hover{
-        transform:scale(1.08);
-        background:#727375;
-        border-color:rgba(255,255,255,.18);
-        box-shadow:0 6px 14px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.13);
-        color:#ffe39a;
+        transform:scale(1.07);
+        background:linear-gradient(180deg,rgba(70,73,80,.94),rgba(50,52,58,.95));
+        border-color:rgba(240,196,86,.28);
+        box-shadow:0 3px 9px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.09);
+        color:#ffe08a;
       }
       .nte-sales-hover-btn.is-pressed,.nte-rap-signal-btn.is-pressed{transform:scale(.9)!important}
-      .nte-sales-hover-btn svg{width:15px;height:15px;display:block;overflow:visible}
-      .nte-sales-hover-btn-glyph{fill:none;stroke:currentColor;stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round}
+      .nte-sales-hover-btn svg{width:13px;height:13px;display:block;overflow:visible}
+      .nte-sales-hover-btn-glyph{
+        fill:none;stroke:currentColor;stroke-width:2.15;stroke-linecap:round;stroke-linejoin:round;
+      }
       .light-theme .nte-sales-hover-btn{
-        background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(235,238,244,.98));
-        border:1px solid rgba(31,41,55,.12);
-        box-shadow:0 4px 10px rgba(15,23,42,.12), inset 0 1px 0 rgba(255,255,255,.8);
-        color:#b7791f;
+        background:linear-gradient(180deg,rgba(72,76,84,.84),rgba(56,59,66,.88));
+        border:1px solid rgba(255,255,255,.12);
+        box-shadow:0 2px 7px rgba(15,23,42,.18), inset 0 1px 0 rgba(255,255,255,.08);
+        color:#f5c84a;
+        backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);
       }
       .light-theme .nte-sales-hover-btn:hover{
-        background:linear-gradient(180deg,#fff,rgba(242,245,250,.98));
-        border-color:rgba(31,41,55,.18);
-        color:#975a16;
+        background:linear-gradient(180deg,rgba(82,86,94,.9),rgba(62,65,72,.92));
+        border-color:rgba(245,200,74,.3);
+        color:#ffe08a;
+        box-shadow:0 3px 9px rgba(15,23,42,.2), inset 0 1px 0 rgba(255,255,255,.1);
       }
       .nte-rap-signal-btn{
         position:absolute; top:4px; right:4px; z-index:8; width:30px; height:30px;
@@ -9166,19 +9661,39 @@
       .nte-sales-hover-usd{color:#f4cc66;font-weight:800}
       .light-theme .nte-sales-hover-usd{color:#b7791f}
       .nte-trade-row-status-line{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:4px}
+      .trade-row.nte-trade-row-lock-host{position:relative}
+      .nte-trade-row-lock-wrap{
+        position:absolute;top:auto;left:auto;right:1px;bottom:6px;z-index:2;width:24px;height:24px;
+        display:flex;align-items:center;justify-content:center;box-sizing:border-box;
+        pointer-events:auto;isolation:isolate;cursor:pointer;
+      }
+      .nte-trade-row-lock{
+        position:relative;top:auto;left:auto;
+        width:18px;height:18px;padding:0;border-radius:6px;border:1px solid rgba(148,163,184,.18);
+        display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;cursor:pointer;
+        appearance:none;-webkit-appearance:none;background:rgba(148,163,184,.08);color:#94a3b8;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 2px 6px rgba(0,0,0,.18);
+        transition:background .14s ease,border-color .14s ease,color .14s ease,box-shadow .14s ease;
+      }
+      .nte-trade-row-lock svg{width:12px;height:12px;display:block;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+      .nte-trade-row-lock:hover{background:rgba(148,163,184,.14);border-color:rgba(148,163,184,.28);color:#e2e8f0}
+      .nte-trade-row-lock.is-locked{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.34);color:#f6c453;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 0 1px rgba(245,158,11,.08),0 2px 6px rgba(0,0,0,.18)}
+      .nte-trade-row-lock.is-locked:hover{background:rgba(245,158,11,.22);border-color:rgba(245,158,11,.46);color:#ffe08a}
+      .light-theme .nte-trade-row-lock{background:rgba(15,23,42,.04);border-color:rgba(100,116,139,.18);color:#64748b;box-shadow:inset 0 1px 0 rgba(255,255,255,.82)}
+      .light-theme .nte-trade-row-lock:hover{background:rgba(15,23,42,.07);border-color:rgba(100,116,139,.26);color:#334155}
+      .light-theme .nte-trade-row-lock.is-locked{background:rgba(245,158,11,.14);border-color:rgba(217,119,6,.28);color:#b7791f}
       .trade-row.nte-trade-row-has-decline{position:relative}
       .nte-trade-row-decline-wrap{
         position:absolute;top:auto;right:8px;bottom:6px;left:auto;transform:none;
         display:inline-flex;align-items:center;justify-content:flex-end;width:auto;max-width:100%;margin-top:0;line-height:1;z-index:2;
       }
       .nte-trade-row-decline{
-        min-width:0;min-height:20px;padding:0 9px;border-radius:999px;border:1px solid rgba(148,163,184,.16);
-        background:linear-gradient(180deg,rgba(30,41,59,.34),rgba(15,23,42,.28));color:#cbd5e1;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+        min-width:0;min-height:20px;padding:0 9px;border-radius:999px;border:1px solid rgba(148,163,184,.18);
+        background:rgba(148,163,184,.08);color:#cbd5e1;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 2px 6px rgba(0,0,0,.18);
         display:inline-flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;
         appearance:none;-webkit-appearance:none;font:inherit;font-size:10px;font-weight:700;letter-spacing:.01em;line-height:1;
         transition:background .14s ease, border-color .14s ease, box-shadow .14s ease, color .14s ease, opacity .14s ease;
-        backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
       }
       .nte-trade-row-decline:hover{
         background:linear-gradient(180deg,rgba(127,29,29,.24),rgba(69,10,10,.18));
@@ -9195,8 +9710,8 @@
         background:linear-gradient(180deg,rgba(180,83,9,.24),rgba(120,53,15,.18));border-color:rgba(253,186,116,.26);color:#ffedd5;
       }
       .light-theme .nte-trade-row-decline{
-        background:linear-gradient(180deg,rgba(255,255,255,.95),rgba(248,250,252,.92));border-color:rgba(148,163,184,.18);color:#64748b;
-        box-shadow:inset 0 1px 0 rgba(255,255,255,.92),0 1px 2px rgba(15,23,42,.03);
+        background:rgba(15,23,42,.04);border-color:rgba(100,116,139,.18);color:#64748b;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.82);
       }
       .light-theme .nte-trade-row-decline:hover{
         background:linear-gradient(180deg,rgba(255,250,250,.98),rgba(254,242,242,.96));border-color:rgba(239,68,68,.22);color:#b91c1c;box-shadow:inset 0 1px 0 rgba(255,255,255,.96),0 2px 6px rgba(15,23,42,.05);
@@ -9221,8 +9736,8 @@
         padding:14px 14px calc(14px + env(safe-area-inset-bottom,0px));
       }
       @media (hover:none), (pointer:coarse), (max-width: 700px) {
-        .nte-sales-hover-btn { width:28px; height:28px; top:3px; left:3px; box-shadow:0 4px 10px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.09); }
-        .nte-sales-hover-btn svg{width:13px;height:13px}
+        .nte-sales-hover-btn { width:24px; height:24px; top:3px; left:3px; border-radius:6px; }
+        .nte-sales-hover-btn svg{width:14px;height:14px}
         .nte-rap-signal-btn { width:32px; height:32px; top:2px; right:2px; }
         .item-card-link.nte-has-flag.nte-flag-side-left.nte-has-rap-signal .nte-sales-hover-btn{left:auto;right:3px;top:33px}
         .item-card-link.nte-has-flag.nte-flag-side-left:not(.nte-has-rap-signal) .nte-sales-hover-btn{left:auto;right:3px;top:3px}
@@ -10441,7 +10956,7 @@
     btn.setAttribute("title", "Sale data");
     btn.tabIndex = 0;
     btn.innerHTML =
-      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path class="nte-sales-hover-btn-glyph" d="M12 4.7v14.6M15.9 7.6h-4.3a2.2 2.2 0 0 0 0 4.4h1.1a2.2 2.2 0 1 1 0 4.4H8.1"/></svg>';
+      '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path class="nte-sales-hover-btn-glyph" d="M12 5.2v13.6"/><path class="nte-sales-hover-btn-glyph" d="M15.1 8.5c0-1.6-1.2-2.5-3.1-2.5-2 0-3.4 1.1-3.4 2.7 0 2 1.6 2.5 3.4 2.8 1.9.3 3.4.9 3.4 2.9 0 1.7-1.4 2.8-3.5 2.8-2.1 0-3.5-1.1-3.5-2.8"/></svg>';
     wire_trade_thumb_button_press(btn);
     btn.addEventListener("mousedown", (ev) => {
       ev.preventDefault();
@@ -10619,11 +11134,13 @@
   }
   let nte_trade_dominance_frame = 0;
   let nte_trade_dominance_last_run = 0;
+  let trade_dominance_last_back_off = null;
+  let trade_dominance_last_fight = null;
   const NTE_TRADE_DOMINANCE_THROTTLE_MS = 500;
   let trade_interference_cache = null;
   let trade_interference_cache_time = 0;
   const TRADE_INTERFERENCE_CACHE_MS = 1000;
-  function is_trade_overlay_visible(el) {
+  function is_trade_element_visible_cheap(el) {
     if (
       !(el instanceof Element) ||
       !el.isConnected ||
@@ -10632,6 +11149,24 @@
       el.classList?.contains("ng-hide")
     )
       return false;
+    if ("none" === el.style.display || "hidden" === el.style.visibility)
+      return false;
+    return true;
+  }
+  function read_trade_element_rect(el) {
+    if (!is_trade_element_visible_cheap(el)) return null;
+    let style = getComputedStyle(el);
+    if (
+      "none" === style.display ||
+      "hidden" === style.visibility ||
+      Number(style.opacity || "1") < 0.05
+    )
+      return null;
+    let rect = el.getBoundingClientRect();
+    return rect.width < 4 || rect.height < 4 ? null : rect;
+  }
+  function is_trade_overlay_visible(el) {
+    if (!is_trade_element_visible_cheap(el)) return false;
     let style = getComputedStyle(el);
     if (
       "none" === style.display ||
@@ -10639,8 +11174,9 @@
       Number(style.opacity || "1") < 0.05
     )
       return false;
-    let rect = el.getBoundingClientRect();
-    return !(rect.width < 90 || rect.height < 90);
+    let w = el.offsetWidth,
+      h = el.offsetHeight;
+    return w >= 90 && h >= 90;
   }
   function is_trade_modal_like(el) {
     if (!is_trade_overlay_visible(el)) return false;
@@ -10656,11 +11192,18 @@
     return !isNaN(z_index) && z_index >= 100;
   }
   function has_active_trade_modal() {
+    if (
+      document.querySelector(
+        '.account-switcher-modal[data-state="open"], .foundation-web-dialog-overlay[data-state="open"]',
+      )
+    )
+      return true;
     let selectors = [
       "dialog[open]",
       "#nte-totp-unlock-dialog[open]",
       "[role='dialog'][aria-modal='true']",
       "[aria-modal='true']",
+      "[role='dialog'][data-state='open']",
       ".modal-dialog",
       ".rbx-modal",
       ".ReactModal__Content",
@@ -10675,16 +11218,34 @@
   }
   function trade_rects_overlap(a, b, padding = 2) {
     if (!(a instanceof Element) || !(b instanceof Element)) return false;
-    let r1 = a.getBoundingClientRect(),
-      r2 = b.getBoundingClientRect();
-    if (r1.width < 4 || r1.height < 4 || r2.width < 4 || r2.height < 4)
-      return false;
+    let r1 = read_trade_element_rect(a),
+      r2 = read_trade_element_rect(b);
+    return !!(r1 && r2 && trade_rects_overlap_values(r1, r2, padding));
+  }
+  function trade_rects_overlap_values(r1, r2, padding = 2) {
     return !(
       r1.right <= r2.left + padding ||
       r1.left >= r2.right - padding ||
       r1.bottom <= r2.top + padding ||
       r1.top >= r2.bottom - padding
     );
+  }
+  function get_trade_interference_search_roots() {
+    let roots = [];
+    let detail = document.querySelector(".trades-list-detail");
+    if (detail) roots.push(detail);
+    let counter = document.querySelector(".trade-request-window");
+    if (counter) roots.push(counter);
+    let selected = document.querySelector(".trade-row-list .trade-row.selected");
+    if (selected) roots.push(selected);
+    if (!roots.length && is_trade_list_page()) {
+      let rows = [
+        ...document.querySelectorAll(".trade-row-list .trade-row"),
+      ];
+      roots = filter_trade_rows_in_viewport(rows, 180, 280).slice(0, 24);
+      if (!roots.length && rows.length) roots = [rows[0]];
+    }
+    return roots.length ? roots : [document];
   }
   function get_trade_interference_targets() {
     let selectors = [
@@ -10709,18 +11270,25 @@
       ".rovalk-search-overlay",
     ];
     let targets = [];
-    for (let el of document.querySelectorAll(selectors.join(","))) {
-      if (!is_trade_overlay_visible(el)) continue;
-      if (el.closest?.(".nte-history-panel,.nte-sales-hover-panel")) continue;
-      targets.push(el);
+    for (let root of get_trade_interference_search_roots()) {
+      for (let el of root.querySelectorAll(selectors.join(","))) {
+        if (!is_trade_element_visible_cheap(el)) continue;
+        if (el.closest?.(".nte-history-panel,.nte-sales-hover-panel")) continue;
+        targets.push(el);
+      }
     }
     return targets;
   }
   function has_trade_interference() {
     let now = Date.now();
+    let cache_ms = TRADE_INTERFERENCE_CACHE_MS;
+    if (
+      document.querySelectorAll(".trade-row-list .trade-row").length > 120
+    )
+      cache_ms = 3500;
     if (
       trade_interference_cache !== null &&
-      now - trade_interference_cache_time < TRADE_INTERFERENCE_CACHE_MS
+      now - trade_interference_cache_time < cache_ms
     )
       return trade_interference_cache;
     let targets = get_trade_interference_targets();
@@ -10729,17 +11297,33 @@
       trade_interference_cache_time = now;
       return false;
     }
-    let ours = document.querySelectorAll(
-      ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn,.nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link,.nte-history-panel,.nte-sales-hover-panel,.nte-sales-chart-point-tooltip",
-    );
+    let target_rects = [];
+    for (let target of targets) {
+      let rect = read_trade_element_rect(target);
+      if (rect) target_rects.push(rect);
+    }
+    if (!target_rects.length) {
+      trade_interference_cache = false;
+      trade_interference_cache_time = now;
+      return false;
+    }
+    let ours = [];
+    for (let root of get_trade_interference_search_roots()) {
+      for (let el of root.querySelectorAll(
+        ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn,.nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link,.nte-history-panel,.nte-sales-hover-panel,.nte-sales-chart-point-tooltip",
+      ))
+        ours.push(el);
+    }
     for (let own of ours) {
-      if (!is_trade_overlay_visible(own)) continue;
-      for (let target of targets)
-        if (trade_rects_overlap(own, target)) {
+      let r1 = read_trade_element_rect(own);
+      if (!r1) continue;
+      for (let r2 of target_rects) {
+        if (trade_rects_overlap_values(r1, r2)) {
           trade_interference_cache = true;
           trade_interference_cache_time = now;
           return true;
         }
+      }
     }
     trade_interference_cache = false;
     trade_interference_cache_time = now;
@@ -10753,18 +11337,25 @@
     let style = document.createElement("style");
     style.id = "nte-trade-dominance-style";
     style.textContent = `
-      .trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row{overflow:visible!important}
+      .trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row{overflow:visible!important}
       .trade-buttons .nte-history-btn,
       .trade-buttons .nte-analyze-trade-btn,
       .trade-buttons .nte-poison-btn,
       .nte-history-fallback-row .nte-history-btn,
       .nte-history-fallback-row .nte-analyze-trade-btn,
       .nte-poison-fallback-row .nte-analyze-trade-btn,
-      .nte-poison-fallback-row .nte-poison-btn{position:relative!important;pointer-events:auto!important;isolation:isolate!important}
-      .nte-history-fallback-row,.nte-poison-fallback-row{position:relative!important;isolation:isolate!important}
+      .nte-poison-fallback-row .nte-poison-btn,
+      .nte-trade-request-analyze-row .nte-analyze-trade-btn{position:relative!important;pointer-events:auto!important;isolation:isolate!important}
+      .nte-trade-row-lock-wrap,.nte-trade-row-lock{pointer-events:auto!important;isolation:isolate!important}
+      .nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row{position:relative!important;isolation:isolate!important}
       .nte-history-panel,.nte-sales-hover-panel,.nte-sales-chart-point-tooltip{pointer-events:auto!important;isolation:isolate!important}
       .nte-history-panel{position:relative!important}
       .item-card-container,.item-card-link,.item-card-thumb-container,.trade-request-item{overflow:visible!important}
+      .item-card-link,.item-card-container,.trade-request-item{position:relative!important}
+      .item-card-thumb-container,.trade-request-item .item-card-thumb-container{position:relative!important;overflow:hidden!important;z-index:0!important}
+      .item-card-thumb-container thumbnail-2d,.item-card-thumb-container .thumbnail-2d-container,.item-card-link thumbnail-2d,.item-card-container thumbnail-2d,.trade-request-item thumbnail-2d{z-index:0!important}
+      .item-card-thumb-container .thumbnail-2d-container img,.item-card-link .thumbnail-2d-container img,.item-card-container .thumbnail-2d-container img,.trade-request-item .thumbnail-2d-container img{position:static!important}
+      .item-card-container .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.item-card-link .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.item-card-thumb-container .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.trade-request-item .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.item-card-container .limited-number-container,.item-card-link .limited-number-container,.item-card-thumb-container .limited-number-container,.trade-request-item .limited-number-container,.trades-list-detail .limited-number-container,.item-card-container .item-card-holding,.item-card-link .item-card-holding,.item-card-thumb-container .item-card-holding,.trade-request-item .item-card-holding,.trades-list-detail .item-card-holding,.item-card-container .item-card-equipped,.item-card-link .item-card-equipped,.item-card-thumb-container .item-card-equipped,.trade-request-item .item-card-equipped,.trades-list-detail .item-card-equipped{z-index:6!important}
       .item-card-container .nte-sales-hover-btn,.item-card-link .nte-sales-hover-btn,.item-card-thumb-container .nte-sales-hover-btn,.trade-request-item .nte-sales-hover-btn,
       .item-card-container .nte-rap-signal-btn,.item-card-link .nte-rap-signal-btn,.item-card-thumb-container .nte-rap-signal-btn,.trade-request-item .nte-rap-signal-btn,
       .item-card-container .nte-rolimons-thumb-link,.item-card-link .nte-rolimons-thumb-link,.item-card-thumb-container .nte-rolimons-thumb-link,.trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]),
@@ -10775,8 +11366,10 @@
       html.nte-trade-ui-fight .nte-history-fallback-row .nte-history-btn,
       html.nte-trade-ui-fight .nte-history-fallback-row .nte-analyze-trade-btn,
       html.nte-trade-ui-fight .nte-poison-fallback-row .nte-analyze-trade-btn,
+      html.nte-trade-ui-fight .nte-trade-request-analyze-row .nte-analyze-trade-btn,
       html.nte-trade-ui-fight .nte-poison-fallback-row .nte-poison-btn{z-index:2147483588!important}
-      html.nte-trade-ui-fight .nte-history-fallback-row,html.nte-trade-ui-fight .nte-poison-fallback-row{z-index:2147483586!important}
+      html.nte-trade-ui-fight .nte-history-fallback-row,html.nte-trade-ui-fight .nte-poison-fallback-row,html.nte-trade-ui-fight .nte-trade-request-analyze-row{z-index:2147483586!important}
+      html.nte-trade-ui-fight .nte-trade-row-lock-wrap{z-index:2147483587!important}
       html.nte-trade-ui-fight .nte-history-panel{z-index:2147483610!important}
       html.nte-trade-ui-fight .nte-sales-hover-panel{z-index:2147483612!important}
       html.nte-trade-ui-fight .nte-sales-chart-point-tooltip{z-index:2147483613!important}
@@ -10789,8 +11382,64 @@
       html.nte-trade-ui-backoff .item-card-container .nte-rolimons-thumb-link,html.nte-trade-ui-backoff .item-card-link .nte-rolimons-thumb-link,html.nte-trade-ui-backoff .item-card-thumb-container .nte-rolimons-thumb-link,html.nte-trade-ui-backoff .trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]),
       html.nte-trade-ui-backoff .item-card-container .nte-uaid-thumb-link,html.nte-trade-ui-backoff .item-card-link .nte-uaid-thumb-link,html.nte-trade-ui-backoff .item-card-thumb-container .nte-uaid-thumb-link,html.nte-trade-ui-backoff .trade-request-item .nte-uaid-thumb-link{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transform:none!important}
       html.nte-trade-ui-backoff .nte-sales-hover-panel,html.nte-trade-ui-backoff .nte-sales-chart-point-tooltip{display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
+      html.nte-trade-ui-backoff .trade-buttons .nte-history-btn,html.nte-trade-ui-backoff .trade-buttons .nte-analyze-trade-btn,html.nte-trade-ui-backoff .trade-buttons .nte-poison-btn,html.nte-trade-ui-backoff .nte-history-fallback-row .nte-history-btn,html.nte-trade-ui-backoff .nte-history-fallback-row .nte-analyze-trade-btn,html.nte-trade-ui-backoff .nte-poison-fallback-row .nte-analyze-trade-btn,html.nte-trade-ui-backoff .nte-trade-request-analyze-row .nte-analyze-trade-btn,html.nte-trade-ui-backoff .nte-poison-fallback-row .nte-poison-btn{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;filter:none!important}
+      html.nte-trade-ui-backoff .nte-history-fallback-row,html.nte-trade-ui-backoff .nte-poison-fallback-row,html.nte-trade-ui-backoff .nte-trade-request-analyze-row{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
+      html.nte-trade-ui-backoff .nte-trade-row-lock-wrap,html.nte-trade-ui-backoff .nte-trade-row-decline-wrap{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
+      html.nte-trade-ui-backoff #winLossStatsContainer{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
+      html.nte-trade-ui-backoff .nte-history-panel{display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
     `;
     document.head.appendChild(style);
+    ensure_trade_modal_watch();
+  }
+  let nte_trade_modal_watch_bound = false;
+  function ensure_trade_modal_watch() {
+    if (nte_trade_modal_watch_bound) return;
+    nte_trade_modal_watch_bound = true;
+    let modal_selector =
+      '.account-switcher-modal, .foundation-web-dialog-overlay, [role="dialog"]';
+    let schedule_modal_dominance = () => assert_trade_page_dominance();
+    new MutationObserver((records) => {
+      for (let record of records) {
+        if (
+          "attributes" === record.type &&
+          ("data-state" === record.attributeName ||
+            "open" === record.attributeName ||
+            "aria-hidden" === record.attributeName)
+        ) {
+          if (record.target?.matches?.(modal_selector)) {
+            schedule_modal_dominance();
+            return;
+          }
+          continue;
+        }
+        if ("childList" !== record.type) continue;
+        for (let node of record.addedNodes) {
+          if (1 !== node.nodeType) continue;
+          if (
+            node.matches?.(modal_selector) ||
+            node.querySelector?.(modal_selector)
+          ) {
+            schedule_modal_dominance();
+            return;
+          }
+        }
+        for (let node of record.removedNodes) {
+          if (1 !== node.nodeType) continue;
+          if (
+            node.matches?.(modal_selector) ||
+            node.querySelector?.(modal_selector)
+          ) {
+            schedule_modal_dominance();
+            return;
+          }
+        }
+      }
+    }).observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-state", "open", "aria-hidden"],
+    });
   }
   function set_trade_style(el, property, value, priority = "") {
     if (!el?.style) return;
@@ -10856,6 +11505,43 @@
       return;
     container.insertBefore(btn, desired_next);
   }
+  function get_trade_dominance_card_hosts() {
+    let hosts = [];
+    let detail = document.querySelector(".trades-list-detail");
+    if (detail) hosts.push(detail);
+    let counter = document.querySelector(".trade-request-window");
+    if (counter) hosts.push(counter);
+    if (!hosts.length && is_trade_list_page()) {
+      let selected = document.querySelector(".trade-row-list .trade-row.selected");
+      if (selected) hosts.push(selected);
+    }
+    if (!hosts.length) {
+      return [
+        ...document.querySelectorAll(
+          ".item-card-container,.item-card-link,.item-card-thumb-container,.trade-request-item",
+        ),
+      ];
+    }
+    let out = [];
+    for (let host of hosts) {
+      for (let el of host.querySelectorAll(
+        ".item-card-container,.item-card-link,.item-card-thumb-container,.trade-request-item",
+      ))
+        out.push(el);
+    }
+    return out;
+  }
+  function get_trade_dominance_thumb_buttons() {
+    let roots = get_trade_interference_search_roots();
+    let out = [];
+    for (let root of roots) {
+      for (let el of root.querySelectorAll(
+        ".nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link",
+      ))
+        out.push(el);
+    }
+    return out;
+  }
   function assert_trade_page_dominance() {
     nte_trade_dominance_frame &&
       cancelAnimationFrame(nte_trade_dominance_frame);
@@ -10877,6 +11563,14 @@
         "nte-trade-ui-fight",
         fight_mode,
       );
+      if (
+        fight_mode === trade_dominance_last_fight &&
+        back_off_thumb_ui === trade_dominance_last_back_off &&
+        !fight_mode
+      )
+        return;
+      trade_dominance_last_fight = fight_mode;
+      trade_dominance_last_back_off = back_off_thumb_ui;
       if (back_off_thumb_ui) {
         clearTimeout(nte_trade_sales_hover_hide_timer);
         clearTimeout(nte_trade_sales_hover_show_timer);
@@ -10884,12 +11578,10 @@
         schedule_trade_sales_hover_hide(0);
       }
       for (let el of document.querySelectorAll(
-        ".trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row",
+        ".trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row",
       ))
         set_trade_style(el, "overflow", "visible", "important");
-      for (let el of document.querySelectorAll(
-        ".item-card-container,.item-card-link,.item-card-thumb-container,.trade-request-item",
-      )) {
+      for (let el of get_trade_dominance_card_hosts()) {
         set_trade_style(el, "overflow", "visible", "important");
         if (!el.dataset.ntePositionFixed) {
           el.dataset.ntePositionFixed = "1";
@@ -10906,9 +11598,12 @@
           : clear_trade_dominant(el);
         sync_trade_button_position(el);
       }
-      for (let el of document.querySelectorAll(
-        ".nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link",
-      )) {
+      for (let el of document.querySelectorAll(".nte-trade-row-lock-wrap")) {
+        fight_mode
+          ? mark_trade_dominant(el, 2147483587)
+          : clear_trade_dominant(el);
+      }
+      for (let el of get_trade_dominance_thumb_buttons()) {
         if (
           el.classList?.contains("nte-rolimons-thumb-link") &&
           el.dataset.nteInlineLink === "1"
@@ -11003,6 +11698,8 @@
     sync_mobile_trade_inventory_scroll();
     if (typeof inject_trade_history_button === "function")
       inject_trade_history_button();
+    if (typeof inject_trade_request_analyze_button === "function")
+      inject_trade_request_analyze_button();
     if (typeof schedule_ownership_check === "function")
       schedule_ownership_check();
     assert_trade_page_dominance();
@@ -11020,6 +11717,80 @@
           ((robux_input.dataset.nteTradeRefreshBound = "1"),
           robux_input.addEventListener("input", e));
   }
+  let trade_ad_offer_robux_autofill_done = false,
+    trade_ad_offer_robux_autofill_attempts = 0,
+    trade_ad_offer_robux_autofill_timer = 0;
+  function get_trade_ad_offer_robux_param() {
+    try {
+      let amount = Math.max(
+        0,
+        Math.floor(
+          Number(new URLSearchParams(location.search).get("nte_offer_robux")) ||
+            0,
+        ),
+      );
+      return Number.isFinite(amount) ? amount : 0;
+    } catch {
+      return 0;
+    }
+  }
+  function dispatch_trade_ad_robux_input_events(input) {
+    for (let type of ["input", "change", "blur"]) {
+      try {
+        input.dispatchEvent(new Event(type, { bubbles: true }));
+      } catch {}
+    }
+  }
+  function set_trade_ad_robux_input_value(input, amount) {
+    let value = String(Math.max(0, Math.floor(Number(amount) || 0)));
+    try {
+      let setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter ? setter.call(input, value) : (input.value = value);
+    } catch {
+      input.value = value;
+    }
+    dispatch_trade_ad_robux_input_events(input);
+  }
+  function get_trade_ad_offer_robux_input() {
+    let offers = document.querySelectorAll(".trade-request-window-offer");
+    if (offers[1]) {
+      let input = offers[1].querySelector('[name="robux"]');
+      if (input) return input;
+    }
+    let inputs = document.querySelectorAll(
+      '.trade-request-window [name="robux"], [name="robux"]',
+    );
+    return inputs.length ? inputs[inputs.length - 1] : null;
+  }
+  function apply_trade_ad_offer_robux_param() {
+    if (trade_ad_offer_robux_autofill_done) return;
+    let amount = get_trade_ad_offer_robux_param();
+    if (!(amount > 0)) {
+      trade_ad_offer_robux_autofill_done = true;
+      return;
+    }
+    let input = get_trade_ad_offer_robux_input();
+    if (!input) {
+      if (++trade_ad_offer_robux_autofill_attempts <= 30) {
+        clearTimeout(trade_ad_offer_robux_autofill_timer);
+        trade_ad_offer_robux_autofill_timer = setTimeout(
+          apply_trade_ad_offer_robux_param,
+          250,
+        );
+      }
+      return;
+    }
+    set_trade_ad_robux_input_value(input, amount);
+    trade_ad_offer_robux_autofill_done = true;
+    try {
+      let url = new URL(location.href);
+      url.searchParams.delete("nte_offer_robux");
+      history.replaceState(history.state, "", url.toString());
+    } catch {}
+  }
   console.info(
     `%c${c.getExtensionTitle()} v${chrome.runtime.getManifest().version} has started!`,
     "color: #0084DD",
@@ -11028,6 +11799,7 @@
     "%cJoin our Discord: discord.gg/4XWE7yy2uE",
     "color: #5865F2; font-weight: bold",
   );
+  apply_trade_ad_offer_robux_param();
   c.refreshData(N);
   (async () => {
     let e = await c.waitForElm(".trades-container");
@@ -11187,9 +11959,13 @@
     }
     if (trade_ui_refresh_messages.includes(e)) N();
     if (e === "Show Quick Decline Button") L();
-    if (e === "Analyze Trade") inject_trade_history_button();
+    if (e === "Analyze Trade") {
+      inject_trade_history_button();
+      inject_trade_request_analyze_button();
+    }
     if (e === "Duplicate Trade Warning")
       schedule_duplicate_trade_warning_update(0);
+    if (e === "Miss Send Warning") schedule_miss_send_warning_update(0);
   });
   try {
     let keepalive_port = chrome.runtime.connect({ name: "nte-keepalive" });
@@ -11960,6 +12736,313 @@
 
   ensure_duplicate_trade_warning_observer();
 
+  const miss_send_warning_option_name = "Miss Send Warning";
+  const miss_send_warning_review_min_pct = 50;
+  let miss_send_warning_styles_injected = false;
+  let miss_send_warning_refresh_timer = 0;
+  let miss_send_warning_observer_started = false;
+  let miss_send_warning_request_token = 0;
+
+  function is_miss_send_warning_relevant_page() {
+    return is_duplicate_trade_warning_relevant_page();
+  }
+
+  function find_miss_send_warning_modal() {
+    return find_duplicate_trade_warning_modal();
+  }
+
+  function miss_send_format_amount(value) {
+    if (!Number.isFinite(value)) return "—";
+    return Math.round(value).toLocaleString();
+  }
+
+  function get_miss_send_warning_modal_root(modal) {
+    return (
+      modal?.closest?.(
+        ".modal-dialog, .modal-content, .rbx-modal, .modal-container",
+      ) || modal
+    );
+  }
+
+  function get_miss_send_warning_send_button(modal) {
+    let root = get_miss_send_warning_modal_root(modal);
+    if (!root) return null;
+    return root.querySelector(
+      '#modal-action-button, .modal-buttons button.btn-growth-md, .modal-buttons button[type="submit"]',
+    );
+  }
+
+  function find_miss_send_warning_insert_point(modal) {
+    let root = get_miss_send_warning_modal_root(modal);
+    let body = root?.querySelector(".modal-body") || modal;
+    return body?.querySelector(".modal-buttons") || body;
+  }
+
+  function ensure_miss_send_warning_styles() {
+    if (miss_send_warning_styles_injected) return;
+    miss_send_warning_styles_injected = true;
+    let style = document.createElement("style");
+    style.textContent = `
+      .nte-miss-send-warning{margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid rgba(128,128,128,.28);background:rgba(128,128,128,.08);font-size:13px;line-height:1.35}
+      .nte-miss-send-warning-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+      .nte-miss-send-warning-side{min-width:0;padding:8px 9px;border-radius:7px;background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.06)}
+      .nte-miss-send-warning-side-label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;opacity:.78;margin-bottom:6px}
+      .nte-miss-send-warning-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12px}
+      .nte-miss-send-warning-row+.nte-miss-send-warning-row{margin-top:4px}
+      .nte-miss-send-warning-row strong{font-weight:800;font-variant-numeric:tabular-nums}
+      .nte-miss-send-warning-delta{margin-bottom:10px;padding:8px 10px;border-radius:7px;font-size:12px;font-weight:800}
+      .nte-miss-send-warning-delta.is-overpay{background:rgba(239,68,68,.14);border:1px solid rgba(239,68,68,.34);color:#f87171}
+      .nte-miss-send-warning-delta.is-gain{background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.28);color:#4ade80}
+      .nte-miss-send-warning-delta.is-even{background:rgba(148,163,184,.12);border:1px solid rgba(148,163,184,.24);color:#cbd5e1}
+      .nte-miss-send-warning-confirm{display:flex;align-items:flex-start;gap:8px;cursor:pointer;user-select:none;font-size:12px;font-weight:700}
+      .nte-miss-send-warning-check{margin-top:2px;flex:0 0 auto;width:14px;height:14px;accent-color:#6c5ce7}
+      .nte-miss-send-send-disabled,.nte-miss-send-send-disabled:hover{opacity:.45!important;cursor:not-allowed!important}
+      .light-theme .nte-miss-send-warning{background:rgba(15,23,42,.04);border-color:rgba(15,23,42,.12)}
+      .light-theme .nte-miss-send-warning-side{background:rgba(255,255,255,.82);border-color:rgba(15,23,42,.08)}
+      .light-theme .nte-miss-send-warning-delta.is-overpay{background:rgba(254,226,226,.95);border-color:rgba(239,68,68,.28);color:#b91c1c}
+      .light-theme .nte-miss-send-warning-delta.is-gain{background:rgba(220,252,231,.95);border-color:rgba(34,197,94,.24);color:#15803d}
+      .light-theme .nte-miss-send-warning-delta.is-even{background:rgba(241,245,249,.95);border-color:rgba(148,163,184,.24);color:#475569}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function append_miss_send_warning_stat(side, label, value) {
+    let row = document.createElement("div");
+    row.className = "nte-miss-send-warning-row";
+    let key = document.createElement("span");
+    key.textContent = label;
+    let val = document.createElement("strong");
+    val.textContent = miss_send_format_amount(value);
+    row.append(key, val);
+    side.append(row);
+  }
+
+  function build_miss_send_warning_side(label, totals) {
+    let side = document.createElement("div");
+    side.className = "nte-miss-send-warning-side";
+    let title = document.createElement("div");
+    title.className = "nte-miss-send-warning-side-label";
+    title.textContent = label;
+    side.append(title);
+    append_miss_send_warning_stat(side, "Value", totals?.value_total);
+    append_miss_send_warning_stat(side, "RAP", totals?.rap_total);
+    if (Number(totals?.robux_total) > 0)
+      append_miss_send_warning_stat(side, "Robux", totals.robux_total);
+    return side;
+  }
+
+  function build_miss_send_warning_delta(summary) {
+    let delta = document.createElement("div");
+    delta.className = "nte-miss-send-warning-delta";
+    if (summary.unreadable) {
+      delta.classList.add("is-even");
+      delta.textContent =
+        "Could not read trade totals. Review items before sending.";
+      return delta;
+    }
+    if (summary.overpay) {
+      delta.classList.add("is-overpay");
+      let pct =
+        Number.isFinite(summary.overpay_pct)
+          ? ` (${format_trade_percent(summary.overpay_pct, true)}%)`
+          : "";
+      delta.textContent = `You're overpaying by ${miss_send_format_amount(summary.overpay_amount)}${pct}`;
+    } else if (summary.value_diff < 0) {
+      delta.classList.add("is-gain");
+      delta.textContent = `You're gaining ${miss_send_format_amount(Math.abs(summary.value_diff))} value`;
+    } else {
+      delta.classList.add("is-even");
+      delta.textContent = "Even value trade";
+    }
+    return delta;
+  }
+
+  function build_miss_send_warning_panel(summary) {
+    let panel = document.createElement("div");
+    panel.className = "nte-miss-send-warning";
+    panel.dataset.signature = summary.signature;
+    let grid = document.createElement("div");
+    grid.className = "nte-miss-send-warning-grid";
+    grid.append(
+      build_miss_send_warning_side("You give", summary.give),
+      build_miss_send_warning_side("You receive", summary.receive),
+    );
+    panel.append(grid, build_miss_send_warning_delta(summary));
+    if (summary.needs_review_confirm) {
+      let label = document.createElement("label");
+      label.className = "nte-miss-send-warning-confirm";
+      let checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "nte-miss-send-warning-check";
+      let copy = document.createElement("span");
+      copy.textContent = "I've reviewed this trade";
+      label.append(checkbox, copy);
+      panel.append(label);
+    }
+    return panel;
+  }
+
+  function sync_miss_send_warning_send_button(panel, modal) {
+    let checkbox = panel.querySelector(".nte-miss-send-warning-check");
+    let send_btn = get_miss_send_warning_send_button(modal);
+    if (!send_btn) return;
+    if (!checkbox) {
+      if (send_btn.dataset.nteMissSendLocked === "1") {
+        send_btn.disabled = false;
+        send_btn.classList.remove("nte-miss-send-send-disabled");
+        delete send_btn.dataset.nteMissSendLocked;
+      }
+      return;
+    }
+    send_btn.dataset.nteMissSendLocked = "1";
+    let sync = () => {
+      let on = checkbox.checked === true;
+      send_btn.disabled = !on;
+      send_btn.classList.toggle("nte-miss-send-send-disabled", !on);
+    };
+    if (panel.dataset.nteBound !== "1") {
+      panel.dataset.nteBound = "1";
+      checkbox.addEventListener("change", sync);
+    }
+    sync();
+  }
+
+  function remove_miss_send_warning() {
+    for (let panel of document.querySelectorAll(".nte-miss-send-warning")) {
+      let modal = panel.closest(
+        ".modal-dialog, .modal-content, .modal-body, [role='dialog'], .rbx-overlay, .rbx-modal, .modal-container",
+      );
+      let send_btn = get_miss_send_warning_send_button(modal);
+      panel.remove();
+      if (send_btn?.dataset.nteMissSendLocked === "1") {
+        send_btn.disabled = false;
+        send_btn.classList.remove("nte-miss-send-send-disabled");
+        delete send_btn.dataset.nteMissSendLocked;
+      }
+    }
+  }
+
+  async function get_miss_send_trade_summary() {
+    let self_offer = get_self_offer_element();
+    let partner_offer = get_partner_offer_element();
+    if (!self_offer || !partner_offer) return null;
+    let use_post_tax = await get_post_tax_trade_values_enabled();
+    let give = get_trade_offer_rendered_totals(self_offer, use_post_tax);
+    let receive = get_trade_offer_rendered_totals(partner_offer, use_post_tax);
+    if (!give || !receive) return null;
+    if (
+      !Number.isFinite(give.value_total) ||
+      !Number.isFinite(receive.value_total)
+    )
+      return null;
+    let value_diff = give.value_total - receive.value_total;
+    let overpay = value_diff > 0;
+    let overpay_amount = overpay ? value_diff : 0;
+    let overpay_pct =
+      overpay && give.value_total > 0
+        ? get_trade_percent(value_diff, give.value_total)
+        : !1;
+    let needs_review_confirm =
+      overpay &&
+      Number.isFinite(overpay_pct) &&
+      overpay_pct > miss_send_warning_review_min_pct;
+    return {
+      give,
+      receive,
+      value_diff,
+      overpay,
+      overpay_amount,
+      overpay_pct,
+      needs_review_confirm,
+      signature: [
+        give.value_total,
+        give.rap_total,
+        give.robux_total,
+        receive.value_total,
+        receive.rap_total,
+        receive.robux_total,
+        needs_review_confirm ? "review" : "open",
+      ].join("|"),
+    };
+  }
+
+  async function update_miss_send_warning() {
+    if (!is_miss_send_warning_relevant_page()) {
+      remove_miss_send_warning();
+      return;
+    }
+    let modal = find_miss_send_warning_modal();
+    if (!modal) {
+      remove_miss_send_warning();
+      return;
+    }
+    if (!(await c.getOption(miss_send_warning_option_name))) {
+      remove_miss_send_warning();
+      return;
+    }
+    let request_token = ++miss_send_warning_request_token;
+    let summary = await get_miss_send_trade_summary().catch(() => null);
+    if (request_token !== miss_send_warning_request_token) return;
+    modal = find_miss_send_warning_modal();
+    if (!modal) return;
+
+    ensure_miss_send_warning_styles();
+    let existing = modal.querySelector(".nte-miss-send-warning");
+    if (!summary) {
+      summary = {
+        give: { value_total: NaN, rap_total: NaN, robux_total: 0 },
+        receive: { value_total: NaN, rap_total: NaN, robux_total: 0 },
+        value_diff: 0,
+        overpay: false,
+        overpay_amount: 0,
+        overpay_pct: !1,
+        needs_review_confirm: false,
+        unreadable: true,
+        signature: "unreadable",
+      };
+    }
+    if (existing?.dataset.signature === summary.signature) {
+      sync_miss_send_warning_send_button(existing, modal);
+      return;
+    }
+    let panel = build_miss_send_warning_panel(summary);
+    if (existing) existing.replaceWith(panel);
+    else {
+      let anchor = find_miss_send_warning_insert_point(modal);
+      if (anchor?.parentElement)
+        anchor.parentElement.insertBefore(panel, anchor);
+      else modal.append(panel);
+    }
+    sync_miss_send_warning_send_button(panel, modal);
+  }
+
+  function schedule_miss_send_warning_update(delay = 50) {
+    clearTimeout(miss_send_warning_refresh_timer);
+    miss_send_warning_refresh_timer = setTimeout(() => {
+      miss_send_warning_refresh_timer = 0;
+      update_miss_send_warning().catch(() => {});
+    }, delay);
+  }
+
+  function ensure_miss_send_warning_observer() {
+    if (miss_send_warning_observer_started || !document.body) return;
+    miss_send_warning_observer_started = true;
+    new MutationObserver(() => {
+      if (!is_miss_send_warning_relevant_page()) {
+        remove_miss_send_warning();
+        return;
+      }
+      if (!find_miss_send_warning_modal()) {
+        remove_miss_send_warning();
+        return;
+      }
+      schedule_miss_send_warning_update();
+    }).observe(document.body, { childList: true, subtree: true });
+    schedule_miss_send_warning_update(0);
+  }
+
+  ensure_miss_send_warning_observer();
+
   var nte_ownership_style_injected = false;
   function inject_ownership_styles() {
     if (nte_ownership_style_injected) return;
@@ -12430,12 +13513,21 @@
   }
 
   function get_trade_offer_elements() {
-    return Array.from(document.querySelectorAll(".trade-list-detail-offer"));
+    let detail = Array.from(
+      document.querySelectorAll(".trade-list-detail-offer"),
+    );
+    if (detail.length >= 2) return detail;
+    let request = Array.from(
+      document.querySelectorAll(".trade-request-window-offer"),
+    );
+    if (request.length >= 2) return request;
+    return detail.length ? detail : request;
   }
 
   function get_trade_offer_header_text(offer_el) {
     return String(
       offer_el?.querySelector(".trade-list-detail-offer-header")?.textContent ||
+        offer_el?.querySelector("h2")?.textContent ||
         "",
     );
   }
@@ -12445,7 +13537,7 @@
     if (!offers.length) return null;
     return (
       offers.find((offer) =>
-        /would have received|would receive|received/i.test(
+        /your request|would have received|would receive|received/i.test(
           get_trade_offer_header_text(offer),
         ),
       ) ||
@@ -12460,7 +13552,7 @@
     let partner_offer = get_partner_offer_element();
     return (
       offers.find((offer) =>
-        /would have given|would give|gave|sent|offered/i.test(
+        /your offer|would have given|would give|gave|sent|offered/i.test(
           get_trade_offer_header_text(offer),
         ),
       ) ||
@@ -12479,7 +13571,7 @@
   function get_offer_collectible_cards(offer_el) {
     return Array.from(
       offer_el?.querySelectorAll(
-        ".item-card-container[data-collectibleiteminstanceid]",
+        ".item-card-container[data-collectibleiteminstanceid], .trade-request-item[data-collectibleiteminstanceid]",
       ) || [],
     );
   }
@@ -12635,6 +13727,7 @@
 
   var nte_history_style_injected = false;
   var nte_history_last_key = "";
+  var nte_send_analyze_last_key = "";
   var nte_history_request_token = 0;
   var nte_analyze_trade_feature = null;
   var nte_history_owner_asset_cache = {};
@@ -12645,6 +13738,10 @@
     let style = document.createElement("style");
     style.textContent = `
       .nte-history-fallback-row{display:flex;flex-direction:row;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px;margin-bottom:6px;min-height:36px}
+      .trade-request-window-offers > button.btn-full-width:has(+ .nte-trade-request-analyze-row){margin-bottom:0!important}
+      .trade-request-window-offers > button.btn-full-width + .nte-trade-request-analyze-row{margin-top:14px!important;padding-top:0!important}
+      .nte-trade-request-analyze-row{display:flex;flex-direction:column;gap:0;margin:0!important;padding:0!important;width:100%}
+      .nte-trade-request-analyze-row .nte-analyze-trade-btn{width:100%;min-height:0;margin:0!important}
       .nte-history-btn,.nte-analyze-trade-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px}
       .nte-history-btn .nte-history-btn-inner,.nte-analyze-trade-btn .nte-history-btn-inner{display:inline-flex;align-items:center;justify-content:center;gap:8px}
       .nte-history-btn.nte-history-btn--loading,.nte-analyze-trade-btn.nte-analyze-trade-btn--loading{pointer-events:none}
@@ -13813,6 +14910,7 @@
       cached_item?.name ||
       cached_item?.itemName ||
       card?.querySelector(".item-card-name")?.textContent?.trim() ||
+      card?.querySelector(".item-name")?.textContent?.trim() ||
       "";
     let is_bundle =
       cached_item?.itemType === "Bundle" ||
@@ -13860,9 +14958,12 @@
         card.querySelector(".item-card-name span") ||
         card.querySelector(".item-card-name-link") ||
         card.querySelector(".item-card-name") ||
+        card.querySelector(".item-name a") ||
+        card.querySelector(".item-name") ||
+        card.querySelector(".text-lead.item-name") ||
         card.querySelector(".text-overflow");
       let thumb_el = card.querySelector(
-        "thumbnail-2d img, .item-card-thumb img, img",
+        "thumbnail-2d img, .item-card-thumb img, .thumbnail-2d-container img, img",
       );
       let name = name_el?.textContent?.trim() || "Unknown Item";
       let thumb = thumb_el?.src || "";
@@ -13872,11 +14973,19 @@
       let held_since = hold_verified
         ? nte_history_extract_hold_since(cached_item)
         : 0;
+      let is_bundle =
+        cached_item?.itemType === "Bundle" ||
+        cached_item?.itemTarget?.itemType === "Bundle" ||
+        !!(
+          card.querySelector('a[href*="/bundles/"]') ||
+          card.querySelector('[thumbnail-type="BundleThumbnail"]')
+        );
       items.push({
         name,
         thumb,
         ciiid,
         assetId: get_history_item_asset_id(card, cached_item),
+        isBundle: is_bundle,
         heldSince: held_since,
         holdVerified: !!(hold_verified && held_since > 0),
         userAssetId:
@@ -14355,29 +15464,33 @@
         entry,
         entry?.itemName || entry?.name || "",
       );
-      if (user_asset_id > 0 || asset_id > 0) {
+      let item_type =
+        entry?.itemType ||
+        entry?.itemTarget?.itemType ||
+        entry?.item?.itemType ||
+        entry?.item?.itemTarget?.itemType ||
+        "";
+      let is_bundle = item_type === "Bundle" || current.isBundle === true;
+      if (user_asset_id > 0 || asset_id > 0 || is_bundle) {
         by_ciiid.set(String(ciiid), {
           userAssetId: user_asset_id || current.userAssetId || 0,
           assetId: asset_id || current.assetId || 0,
+          isBundle: is_bundle,
         });
       }
     }
 
-    return items.map((item) => ({
-      ...item,
-      userAssetId:
-        item.userAssetId ||
-        (item.ciiid
-          ? by_ciiid.get(normalize_history_instance_id(item.ciiid))
-              ?.userAssetId || 0
-          : 0),
-      assetId:
-        item.assetId ||
-        (item.ciiid
-          ? by_ciiid.get(normalize_history_instance_id(item.ciiid))?.assetId ||
-            0
-          : 0),
-    }));
+    return items.map((item) => {
+      let bridge = item.ciiid
+        ? by_ciiid.get(normalize_history_instance_id(item.ciiid))
+        : null;
+      return {
+        ...item,
+        userAssetId: item.userAssetId || bridge?.userAssetId || 0,
+        assetId: item.assetId || bridge?.assetId || 0,
+        isBundle: item.isBundle === true || bridge?.isBundle === true,
+      };
+    });
   }
 
   function nte_history_state_key() {
@@ -14385,6 +15498,9 @@
     let trade_id = get_selected_trade_id_sync(row) || "";
     let partner_id =
       get_selected_trade_partner_id(row) ||
+      (typeof get_duplicate_trade_warning_partner_id === "function"
+        ? get_duplicate_trade_warning_partner_id()
+        : "") ||
       String(
         typeof get_trade_partner_id === "function"
           ? get_trade_partner_id() || ""
@@ -14566,7 +15682,10 @@
         .forEach((el) => el.remove());
       document
         .querySelectorAll(".nte-analyze-trade-btn")
-        .forEach((el) => el.remove());
+        .forEach((el) => {
+          if (el.closest(".nte-trade-request-analyze-row")) return;
+          el.remove();
+        });
       document
         .querySelectorAll(".nte-history-fallback-row")
         .forEach((el) => el.remove());
@@ -14575,7 +15694,7 @@
 
   function get_trade_history_container_from_button(btn) {
     let container = btn?.closest?.(
-      ".trade-buttons, .nte-history-fallback-row, .nte-poison-fallback-row",
+      ".trade-buttons, .nte-history-fallback-row, .nte-poison-fallback-row, .nte-trade-request-analyze-row",
     );
     if (!container) return ensure_trade_history_container();
     return {
@@ -15006,7 +16125,20 @@
 
   async function inject_trade_history_button() {
     if ("details" !== c.getPageType()) {
-      clear_trade_history_ui();
+      document
+        .querySelectorAll(".nte-history-panel")
+        .forEach((el) => el.remove());
+      document
+        .querySelectorAll(".nte-history-btn")
+        .forEach((el) => el.remove());
+      document
+        .querySelectorAll(".nte-history-fallback-row")
+        .forEach((el) => el.remove());
+      document
+        .querySelectorAll(
+          ".trade-buttons .nte-analyze-trade-btn, .nte-history-fallback-row .nte-analyze-trade-btn, .nte-poison-fallback-row .nte-analyze-trade-btn",
+        )
+        .forEach((el) => el.remove());
       return;
     }
 
@@ -15070,6 +16202,80 @@
       )
       .forEach((btn) => sync_trade_button_position(btn));
     assert_trade_page_dominance();
+  }
+
+  function sync_trade_request_analyze_spacing(make_offer_btn, row) {
+    if (!make_offer_btn || !row) return;
+    make_offer_btn.style.setProperty("margin-bottom", "0", "important");
+    row.style.setProperty("margin-top", "14px", "important");
+    row.style.setProperty("margin-bottom", "0", "important");
+    row.style.setProperty("padding-top", "0", "important");
+    let btn = row.querySelector(".nte-analyze-trade-btn");
+    btn?.style.setProperty("margin-top", "0", "important");
+    btn?.style.setProperty("margin-bottom", "0", "important");
+  }
+
+  async function inject_trade_request_analyze_button() {
+    if ("sendOrCounter" !== c.getPageType()) {
+      document
+        .querySelectorAll(".nte-trade-request-analyze-row")
+        .forEach((el) => el.remove());
+      nte_send_analyze_last_key = "";
+      return;
+    }
+
+    let offers_parent = document.querySelector(".trade-request-window-offers");
+    if (!offers_parent) return;
+
+    let make_offer_btn = offers_parent.querySelector(
+      '[ng-click="sendTrade()"], button.btn-cta-md.btn-full-width, button.btn-full-width',
+    );
+    if (!make_offer_btn || make_offer_btn.classList.contains("ng-hide")) return;
+
+    let analyze_enabled = false !== (await c.getOption("Analyze Trade"));
+    let row = offers_parent.querySelector(".nte-trade-request-analyze-row");
+    if (!analyze_enabled) {
+      row?.remove();
+      close_analyze_trade_modal(null);
+      nte_send_analyze_last_key = "";
+      return;
+    }
+
+    let key = nte_history_state_key();
+    if (key !== nte_send_analyze_last_key) {
+      nte_send_analyze_last_key = key;
+      close_analyze_trade_modal(null);
+    }
+
+    let btn = row?.querySelector(".nte-analyze-trade-btn");
+    if (
+      row &&
+      btn &&
+      make_offer_btn.nextElementSibling === row
+    ) {
+      sync_trade_request_analyze_spacing(make_offer_btn, row);
+      return;
+    }
+
+    inject_trade_history_styles();
+
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "nte-trade-request-analyze-row";
+      make_offer_btn.insertAdjacentElement("afterend", row);
+    } else if (make_offer_btn.nextElementSibling !== row) {
+      make_offer_btn.insertAdjacentElement("afterend", row);
+    }
+
+    if (!row.querySelector(".nte-analyze-trade-btn")) {
+      btn = create_analyze_trade_button(make_offer_btn);
+      if (btn) {
+        btn.classList.add("btn-full-width");
+        row.appendChild(btn);
+        assert_trade_page_dominance();
+      }
+    }
+    sync_trade_request_analyze_spacing(make_offer_btn, row);
   }
 
   (function init_counter_prompt() {

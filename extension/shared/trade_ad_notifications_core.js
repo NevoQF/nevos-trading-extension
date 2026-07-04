@@ -3,9 +3,9 @@
 
   // Allow all want tags except Any/Adds.
   const WANT_BLOCKED_TAGS = new Set([4, 10]);
-  const OVERPAY_MIN_RATIO = 1.025;
+  const OVERPAY_DEFAULT_MIN_PERCENT = 2.5;
   const OVERPAY_MAX_RATIO = 1.75;
-  const OVERPAY_MIN_DIFF = 2000;
+  const OVERPAY_DEFAULT_MIN_DIFF = 2000;
 
   function effective_value_from_row(row) {
     if (!Array.isArray(row)) return 0;
@@ -78,15 +78,36 @@
     return { offer_items, wanted_item, have_total, want_total, have_robux };
   }
 
-  function is_overpay_trade(have_total, want_total) {
+  function normalize_thresholds(options) {
+    let min_amount = Math.max(0, Number(options?.minOverpayAmount));
+    let min_percent = Math.max(0, Number(options?.minOverpayPercent));
+    if (!Number.isFinite(min_amount)) min_amount = OVERPAY_DEFAULT_MIN_DIFF;
+    if (!Number.isFinite(min_percent)) min_percent = OVERPAY_DEFAULT_MIN_PERCENT;
+    return { minOverpayAmount: min_amount, minOverpayPercent: min_percent };
+  }
+
+  function is_overpay_trade(have_total, want_total, options = null) {
     if (!(want_total > 0) || !(have_total > 0)) return false;
-    if (have_total <= want_total * OVERPAY_MIN_RATIO) return false;
     if (have_total > want_total * OVERPAY_MAX_RATIO) return false;
-    if (have_total - want_total < OVERPAY_MIN_DIFF) return false;
+    let overpay_amount = have_total - want_total;
+    if (overpay_amount <= 0) return false;
+    let thresholds = normalize_thresholds(options);
+    if (
+      thresholds.minOverpayPercent > 0 &&
+      overpay_amount <= want_total * (thresholds.minOverpayPercent / 100)
+    ) {
+      return false;
+    }
+    if (
+      thresholds.minOverpayAmount > 0 &&
+      overpay_amount < thresholds.minOverpayAmount
+    ) {
+      return false;
+    }
     return true;
   }
 
-  function build_match(ad, owned_ids, get_row, viewer_user_id) {
+  function build_match(ad, owned_ids, get_row, viewer_user_id, options = null) {
     if (!passes_single_item_want_filter(ad)) return null;
     if (
       viewer_user_id != null &&
@@ -102,7 +123,7 @@
     let { offer_items, wanted_item, have_total, want_total, have_robux } =
       summarize_ad_values(ad, get_row);
     if (!wanted_item || want_total <= 0) return null;
-    if (!is_overpay_trade(have_total, want_total)) return null;
+    if (!is_overpay_trade(have_total, want_total, options)) return null;
 
     let overpay_amount = have_total - want_total;
     let overpay_percent =
@@ -136,11 +157,11 @@
     });
   }
 
-  function scan_ads_for_matches(ads, owned_ids, get_row, viewer_user_id) {
+  function scan_ads_for_matches(ads, owned_ids, get_row, viewer_user_id, options = null) {
     let matches = [];
     if (!Array.isArray(ads)) return matches;
     for (let ad of ads) {
-      let match = build_match(ad, owned_ids, get_row, viewer_user_id);
+      let match = build_match(ad, owned_ids, get_row, viewer_user_id, options);
       if (match) matches.push(match);
     }
     return sort_matches(matches);
@@ -172,12 +193,18 @@
     };
   }
 
-  function rescore_stored_matches(matches, owned_ids, get_row, viewer_user_id) {
+  function rescore_stored_matches(
+    matches,
+    owned_ids,
+    get_row,
+    viewer_user_id,
+    options = null,
+  ) {
     let out = [];
     for (let match of Array.isArray(matches) ? matches : []) {
       let ad = stored_match_to_ad(match);
       if (!ad) continue;
-      let refreshed = build_match(ad, owned_ids, get_row, viewer_user_id);
+      let refreshed = build_match(ad, owned_ids, get_row, viewer_user_id, options);
       if (refreshed) out.push(refreshed);
     }
     return sort_matches(out);
@@ -186,9 +213,10 @@
   root.TradeAdNotificationsCore = {
     WANT_BLOCKED_TAGS,
     is_blocked_want_tag,
-    OVERPAY_MIN_RATIO,
+    OVERPAY_DEFAULT_MIN_PERCENT,
     OVERPAY_MAX_RATIO,
-    OVERPAY_MIN_DIFF,
+    OVERPAY_DEFAULT_MIN_DIFF,
+    normalize_thresholds,
     effective_value_from_row,
     item_summary_from_row,
     passes_single_item_want_filter,

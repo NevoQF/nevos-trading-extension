@@ -138,6 +138,39 @@
     return String(Math.round(v));
   }
 
+  function trade_ad_notif_normalize_thresholds(state) {
+    let amount = Math.max(0, Number(state?.minOverpayAmount));
+    let percent = Math.max(0, Number(state?.minOverpayPercent));
+    if (!Number.isFinite(amount)) amount = 2000;
+    if (!Number.isFinite(percent)) percent = 2.5;
+    return { amount, percent };
+  }
+
+  function trade_ad_notif_threshold_badge(state) {
+    let thresholds = trade_ad_notif_normalize_thresholds(state);
+    let parts = [];
+    if (thresholds.percent > 0) {
+      let pct = thresholds.percent;
+      parts.push(`${Number(pct % 1 ? pct.toFixed(1) : pct)}%`);
+    }
+    if (thresholds.amount > 0) {
+      parts.push(`${trade_ad_notif_format_number(thresholds.amount)}+`);
+    }
+    return parts.length ? parts.join(" · ") : "Any";
+  }
+
+  function trade_ad_notif_threshold_label(state) {
+    let thresholds = trade_ad_notif_normalize_thresholds(state);
+    let parts = [];
+    if (thresholds.percent > 0) {
+      parts.push(`${Number(thresholds.percent.toFixed(2))}%`);
+    }
+    if (thresholds.amount > 0) {
+      parts.push(`${trade_ad_notif_format_number(thresholds.amount)}+`);
+    }
+    return parts.length ? parts.join(" + ") : "Any profit";
+  }
+
   function trade_ad_notif_format_relative(ms) {
     if (typeof format_relative_time === "function") {
       return format_relative_time(Number(ms));
@@ -265,14 +298,27 @@
     partner_id,
     wanted_id,
     offer_ids,
+    offer_robux = 0,
   ) {
     let pid = Number(partner_id);
     let wid = Number(wanted_id);
+    let robux = Math.max(0, Math.floor(Number(offer_robux) || 0));
     let offers = Array.from(offer_ids || [])
       .map((id) => Number(id))
       .filter((id) => Number.isFinite(id) && id > 0);
     let base = `https://www.roblox.com/users/${encodeURIComponent(String(pid || ""))}/trade`;
-    if (!(pid > 0) || !(wid > 0) || !offers.length) return base;
+    let add_robux_param = (url) => {
+      if (!(robux > 0)) return url;
+      try {
+        let u = new URL(url);
+        u.searchParams.set("nte_offer_robux", String(robux));
+        return u.toString();
+      } catch {
+        return url;
+      }
+    };
+    if (!(pid > 0) || !(wid > 0) || !offers.length)
+      return add_robux_param(base);
 
     let my_user_id = await trade_ad_notif_get_authenticated_user_id();
     if (!(my_user_id > 0)) return base;
@@ -282,18 +328,20 @@
 
     let my_bucket = my_map.get(String(wid)) || [];
     let my_uaid = my_bucket[0];
-    if (!my_uaid) return base;
+    if (!my_uaid) return add_robux_param(base);
     let offer_uaids = [];
     for (let id of offers) {
       let key = String(id);
       let bucket = (partner_map.get(key) || []).slice();
       let uaid = bucket.shift();
-      if (!uaid) return base;
+      if (!uaid) return add_robux_param(base);
       partner_map.set(key, bucket);
       offer_uaids.push(uaid);
     }
     // Roblox trade URL expects your offered UAIDs in oitems, requested UAIDs in ritems.
-    return `${base}?oitems=${String(my_uaid)}&ritems=${offer_uaids.join(",")}`;
+    return add_robux_param(
+      `${base}?oitems=${String(my_uaid)}&ritems=${offer_uaids.join(",")}`,
+    );
   }
 
   function trade_ad_notif_slot_html(item, extra_class) {
@@ -316,6 +364,20 @@
     </a>`;
   }
 
+  function trade_ad_notif_robux_slot_html(amount) {
+    let robux = Math.max(0, Math.floor(Number(amount) || 0));
+    if (!(robux > 0)) return "";
+    let label = trade_ad_notif_format_number(robux);
+    let icon_url = "";
+    try {
+      icon_url = chrome.runtime.getURL("elements/robux.png");
+    } catch {}
+    return `<div class="ta-notif-slot ta-notif-slot-robux" title="${escape_html(`${label} Robux`)}">
+      ${icon_url ? `<img class="ta-notif-robux-icon" src="${escape_html(icon_url)}" alt="" decoding="async" />` : ""}
+      <span class="ta-notif-robux-text">${escape_html(label)}</span>
+    </div>`;
+  }
+
   function trade_ad_notif_tag_slot_html(tag_slug, extra_class) {
     let cls = extra_class ? ` ${extra_class}` : "";
     if (!tag_slug) return trade_ad_notif_slot_html(null, cls);
@@ -323,6 +385,63 @@
     return `<div class="ta-notif-slot ta-notif-slot-tag${cls}">
       <img class="ta-notif-thumb ta-notif-thumb-tag" src="${src}" alt="${escape_html(tag_slug)}" loading="lazy" decoding="async" />
     </div>`;
+  }
+
+  function trade_ad_notif_item_row(item_id) {
+    let key = String(item_id ?? "").trim();
+    if (!key) return null;
+    return trade_ad_notif_rolimons_item_data?.items?.[key] || null;
+  }
+
+  function trade_ad_notif_item_is_rare(item_id) {
+    let row = trade_ad_notif_item_row(item_id);
+    if (!row) return false;
+    if (
+      typeof RolimonsItemDetails !== "undefined" &&
+      RolimonsItemDetails.is_item_rare
+    ) {
+      return RolimonsItemDetails.is_item_rare(row);
+    }
+    return (
+      Array.isArray(row) &&
+      (Number(row[9]) === 1 || (Number(row[8]) === 1 && row.length < 11))
+    );
+  }
+
+  function trade_ad_notif_item_is_projected(item_id) {
+    let row = trade_ad_notif_item_row(item_id);
+    return Array.isArray(row) && Number(row[7]) === 1;
+  }
+
+  function trade_ad_notif_thumb_flag_urls() {
+    try {
+      return {
+        rare: chrome.runtime.getURL("assets/rare.png"),
+        projected: chrome.runtime.getURL("assets/projected.png"),
+      };
+    } catch {
+      return { rare: "", projected: "" };
+    }
+  }
+
+  function trade_ad_notif_thumb_flags_html(item_id) {
+    let rare = trade_ad_notif_item_is_rare(item_id);
+    let projected = trade_ad_notif_item_is_projected(item_id);
+    if (!rare && !projected) return "";
+    let urls = trade_ad_notif_thumb_flag_urls();
+    let parts = [];
+    if (rare && urls.rare) {
+      parts.push(
+        `<img class="ta-notif-thumb-flag ta-notif-thumb-flag-rare" src="${escape_html(urls.rare)}" alt="" title="Rare" decoding="async" />`,
+      );
+    }
+    if (projected && urls.projected) {
+      parts.push(
+        `<img class="ta-notif-thumb-flag ta-notif-thumb-flag-projected" src="${escape_html(urls.projected)}" alt="" title="Projected" decoding="async" />`,
+      );
+    }
+    if (!parts.length) return "";
+    return `<span class="ta-notif-thumb-flags" aria-hidden="true">${parts.join("")}</span>`;
   }
 
   function trade_ad_notif_thumb_kind_for_id(item_id, thumb_type) {
@@ -350,7 +469,10 @@
       thumb_type === "Bundle"
         ? "bundle"
         : trade_ad_notif_thumb_kind_for_id(tid, thumb_type);
-    return `<img class="ta-notif-thumb${cls}" src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${tid}" data-thumb-kind="${kind}" data-thumb-pending="1" decoding="async" />`;
+    let img = `<img class="ta-notif-thumb${cls}" src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${tid}" data-thumb-kind="${kind}" data-thumb-pending="1" decoding="async" />`;
+    let flags = trade_ad_notif_thumb_flags_html(tid);
+    if (!flags) return img;
+    return `<span class="ta-notif-thumb-wrap">${img}${flags}</span>`;
   }
 
   function trade_ad_notif_prefetch_watch_items() {
@@ -404,12 +526,18 @@
       .join(",");
     let wanted_id = Number(wanted?.id);
     let send_trade_fallback_url = `https://www.roblox.com/users/${encodeURIComponent(String(match.userId || ""))}/trade`;
-    let offer_slots = offers
-      .slice(0, 4)
-      .concat([null, null, null, null])
-      .slice(0, 4)
-      .map((it) => trade_ad_notif_slot_html(it))
-      .join("");
+    let have_robux = Math.max(0, Math.floor(Number(match.haveRobux) || 0));
+    let offer_item_cap = have_robux > 0 ? 3 : 4;
+    let offer_slot_parts = offers
+      .slice(0, offer_item_cap)
+      .map((it) => trade_ad_notif_slot_html(it));
+    if (have_robux > 0)
+      offer_slot_parts.push(trade_ad_notif_robux_slot_html(have_robux));
+    while (offer_slot_parts.length < 4) {
+      offer_slot_parts.push(trade_ad_notif_slot_html(null));
+    }
+    offer_slot_parts = offer_slot_parts.slice(0, 4);
+    let offer_slots = offer_slot_parts.join("");
     let want_slots = [
       trade_ad_notif_slot_html(wanted || null, wanted ? "ta-notif-slot-wanted" : ""),
       ...want_tag_slots,
@@ -465,6 +593,7 @@
           data-partner-id="${escape_html(String(Number.isFinite(partner_id) ? partner_id : 0))}"
           data-wanted-id="${escape_html(String(Number.isFinite(wanted_id) ? wanted_id : 0))}"
           data-offer-ids="${escape_html(offered_ids)}"
+          data-offer-robux="${escape_html(String(have_robux))}"
           data-fallback-url="${escape_html(send_trade_fallback_url)}"
         >Send Trade</button>
         <a class="ta-notif-link ta-notif-link-muted" href="${roli}" target="_blank" rel="noopener noreferrer">Rolimons Profile</a>
@@ -511,6 +640,12 @@
     }
     if (disabled > 0) return `−${disabled}`;
     return "All";
+  }
+
+  function trade_ad_notif_update_threshold_badge(root, state) {
+    let badge = root?.querySelector("#ta-notif-threshold-badge");
+    if (!badge) return;
+    badge.textContent = trade_ad_notif_threshold_badge(state);
   }
 
   function trade_ad_notif_update_watch_badge(root, state) {
@@ -794,6 +929,79 @@
     });
   }
 
+  function trade_ad_notif_open_threshold_modal(state) {
+    return new Promise((resolve) => {
+      let existing = document.getElementById("ta-notif-threshold-overlay");
+      if (existing) existing.remove();
+
+      let thresholds = trade_ad_notif_normalize_thresholds(state);
+      let overlay = document.createElement("div");
+      overlay.id = "ta-notif-threshold-overlay";
+      overlay.className = "ta-notif-threshold-overlay";
+      overlay.innerHTML = `
+        <div class="ta-notif-threshold-card" role="dialog" aria-modal="true" aria-labelledby="ta-notif-threshold-title">
+          <div class="ta-notif-threshold-head">
+            <div>
+              <h3 id="ta-notif-threshold-title" class="ta-notif-threshold-title">Profit Filter</h3>
+              <p class="ta-notif-threshold-subtitle">Set the minimum overpay needed before an ad appears.</p>
+            </div>
+            <button type="button" class="ta-notif-threshold-close" aria-label="Close profit filter">✕</button>
+          </div>
+          <div class="ta-notif-threshold-body">
+            <label class="ta-notif-threshold-field">
+              <span>Minimum profit amount</span>
+              <input type="number" min="0" step="100" id="ta-notif-min-amount" value="${escape_html(String(Math.round(thresholds.amount)))}" />
+            </label>
+            <label class="ta-notif-threshold-field">
+              <span>Minimum profit percent</span>
+              <input type="number" min="0" step="0.1" id="ta-notif-min-percent" value="${escape_html(String(Number(thresholds.percent.toFixed(2))))}" />
+            </label>
+            <p class="ta-notif-threshold-hint">Both enabled filters must pass. Set one to 0 to use only the other.</p>
+          </div>
+          <div class="ta-notif-threshold-actions">
+            <button type="button" class="ta-notif-threshold-btn ta-notif-threshold-btn-cancel" data-role="cancel">Cancel</button>
+            <button type="button" class="ta-notif-threshold-btn ta-notif-threshold-btn-save" data-role="save">Save Filter</button>
+          </div>
+        </div>
+      `;
+      document.body.append(overlay);
+
+      let card = overlay.querySelector(".ta-notif-threshold-card");
+      let amount_input = overlay.querySelector("#ta-notif-min-amount");
+      let percent_input = overlay.querySelector("#ta-notif-min-percent");
+      let close_btn = overlay.querySelector(".ta-notif-threshold-close");
+      let cancel_btn = overlay.querySelector('[data-role="cancel"]');
+      let save_btn = overlay.querySelector('[data-role="save"]');
+
+      let finish = (result) => {
+        overlay.remove();
+        resolve(result);
+      };
+
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) finish(null);
+      });
+      card.addEventListener("click", (event) => event.stopPropagation());
+      close_btn.addEventListener("click", () => finish(null));
+      cancel_btn.addEventListener("click", () => finish(null));
+      overlay.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          finish(null);
+        }
+      });
+
+      save_btn.addEventListener("click", () => {
+        finish({
+          minOverpayAmount: Math.max(0, Number(amount_input.value) || 0),
+          minOverpayPercent: Math.max(0, Number(percent_input.value) || 0),
+        });
+      });
+
+      setTimeout(() => amount_input.focus(), 0);
+    });
+  }
+
   function trade_ad_notif_start_countdown(root, state) {
     if (!root) return;
     if (root.__taNotifCountdownTimer) {
@@ -881,6 +1089,10 @@
           .split(",")
           .map((v) => Number(v.trim()))
           .filter((v) => Number.isFinite(v) && v > 0);
+        let offer_robux = Math.max(
+          0,
+          Math.floor(Number(btn.dataset.offerRobux || 0) || 0),
+        );
         let fallback_url = String(btn.dataset.fallbackUrl || "").trim();
         let open_url =
           fallback_url ||
@@ -893,6 +1105,7 @@
             partner_id,
             wanted_id,
             offer_ids,
+            offer_robux,
           );
           if (resolved) open_url = resolved;
         } catch {}
@@ -989,6 +1202,11 @@
 
     let enabled_input = mount.querySelector("#ta-notif-enabled");
     if (enabled_input) enabled_input.checked = state?.enabled === true;
+    let threshold_btn = mount.querySelector("#ta-notif-threshold-btn");
+    if (threshold_btn) {
+      threshold_btn.title = `Profit filter: ${trade_ad_notif_threshold_label(state)}`;
+    }
+    trade_ad_notif_update_threshold_badge(mount, state);
     trade_ad_notif_update_watch_badge(mount, state);
     trade_ad_notif_start_countdown(mount, state);
     return true;
@@ -1084,25 +1302,31 @@
         ? `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Notifications are off</p><p class="ta-notifs-empty-copy">Enable alerts to start scanning trade ads.</p></div>`
         : matches.length > 0
         ? matches.map(trade_ad_notif_card_html).join("")
-        : `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Nothing yet</p><p class="ta-notifs-empty-copy">Shows ads that want one of your items and offer at least 2.5% overpay (2,000+ value). Multi-item wants and Any/Adds tags are skipped.</p></div>`;
+        : `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Nothing yet</p><p class="ta-notifs-empty-copy">Shows ads that want one of your items and pass your ${escape_html(trade_ad_notif_threshold_label(state))} profit filter. Multi-item wants and Any/Adds tags are skipped.</p></div>`;
     root.__taNotifRenderedCount = matches.length;
     root.innerHTML = `
       <div class="ta-notif-panel">
         <div class="ta-notif-head">
-          <div class="ta-notif-head-copy">
-            <div class="ta-notif-title">Overpay alerts</div>
-            <span class="ta-notif-next" id="ta-notif-next"></span>
-          </div>
-          <div class="ta-notif-head-actions">
-            <button type="button" class="ta-notif-watch-btn-head" id="ta-notif-watch-btn" title="Choose which items trigger alerts">
-              <span class="ta-notif-watch-btn-label">Items</span>
-              <span class="ta-notif-watch-btn-badge" id="ta-notif-watch-badge">${escape_html(trade_ad_notif_watch_badge_label(state))}</span>
-            </button>
-            <button type="button" class="ta-notif-ignore-btn-head" id="ta-notif-ignore-btn">Ignore List</button>
+          <div class="ta-notif-head-main">
+            <div class="ta-notif-head-copy">
+              <div class="ta-notif-title">Overpay alerts</div>
+              <span class="ta-notif-next" id="ta-notif-next"></span>
+            </div>
             <label class="ta-notif-toggle" title="Enable trade ad notifications">
               <input type="checkbox" id="ta-notif-enabled" ${enabled ? "checked" : ""} />
               <span class="ta-notif-toggle-track"><span class="ta-notif-toggle-knob"></span></span>
             </label>
+          </div>
+          <div class="ta-notif-head-toolbar">
+            <button type="button" class="ta-notif-watch-btn-head" id="ta-notif-watch-btn" title="Choose which items trigger alerts">
+              <span class="ta-notif-watch-btn-label">Items</span>
+              <span class="ta-notif-watch-btn-badge" id="ta-notif-watch-badge">${escape_html(trade_ad_notif_watch_badge_label(state))}</span>
+            </button>
+            <button type="button" class="ta-notif-threshold-btn-head" id="ta-notif-threshold-btn" title="Profit filter: ${escape_html(trade_ad_notif_threshold_label(state))}">
+              <span class="ta-notif-threshold-btn-label">Profit</span>
+              <span class="ta-notif-threshold-btn-badge" id="ta-notif-threshold-badge">${escape_html(trade_ad_notif_threshold_badge(state))}</span>
+            </button>
+            <button type="button" class="ta-notif-ignore-btn-head" id="ta-notif-ignore-btn">Ignore list</button>
           </div>
         </div>
         ${err ? `<p class="ta-notif-error">${escape_html(err)}</p>` : ""}
@@ -1125,6 +1349,23 @@
       }
     });
 
+    root
+      .querySelector("#ta-notif-threshold-btn")
+      ?.addEventListener("click", async () => {
+        let thresholds = await trade_ad_notif_open_threshold_modal(state);
+        if (!thresholds) return;
+        let res = await trade_ad_notif_send(
+          "trade_ad_notifications_set_thresholds",
+          thresholds,
+        );
+        if (res?.ok && res.state) {
+          root.__taNotifRenderedCount = 0;
+          trade_ad_notif_render_shell(root, res.state);
+        } else {
+          trade_ad_notif_refresh_ui(root).catch(() => {});
+        }
+      });
+
     root.querySelector("#ta-notif-ignore-btn")?.addEventListener("click", async () => {
       let next_names = await trade_ad_notif_open_ignore_modal(state?.ignoredUsers || []);
       if (!next_names) return;
@@ -1139,6 +1380,7 @@
     });
 
     trade_ad_notif_update_watch_badge(root, state);
+    trade_ad_notif_update_threshold_badge(root, state);
     root.querySelector("#ta-notif-watch-btn")?.addEventListener("click", async () => {
       let disabled = await trade_ad_notif_open_watch_modal();
       if (disabled === null) return;

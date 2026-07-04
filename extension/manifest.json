@@ -18,8 +18,10 @@
         "content/trade_request_bootstrap.js"
       ],
       "matches": [
-        "https://*.roblox.com/trades*",
-        "https://*.roblox.com/*/trades*"
+        "https://www.roblox.com/trades*",
+        "https://www.roblox.com/*/trades*",
+        "https://www.roblox.com/users/*/trade*",
+        "https://www.roblox.com/*/users/*/trade*"
       ],
       "run_at": "document_start"
     },
@@ -29,8 +31,10 @@
         "content/trade_page_themes.js"
       ],
       "matches": [
-        "https://*.roblox.com/trades*",
-        "https://*.roblox.com/*/trades*"
+        "https://www.roblox.com/trades*",
+        "https://www.roblox.com/*/trades*",
+        "https://www.roblox.com/users/*/trade*",
+        "https://www.roblox.com/*/users/*/trade*"
       ],
       "run_at": "document_start"
     },
@@ -39,8 +43,8 @@
         "scripts/trade_list_request_patch.js"
       ],
       "matches": [
-        "https://*.roblox.com/trades*",
-        "https://*.roblox.com/*/trades*"
+        "https://www.roblox.com/trades*",
+        "https://www.roblox.com/*/trades*"
       ],
       "run_at": "document_start",
       "world": "MAIN"
@@ -58,10 +62,10 @@
         "content/trade_page.js"
       ],
       "matches": [
-        "https://*.roblox.com/trades*",
-        "https://*.roblox.com/*/trades*",
-        "https://*.roblox.com/users/*/trade*",
-        "https://*.roblox.com/*/users/*/trade*"
+        "https://www.roblox.com/trades*",
+        "https://www.roblox.com/*/trades*",
+        "https://www.roblox.com/users/*/trade*",
+        "https://www.roblox.com/*/users/*/trade*"
       ],
       "run_at": "document_idle"
     },
@@ -73,17 +77,18 @@
         "shared/nte_history_proof_styles.js",
         "shared/nte_icons.js",
         "content/catalog_page.js",
-        "content/catalog_item_intel.js"
+        "content/catalog_item_intel.js",
+        "content/catalog_reseller_trade.js"
       ],
       "matches": [
-        "https://*.roblox.com/catalog/*",
-        "https://*.roblox.com/*/catalog/*",
-        "https://*.roblox.com/catalog*",
-        "https://*.roblox.com/*/catalog*",
-        "https://*.roblox.com/bundles/*",
-        "https://*.roblox.com/*/bundles/*",
-        "https://*.roblox.com/bundles*",
-        "https://*.roblox.com/*/bundles*"
+        "https://www.roblox.com/catalog/*",
+        "https://www.roblox.com/*/catalog/*",
+        "https://www.roblox.com/catalog*",
+        "https://www.roblox.com/*/catalog*",
+        "https://www.roblox.com/bundles/*",
+        "https://www.roblox.com/*/bundles/*",
+        "https://www.roblox.com/bundles*",
+        "https://www.roblox.com/*/bundles*"
       ],
       "run_at": "document_idle"
     },
@@ -97,10 +102,22 @@
         "content/user_profile_page.js"
       ],
       "matches": [
-        "https://*.roblox.com/users/*/profile*",
-        "https://*.roblox.com/*/users/*/profile*",
-        "https://*.roblox.com/users/*/inventory*",
-        "https://*.roblox.com/*/users/*/inventory*"
+        "https://www.roblox.com/users/*/profile*",
+        "https://www.roblox.com/*/users/*/profile*",
+        "https://www.roblox.com/users/*/inventory*",
+        "https://www.roblox.com/*/users/*/inventory*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": [
+        "shared/browser_compat.js",
+        "shared/rolimons_item_details.js",
+        "content/friends_page.js"
+      ],
+      "matches": [
+        "https://www.roblox.com/users/friends*",
+        "https://www.roblox.com/*/users/friends*"
       ],
       "run_at": "document_idle"
     },
@@ -111,7 +128,7 @@
         "content/roblox_totp_autofill.js"
       ],
       "matches": [
-        "https://*.roblox.com/*",
+        "https://www.roblox.com/*",
         "https://roblox.com/*"
       ],
       "run_at": "document_idle"
@@ -122,7 +139,18 @@
         "content/navbar_quick_search.js"
       ],
       "matches": [
-        "https://*.roblox.com/*",
+        "https://www.roblox.com/*",
+        "https://roblox.com/*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": [
+        "shared/browser_compat.js",
+        "content/navbar_settings_menu.js"
+      ],
+      "matches": [
+        "https://www.roblox.com/*",
         "https://roblox.com/*"
       ],
       "run_at": "document_idle"
@@ -137,13 +165,22 @@
     "https://roautotrade.com/*",
     "https://nevos-extension.com/*",
     "https://www.nevos-extension.com/*",
-    "https://*.roblox.com/*",
+    "https://www.roblox.com/*",
     "https://roblox.com/*",
+    "https://auth.roblox.com/*",
+    "https://trades.roblox.com/*",
+    "https://users.roblox.com/*",
+    "https://inventory.roblox.com/*",
+    "https://catalog.roblox.com/*",
+    "https://economy.roblox.com/*",
+    "https://apis.roblox.com/*",
     "https://thumbnails.roblox.com/*",
-    "https://discord.com/*",
-    "https://*.discord.com/*",
-    "https://discordapp.com/*",
-    "https://*.discordapp.com/*"
+    "https://discord.com/api/webhooks/*",
+    "https://www.discord.com/api/webhooks/*",
+    "https://canary.discord.com/api/webhooks/*",
+    "https://ptb.discord.com/api/webhooks/*",
+    "https://discordapp.com/api/webhooks/*",
+    "https://www.discordapp.com/api/webhooks/*"
   ],
   "icons": {
     "128": "assets/icons/logo128.png",
@@ -166,11 +203,11 @@
     "cookies"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.41",
+  "version": "3.10.43",
   "web_accessible_resources": [
     {
       "matches": [
-        "https://*.roblox.com/*"
+        "https://www.roblox.com/*"
       ],
       "resources": [
         "assets/Averta.otf",

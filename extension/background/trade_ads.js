@@ -9,8 +9,12 @@ const trade_ads_alarm_name = "tradeAdsAutoPost";
 const trade_ads_clear_error_alarm_name = "tradeAdsClearAutoError";
 const trade_ads_schedule_anchor_key = "trade_ads_schedule_anchor_at";
 const trade_ads_recent_posts_key = "trade_ads_recent_posts";
+const trade_ads_legacy_item_cache_key = "trade_ads_legacy_item_id_cache";
+const trade_ads_legacy_item_details_url =
+  "https://api.rolimons.com/items/v2/itemdetails";
 const trade_ads_interval_min = 15;
 const trade_ads_interval_max = 43200;
+const trade_ads_preset_count = 4;
 
 function trade_ads_default_config() {
   return {
@@ -24,7 +28,54 @@ function trade_ads_default_config() {
     posting_paused: true,
     auto_interval_minutes: 15,
     request_tags: [],
+    presets: [null, null, null, null],
+    preset_rotation_enabled: false,
+    preset_rotation_index: 0,
+    preset_editor_index: 0,
   };
+}
+
+function trade_ads_normalize_slots(slots) {
+  let out = Array.isArray(slots) ? slots.slice(0, 4) : [];
+  while (out.length < 4) out.push(null);
+  return out.map((x) => {
+    if (typeof x === "string" && x.startsWith("tag:")) return x;
+    let n = Number(x);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  });
+}
+
+function trade_ads_normalize_preset(raw, index) {
+  if (!raw || typeof raw !== "object") return null;
+  let name = String(raw.name || `Preset ${index + 1}`).trim();
+  let p = {
+    name: name.slice(0, 28) || `Preset ${index + 1}`,
+    offer_slots: trade_ads_normalize_slots(raw.offer_slots),
+    request_slots: trade_ads_normalize_slots(raw.request_slots),
+    offer_random: raw.offer_random === true,
+    request_random: raw.request_random !== false,
+    request_demand_min: Math.max(0, Math.min(4, Number(raw.request_demand_min) || 0)),
+    offer_robux: Math.max(0, Math.floor(Number(raw.offer_robux) || 0)),
+    request_tags: Array.isArray(raw.request_tags)
+      ? raw.request_tags.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 4)
+      : [],
+  };
+  let has_offer =
+    p.offer_random || p.offer_robux > 0 || p.offer_slots.some((x) => x != null);
+  let has_request =
+    p.request_random ||
+    p.request_slots.some((x) => x != null) ||
+    p.request_tags.length > 0;
+  return has_offer || has_request ? p : null;
+}
+
+function trade_ads_normalize_presets(input) {
+  let raw = Array.isArray(input) ? input : [];
+  let out = [];
+  for (let i = 0; i < trade_ads_preset_count; i++) {
+    out.push(trade_ads_normalize_preset(raw[i], i));
+  }
+  return out;
 }
 
 function trade_ads_normalize_config(raw) {
@@ -49,6 +100,18 @@ function trade_ads_normalize_config(raw) {
   if (typeof o.notify_on_post !== "boolean")
     o.notify_on_post = trade_ads_default_config().notify_on_post;
   o.notify_on_post = o.notify_on_post !== false;
+  o.offer_slots = trade_ads_normalize_slots(o.offer_slots);
+  o.request_slots = trade_ads_normalize_slots(o.request_slots);
+  o.presets = trade_ads_normalize_presets(o.presets);
+  o.preset_rotation_enabled = o.preset_rotation_enabled === true;
+  o.preset_rotation_index = Math.max(
+    0,
+    Math.min(trade_ads_preset_count - 1, Math.floor(Number(o.preset_rotation_index)) || 0),
+  );
+  o.preset_editor_index = Math.max(
+    0,
+    Math.min(trade_ads_preset_count - 1, Math.floor(Number(o.preset_editor_index)) || 0),
+  );
   let mins = Math.floor(Number(o.auto_interval_minutes));
   if (!Number.isFinite(mins))
     mins = trade_ads_default_config().auto_interval_minutes;
@@ -232,6 +295,87 @@ function trade_ads_clamp_requests(offer_ids, request_ids, item_data) {
     ids: kept.slice(0, 4),
     tags: kept.length < 4 && kept.length > 0 ? ["any"] : [],
   };
+}
+
+let trade_ads_legacy_item_cache_mem;
+
+function trade_ads_norm_item_label(value) {
+  if (
+    typeof RolimonsItemDetails !== "undefined" &&
+    RolimonsItemDetails.normalize_item_name
+  ) {
+    return RolimonsItemDetails.normalize_item_name(value);
+  }
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[#,()\-:'`"]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function trade_ads_get_legacy_item_cache() {
+  if (trade_ads_legacy_item_cache_mem) return trade_ads_legacy_item_cache_mem;
+  let stored = await get_local_value(trade_ads_legacy_item_cache_key);
+  if (stored?.byName && stored?.byAcronym) {
+    trade_ads_legacy_item_cache_mem = stored;
+    return stored;
+  }
+  let res = await fetch(trade_ads_legacy_item_details_url, {
+    headers: { accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`Rolimons v2 itemdetails failed (${res.status})`);
+  let raw = await res.json().catch(() => ({}));
+  let normalized =
+    typeof RolimonsItemDetails !== "undefined" &&
+    RolimonsItemDetails.normalize_rolimons_item_details_payload
+      ? RolimonsItemDetails.normalize_rolimons_item_details_payload(raw)
+      : raw;
+  let byName = {};
+  let byAcronym = {};
+  for (let [id, row] of Object.entries(normalized?.items || {})) {
+    if (!Array.isArray(row)) continue;
+    let n = trade_ads_norm_item_label(row[0]);
+    let a = trade_ads_norm_item_label(row[1]);
+    if (n && !byName[n]) byName[n] = Number(id);
+    if (a && !byAcronym[a]) byAcronym[a] = Number(id);
+  }
+  trade_ads_legacy_item_cache_mem = {
+    byName,
+    byAcronym,
+    fetchedAt: Date.now(),
+  };
+  await set_local_value(
+    trade_ads_legacy_item_cache_key,
+    trade_ads_legacy_item_cache_mem,
+  );
+  return trade_ads_legacy_item_cache_mem;
+}
+
+async function trade_ads_resolve_legacy_trade_ad_id(id, item_data) {
+  let n = Number(id);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  if (!item_data?.bundleIds?.[String(n)]) return n;
+  let row = get_rolimons_item(item_data, n);
+  if (!Array.isArray(row)) return n;
+  let cache = await trade_ads_get_legacy_item_cache();
+  let by_name = cache.byName?.[trade_ads_norm_item_label(row[0])];
+  if (Number.isFinite(by_name) && by_name > 0) return by_name;
+  let by_acr = cache.byAcronym?.[trade_ads_norm_item_label(row[1])];
+  return Number.isFinite(by_acr) && by_acr > 0 ? by_acr : n;
+}
+
+async function trade_ads_resolve_legacy_trade_ad_ids(ids, item_data) {
+  let out = [];
+  let seen = new Set();
+  for (let id of ids || []) {
+    let n = await trade_ads_resolve_legacy_trade_ad_id(id, item_data);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    let key = String(n);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(n);
+  }
+  return out.slice(0, 4);
 }
 
 async function trade_ads_get_cookie_header_value() {
@@ -874,6 +1018,48 @@ async function trade_ads_search_items(item_data, query, limit, offset) {
   };
 }
 
+function trade_ads_config_with_preset(config, preset) {
+  if (!preset) return config;
+  return {
+    ...config,
+    offer_slots: trade_ads_normalize_slots(preset.offer_slots),
+    request_slots: trade_ads_normalize_slots(preset.request_slots),
+    offer_random: preset.offer_random === true,
+    request_random: preset.request_random !== false,
+    request_demand_min: Math.max(0, Math.min(4, Number(preset.request_demand_min) || 0)),
+    offer_robux: Math.max(0, Math.floor(Number(preset.offer_robux) || 0)),
+    request_tags: Array.isArray(preset.request_tags)
+      ? preset.request_tags.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 4)
+      : [],
+  };
+}
+
+function trade_ads_pick_rotation_preset(config) {
+  let presets = trade_ads_normalize_presets(config.presets);
+  let filled = presets
+    .map((preset, index) => ({ preset, index }))
+    .filter((row) => row.preset);
+  if (!config.preset_rotation_enabled || !filled.length) return null;
+  let start = Math.max(0, Math.floor(Number(config.preset_rotation_index)) || 0);
+  let hit = filled.find((row) => row.index >= start) || filled[0];
+  return hit;
+}
+
+async function trade_ads_advance_rotation_preset(config, used_index) {
+  let presets = trade_ads_normalize_presets(config.presets);
+  let filled = presets
+    .map((preset, index) => ({ preset, index }))
+    .filter((row) => row.preset);
+  if (!filled.length || !Number.isFinite(Number(used_index))) return;
+  let pos = filled.findIndex((row) => row.index === Number(used_index));
+  let next = filled[(pos + 1 + filled.length) % filled.length]?.index || 0;
+  await set_local_value(trade_ads_config_key, {
+    ...config,
+    presets,
+    preset_rotation_index: next,
+  });
+}
+
 async function trade_ads_build_post_body(
   config,
   item_data,
@@ -966,10 +1152,19 @@ async function trade_ads_build_post_body(
           : clamped.tags;
   }
 
+  let post_offer_ids = await trade_ads_resolve_legacy_trade_ad_ids(
+    offer_ids,
+    item_data,
+  );
+  let post_request_ids = await trade_ads_resolve_legacy_trade_ad_ids(
+    request_item_ids || [],
+    item_data,
+  );
+
   let body = {
     player_id: Number(config.runtime_user_id),
-    offer_item_ids: offer_ids,
-    request_item_ids: request_item_ids || [],
+    offer_item_ids: post_offer_ids,
+    request_item_ids: post_request_ids,
     request_tags: Array.isArray(request_tags) ? request_tags : [],
   };
   let robux = Math.floor(Number(config.offer_robux) || 0);
@@ -1065,7 +1260,12 @@ async function trade_ads_post_now(options) {
     inv.map((x) => x.assetId).filter((n) => Number.isFinite(n)),
   );
 
-  let config = await trade_ads_get_config_merged();
+  let stored_config = await trade_ads_get_config_merged();
+  let rotation_hit =
+    options?.source === "auto" ? trade_ads_pick_rotation_preset(stored_config) : null;
+  let config = rotation_hit
+    ? trade_ads_config_with_preset(stored_config, rotation_hit.preset)
+    : stored_config;
   config.runtime_user_id = me.id;
 
   let item_data = await get_cached_item_data();
@@ -1111,6 +1311,9 @@ async function trade_ads_post_now(options) {
   await set_local_value("trade_ads_last_auto_post_at", Date.now());
   await set_local_value(trade_ads_schedule_anchor_key, null);
   await set_local_value("trade_ads_last_auto_error", null);
+  if (rotation_hit) {
+    await trade_ads_advance_rotation_preset(stored_config, rotation_hit.index);
+  }
   try {
     await chrome.alarms.clear(trade_ads_clear_error_alarm_name);
   } catch {}
@@ -1243,10 +1446,18 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       }
       let item_data = await get_cached_item_data();
       let slot_item_metrics = {};
-      for (let slot of [
+      let metric_slots = [
         ...(config.offer_slots || []),
         ...(config.request_slots || []),
-      ]) {
+      ];
+      for (let preset of config.presets || []) {
+        if (!preset) continue;
+        metric_slots.push(
+          ...(preset.offer_slots || []),
+          ...(preset.request_slots || []),
+        );
+      }
+      for (let slot of metric_slots) {
         if (slot == null || !Number.isFinite(Number(slot))) continue;
         let aid = Number(slot);
         let row = get_rolimons_item(item_data, aid);

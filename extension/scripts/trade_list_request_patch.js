@@ -41,19 +41,26 @@
     try {
       let style = document.createElement("style");
       style.textContent = `
-        thumbnail-2d.nru-trade-thumb-proxy-host-active{
+        .item-card-thumb-container thumbnail-2d.nru-trade-thumb-proxy-host-active,
+        .trade-request-item thumbnail-2d.nru-trade-thumb-proxy-host-active{
           display:block!important;
           width:100%!important;
           height:100%!important;
+          max-width:100%!important;
+          max-height:100%!important;
         }
-        .thumbnail-2d-container.nru-trade-thumb-proxy-active{
+        .item-card-thumb-container .thumbnail-2d-container.nru-trade-thumb-proxy-active,
+        .trade-request-item .thumbnail-2d-container.nru-trade-thumb-proxy-active,
+        .trades-list-detail .thumbnail-2d-container.nru-trade-thumb-proxy-active{
           display:block!important;
+          position:relative!important;
           width:100%!important;
           height:100%!important;
-          min-width:100%!important;
-          min-height:100%!important;
+          max-width:100%!important;
+          max-height:100%!important;
           animation:none!important;
           background-image:none!important;
+          overflow:hidden!important;
         }
         .thumbnail-2d-container.nru-trade-thumb-proxy-active::before,
         .thumbnail-2d-container.nru-trade-thumb-proxy-active::after{
@@ -65,6 +72,35 @@
           opacity:1!important;
           transition:none!important;
           animation:none!important;
+          position:static!important;
+        }
+        .item-card-thumb-container thumbnail-2d,
+        .item-card-thumb-container .thumbnail-2d-container,
+        .item-card-link thumbnail-2d,
+        .item-card-container thumbnail-2d,
+        .trade-request-item thumbnail-2d{
+          z-index:0!important;
+        }
+        .item-card-container .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),
+        .item-card-link .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),
+        .item-card-thumb-container .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),
+        .trade-request-item .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),
+        .item-card-container .limited-number-container,
+        .item-card-link .limited-number-container,
+        .item-card-thumb-container .limited-number-container,
+        .trade-request-item .limited-number-container,
+        .trades-list-detail .limited-number-container,
+        .item-card-container .item-card-holding,
+        .item-card-link .item-card-holding,
+        .item-card-thumb-container .item-card-holding,
+        .trade-request-item .item-card-holding,
+        .trades-list-detail .item-card-holding,
+        .item-card-container .item-card-equipped,
+        .item-card-link .item-card-equipped,
+        .item-card-thumb-container .item-card-equipped,
+        .trade-request-item .item-card-equipped,
+        .trades-list-detail .item-card-equipped{
+          z-index:6!important;
         }
       `;
       (document.head || document.documentElement || document.body)?.appendChild(style);
@@ -129,6 +165,27 @@
     } catch {
       return "";
     }
+  }
+
+  function get_trade_decline_id(raw_url) {
+    try {
+      let url = new URL(raw_url, location.origin),
+        match = "trades.roblox.com" === url.hostname && url.pathname.match(/^\/v1\/trades\/(\d+)\/decline\/?$/);
+      return match ? match[1] : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function dispatch_self_declined_trade(trade_id) {
+    if (!trade_id) return;
+    try {
+      document.dispatchEvent(
+        new CustomEvent("nru_trade_self_declined", {
+          detail: JSON.stringify({ trade_id }),
+        }),
+      );
+    } catch {}
   }
 
   function parse_bridge_detail(raw_detail) {
@@ -392,6 +449,8 @@
       img.style.setProperty("opacity", "1", "important");
       img.style.setProperty("transition", "none", "important");
       img.style.setProperty("animation", "none", "important");
+      img.style.setProperty("position", "static", "important");
+      img.style.removeProperty("z-index");
     } catch {}
   }
 
@@ -449,7 +508,7 @@
       Object.assign(proxy.style, {
         position: "absolute",
         inset: "0",
-        zIndex: "1",
+        zIndex: "0",
         width: "100%",
         height: "100%",
         objectFit: "contain",
@@ -586,7 +645,14 @@
   if ("function" == typeof original_fetch) {
     window.fetch = async function (input, init) {
       let cached_response = await get_cached_trade_response(input, init);
-      return cached_response || original_fetch.call(this, normalize_request(input), init);
+      if (cached_response) return cached_response;
+      let decline_id =
+        "POST" === get_request_method(input, init)
+          ? get_trade_decline_id(get_request_url(input))
+          : "";
+      let response = await original_fetch.call(this, normalize_request(input), init);
+      if (decline_id && response?.ok) dispatch_self_declined_trade(decline_id);
+      return response;
     };
   }
 
@@ -660,6 +726,7 @@
     let xhr = this,
       meta = xhr.__nru_xhr_request_meta || {},
       trade_id = get_trade_detail_id(meta.url),
+      decline_id = "POST" === meta.method ? get_trade_decline_id(meta.url) : "",
       thumb_requests =
         "POST" === meta.method &&
         "thumbnails.roblox.com" === (() => {
@@ -671,6 +738,15 @@
         })()
           ? get_thumb_batch_requests(args[0])
           : null;
+    if (decline_id) {
+      try {
+        xhr.addEventListener("loadend", () => {
+          xhr.status >= 200 &&
+            xhr.status < 300 &&
+            dispatch_self_declined_trade(decline_id);
+        });
+      } catch {}
+    }
     if ("GET" === meta.method && trade_id && !1 !== meta.rest?.[0]) {
       request_cached_trade_detail(trade_id).then((trade) => {
         trade && ensure_trade_thumbs(get_trade_thumb_requests(trade)).catch(() => {});

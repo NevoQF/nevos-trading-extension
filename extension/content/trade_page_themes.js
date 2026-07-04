@@ -20,7 +20,10 @@
   let last_path = "";
 
   function is_trade_page() {
-    return /^\/(?:[a-z]{2}\/)?trades\/?$/i.test(location.pathname);
+    let path = location.pathname || "";
+    return (
+      /\/trades(\/|$)/i.test(path) || /\/users\/\d+\/trade/i.test(path)
+    );
   }
 
   function normalize_hex_color(value, fallback) {
@@ -767,8 +770,8 @@
       html.nte-trade-page-theme .trade-list-detail,
       html.nte-trade-page-theme .trade-list-detail-offer,
       html.nte-trade-page-theme .trade-details,
-      html.nte-trade-page-theme .section-content,
-      html.nte-trade-page-theme .tab-content {
+      html.nte-trade-page-theme .trades-container .section-content,
+      html.nte-trade-page-theme .trades-container .tab-content {
         background: ${backdrop} !important;
         background-attachment: fixed !important;
         background-size: ${theme.effect === "circuit" ? "34px 34px, 34px 34px, auto" : "cover"} !important;
@@ -785,7 +788,7 @@
 
       html.nte-trade-page-theme .trade-row,
       html.nte-trade-page-theme .trade-list-item,
-      html.nte-trade-page-theme .list-item,
+      html.nte-trade-page-theme .trades-container .list-item,
       html.nte-trade-page-theme .rbx-tabs-horizontal,
       html.nte-trade-page-theme .nav-tabs {
         background-color: var(--nte-trade-surface) !important;

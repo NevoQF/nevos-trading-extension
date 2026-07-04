@@ -207,7 +207,80 @@
     return li ? li.parentElement : null;
   }
 
+  function format_stat(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) return "—";
+    return n.toLocaleString("en-US");
+  }
+
+  function ensure_styles() {
+    if (document.getElementById("nte-quick-search-style")) return;
+    const style = document.createElement("style");
+    style.id = "nte-quick-search-style";
+    style.textContent = `
+      li.${item_class} > a.new-navbar-search-anchor {
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+        padding: 7px 12px 7px 0 !important;
+      }
+      li.${item_class} .${item_class}-body {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+      li.${item_class} .${item_class}-name {
+        color: #fff;
+        font-size: 14px;
+        font-weight: 500;
+        line-height: 1.15;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      li.${item_class} .${item_class}-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      li.${item_class} .${item_class}-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        line-height: 1.2;
+      }
+      li.${item_class} .${item_class}-chip strong {
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.86);
+        font-size: 11px;
+        letter-spacing: 0;
+      }
+      li.${item_class} .${item_class}-chip.is-value strong {
+        color: #93c5fd;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function build_stat_chip(label, value, extra_class) {
+    const chip = document.createElement("span");
+    chip.className = `${item_class}-chip${extra_class ? ` ${extra_class}` : ""}`;
+    chip.innerHTML = `${label} <strong>${format_stat(value)}</strong>`;
+    return chip;
+  }
+
   function build_item_li(entry) {
+    ensure_styles();
     const li = document.createElement("li");
     li.className = `navbar-search-option rbx-clickable-li ${item_class}`;
     li.dataset.nteQuickItem = "1";
@@ -222,17 +295,28 @@
     const icon = document.createElement("span");
     icon.className = `navbar-list-option-icon ${item_class}-icon`;
     icon.style.cssText =
-      "display:inline-block;width:48px;height:48px;margin-right:10px;background-size:contain;background-position:center;background-repeat:no-repeat;background-color:rgba(0,0,0,0.12);border-radius:4px;vertical-align:middle;flex:0 0 auto;opacity:1!important;filter:none!important;";
+      "display:inline-block;width:48px;height:48px;margin-right:0;background-size:contain;background-position:center;background-repeat:no-repeat;background-color:rgba(0,0,0,0.12);border-radius:4px;vertical-align:middle;flex:0 0 auto;opacity:1!important;filter:none!important;";
     const thumb = thumb_cache[thumb_key(entry)];
     if (thumb && thumb !== "in-review" && thumb !== "blocked") {
       icon.style.setProperty("background-image", `url("${thumb}")`, "important");
     }
 
-    const text = document.createElement("span");
-    text.className = "navbar-list-option-text";
-    text.textContent = entry.abbr ? `${entry.name} (${entry.abbr})` : entry.name;
+    const body = document.createElement("span");
+    body.className = `${item_class}-body`;
 
-    a.append(icon, text);
+    const name = document.createElement("span");
+    name.className = `${item_class}-name navbar-list-option-text`;
+    name.textContent = entry.abbr ? `${entry.name} (${entry.abbr})` : entry.name;
+
+    const meta = document.createElement("span");
+    meta.className = `${item_class}-meta`;
+    meta.append(
+      build_stat_chip("RAP", entry.rap),
+      build_stat_chip("Value", entry.value, `${item_class}-chip is-value`),
+    );
+
+    body.append(name, meta);
+    a.append(icon, body);
     li.appendChild(a);
     return li;
   }
