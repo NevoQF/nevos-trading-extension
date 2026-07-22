@@ -333,7 +333,11 @@
       if (!results.length) return;
       const frag = document.createDocumentFragment();
       for (const entry of results) frag.appendChild(build_item_li(entry));
-      list.prepend(frag);
+      // Always below people results.
+      const people = list.querySelectorAll("li.nte-people-search-item");
+      const last_person = people[people.length - 1];
+      if (last_person) last_person.after(frag);
+      else list.prepend(frag);
     } finally {
       injecting = false;
     }

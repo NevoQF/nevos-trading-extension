@@ -21,8 +21,10 @@ const section_classes = {
 const chevron_svg =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
 
-const option_groups = JSON.parse(
-  '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"}]',
+const option_groups = nte_filter_option_groups(
+  JSON.parse(
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+  ),
 );
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -605,16 +607,35 @@ function open_inbound_trade_notification_settings_modal(current) {
   return new Promise((resolve) => {
     let existing = document.getElementById("inbound-notif-settings-overlay");
     if (existing) existing.remove();
+    let lite = typeof nte_is_lite === "function" && nte_is_lite();
 
     let overlay = document.createElement("div");
     overlay.id = "inbound-notif-settings-overlay";
     overlay.className = "inbound-notif-settings-overlay";
+    let webhook_block = lite
+      ? `<div class="inbound-notif-settings-group inbound-notif-lite-note">
+            <span class="inbound-notif-settings-label">Discord webhooks</span>
+            <p class="inbound-notif-settings-subtitle">Not included in LITE. Browser notifications still work.</p>
+          </div>`
+      : `<div class="inbound-notif-settings-group">
+            <label class="inbound-notif-switch-row">
+              <span>Notify to a Discord webhook</span>
+              <input id="inbound-notif-webhook-enabled" type="checkbox" ${current.webhook_enabled ? "checked" : ""} />
+            </label>
+            <input id="inbound-notif-webhook-url" class="inbound-notif-text-input" type="url" placeholder="https://discord.com/api/webhooks/..." value="${escape_html_attr(current.webhook_url)}" />
+
+            <label class="inbound-notif-switch-row inbound-notif-switch-row-sub">
+              <span>Ping the user</span>
+              <input id="inbound-notif-ping-enabled" type="checkbox" ${current.ping_enabled ? "checked" : ""} />
+            </label>
+            <input id="inbound-notif-discord-id" class="inbound-notif-text-input" type="text" inputmode="numeric" placeholder="Discord user ID" value="${escape_html_attr(current.discord_id)}" />
+          </div>`;
     overlay.innerHTML = `
       <div class="inbound-notif-settings-card" role="dialog" aria-modal="true" aria-labelledby="inbound-settings-title">
         <div class="inbound-notif-settings-head">
           <div>
             <h3 id="inbound-settings-title" class="inbound-notif-settings-title">Inbound Alert Settings</h3>
-            <p class="inbound-notif-settings-subtitle">Choose your minimum gain and optional Discord alerts.</p>
+            <p class="inbound-notif-settings-subtitle">${lite ? "Choose your minimum gain for browser alerts." : "Choose your minimum gain and optional Discord alerts."}</p>
           </div>
           <button type="button" class="inbound-notif-settings-close" aria-label="Close settings">✕</button>
         </div>
@@ -633,28 +654,15 @@ function open_inbound_trade_notification_settings_modal(current) {
               <input id="inbound-notif-min-gain" type="number" min="0" max="9999" step="0.01" value="${escape_html_attr(format_inbound_trade_notification_min_gain(current.min_gain))}" />
             </label>
           </div>
-
-          <div class="inbound-notif-settings-group">
-            <label class="inbound-notif-switch-row">
-              <span>Notify to a Discord webhook</span>
-              <input id="inbound-notif-webhook-enabled" type="checkbox" ${current.webhook_enabled ? "checked" : ""} />
-            </label>
-            <input id="inbound-notif-webhook-url" class="inbound-notif-text-input" type="url" placeholder="https://discord.com/api/webhooks/..." value="${escape_html_attr(current.webhook_url)}" />
-
-            <label class="inbound-notif-switch-row inbound-notif-switch-row-sub">
-              <span>Ping the user</span>
-              <input id="inbound-notif-ping-enabled" type="checkbox" ${current.ping_enabled ? "checked" : ""} />
-            </label>
-            <input id="inbound-notif-discord-id" class="inbound-notif-text-input" type="text" inputmode="numeric" placeholder="Discord user ID" value="${escape_html_attr(current.discord_id)}" />
-          </div>
+          ${webhook_block}
         </div>
         <div class="inbound-notif-settings-actions">
           <button type="button" class="inbound-notif-btn inbound-notif-btn-cancel" data-role="cancel">Cancel</button>
           <button type="button" class="inbound-notif-btn inbound-notif-btn-save" data-role="save">Save</button>
-          <button type="button" class="inbound-notif-btn inbound-notif-btn-test" data-role="test">
+          ${lite ? "" : `<button type="button" class="inbound-notif-btn inbound-notif-btn-test" data-role="test">
             <span class="inbound-notif-btn-test-icon" aria-hidden="true">▶</span>
             <span class="inbound-notif-btn-test-label" data-role="test-label">Test webhook</span>
-          </button>
+          </button>`}
         </div>
       </div>
     `;
@@ -684,6 +692,8 @@ function open_inbound_trade_notification_settings_modal(current) {
     }
 
     function sync_webhook_fields() {
+      if (!webhook_enabled_input || !webhook_url_input || !ping_enabled_input || !discord_id_input)
+        return;
       let webhook_enabled = !!webhook_enabled_input.checked;
       let ping_enabled = webhook_enabled && !!ping_enabled_input.checked;
       webhook_url_input.disabled = !webhook_enabled;
@@ -740,8 +750,10 @@ function open_inbound_trade_notification_settings_modal(current) {
       sync_pills();
     });
 
-    webhook_enabled_input.addEventListener("change", sync_webhook_fields);
-    ping_enabled_input.addEventListener("change", sync_webhook_fields);
+    if (webhook_enabled_input)
+      webhook_enabled_input.addEventListener("change", sync_webhook_fields);
+    if (ping_enabled_input)
+      ping_enabled_input.addEventListener("change", sync_webhook_fields);
 
     overlay.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
@@ -752,6 +764,16 @@ function open_inbound_trade_notification_settings_modal(current) {
 
     save_btn.addEventListener("click", () => {
       let min_gain = normalize_min_gain_input();
+      if (lite) {
+        close({
+          min_gain,
+          webhook_enabled: false,
+          webhook_url: "",
+          ping_enabled: false,
+          discord_id: "",
+        });
+        return;
+      }
       let webhook_enabled = !!webhook_enabled_input.checked;
       let webhook_url = normalize_inbound_trade_notification_webhook_url(
         webhook_url_input.value,
@@ -2079,10 +2101,12 @@ function trade_ads_attach_picker(root, opts) {
     onInventoryError,
     requestSlots,
     slotIndex,
+    allowTags,
   } = opts;
   let pick_request_slots = Array.isArray(requestSlots) ? requestSlots : [];
   let pick_slot_index =
     Number.isFinite(Number(slotIndex)) ? Number(slotIndex) : -1;
+  let show_tags = side === "request" && allowTags !== false;
   let overlay = document.createElement("div");
   overlay.className = "ta-overlay";
   let ph =
@@ -2096,7 +2120,7 @@ function trade_ads_attach_picker(root, opts) {
         <input type="search" class="ta-search-input" placeholder="${escape_html(ph)}" />
       </div>
       ${
-        side === "request"
+        show_tags
           ? `<div class="ta-tag-strip">${[
               ["demand", "Demand"],
               ["rares", "Rares"],
@@ -2171,7 +2195,7 @@ function trade_ads_attach_picker(root, opts) {
   });
   overlay.querySelector(".ta-sheet-close").addEventListener("click", close);
 
-  if (side === "request") {
+  if (show_tags) {
     overlay.querySelectorAll(".ta-tag-cell:not(.is-used)").forEach((cell) => {
       cell.addEventListener("click", async () => {
         let tag = cell.dataset.tag;
@@ -2493,6 +2517,10 @@ function trade_ads_resolve_posting_panel(root) {
 function trade_ads_mount_notifications_panel(root) {
   let mount = root?.querySelector("#ta-notifs-root");
   if (!mount) return;
+  if (typeof nte_is_lite === "function" && nte_is_lite()) {
+    mount.innerHTML = `<div class="ta-notifs-empty-card ta-notifs-lite-card"><div class="ta-notifs-lite-badge">LITE</div><p class="ta-notifs-empty-title">Trade ad alerts need Full</p><p class="ta-notifs-empty-copy">LITE stays fully client-side. Grab the full extension for live trade ad matching.</p><a class="ta-notifs-lite-link" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer" data-open-new-tab="true">Get Full on nevos-extension.com</a></div>`;
+    return;
+  }
   if (typeof trade_ad_notif_render_into !== "function") {
     mount.innerHTML = `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Trade ad alerts unavailable</p><p class="ta-notifs-empty-copy">Reload the extension to load the notifications module.</p></div>`;
     return;
@@ -5456,14 +5484,89 @@ async function render_actions_tab() {
   let root = document.getElementById("trade-actions-root");
   if (!root) return;
 
-  let progress = await ta_send("ta_progress");
-  let already_rendered = root.querySelector(".ta-section");
-  if (already_rendered) {
-    ta_update_buttons(progress);
-    if (progress?.running) ta_start_polling();
-    return;
-  }
+  let layout = actions_ensure_category_layout(root);
+  let bulk_inner = layout.querySelector("#actions-bulk-inner");
+  let ms_root = layout.querySelector("#actions-ms-root");
+  if (!bulk_inner || !ms_root) return;
 
+  let progress = await ta_send("ta_progress");
+  if (!bulk_inner.querySelector(".ta-section")) {
+    render_bulk_cancel_into(bulk_inner);
+  } else {
+    ta_update_buttons(progress);
+  }
+  if (progress?.running) ta_start_polling();
+
+  let active = actions_get_active_category(layout);
+  if (active === "mass" || ms_root.dataset.msMounted === "1") {
+    await render_mass_send_panel(ms_root);
+  }
+}
+
+function actions_get_active_category(root) {
+  if (root?.dataset?.actionsActiveCategory === "mass") return "mass";
+  if (root?.dataset?.actionsActiveCategory === "bulk") return "bulk";
+  return globalThis.__nte_actions_active_category === "mass" ? "mass" : "bulk";
+}
+
+function actions_set_active_category(root, category) {
+  if (!root) return;
+  let cat = category === "mass" ? "mass" : "bulk";
+  globalThis.__nte_actions_active_category = cat;
+  root.dataset.actionsActiveCategory = cat;
+  root.querySelectorAll(".ta-category-pick").forEach((btn) => {
+    let on = btn.dataset.actionsCategory === cat;
+    btn.classList.toggle("is-active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  root.querySelectorAll("[data-actions-category-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.actionsCategoryPanel !== cat;
+  });
+}
+
+function actions_bind_category_picks(root) {
+  root.querySelectorAll(".ta-category-pick").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      actions_set_active_category(root, btn.dataset.actionsCategory);
+      if (btn.dataset.actionsCategory === "mass") {
+        let ms_root = root.querySelector("#actions-ms-root");
+        if (ms_root) void render_mass_send_panel(ms_root);
+      }
+    });
+  });
+  actions_set_active_category(root, actions_get_active_category(root));
+}
+
+function actions_ensure_category_layout(root) {
+  if (!root) return null;
+  let cat = actions_get_active_category(root);
+  if (!root.querySelector("#actions-bulk-inner")) {
+    root.innerHTML = `
+    <div class="ta-category-bar" role="tablist" aria-label="Actions sections">
+      <button type="button" class="ta-category-pick is-active" data-actions-category="bulk" role="tab" aria-selected="true" aria-controls="actions-bulk-panel">
+        <span class="ta-category-pick-label">Bulk Cancel</span>
+        <span class="ta-category-pick-note">Decline trades in bulk</span>
+      </button>
+      <button type="button" class="ta-category-pick" data-actions-category="mass" role="tab" aria-selected="false" aria-controls="actions-ms-panel">
+        <span class="ta-category-pick-label">Mass Sending</span>
+        <span class="ta-category-pick-note">Send trades in bulk</span>
+      </button>
+    </div>
+    <div class="ta-category-panel" id="actions-bulk-panel" data-actions-category-panel="bulk" role="tabpanel">
+      <div id="actions-bulk-inner" class="actions-bulk-inner"></div>
+    </div>
+    <div class="ta-category-panel" id="actions-ms-panel" data-actions-category-panel="mass" role="tabpanel" hidden>
+      <div id="actions-ms-root" class="actions-ms-root"></div>
+    </div>`;
+    root.dataset.actionsActiveCategory = cat;
+    actions_bind_category_picks(root);
+  }
+  actions_set_active_category(root, cat);
+  return root;
+}
+
+function render_bulk_cancel_into(bulk_inner) {
+  if (!bulk_inner) return;
   let cancel_icon =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9l6 6"/><path d="M15 9l-6 6"/></svg>';
   let inbound_icon =
@@ -5471,8 +5574,7 @@ async function render_actions_tab() {
   let outbound_icon =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
 
-  root.innerHTML = `
-    <p class="ta-lede">Bulk decline trades directly from Roblox. Actions run in the background even if you close this popup.</p>
+  bulk_inner.innerHTML = `
     <div class="ta-section ta-section-inbound">
       <div class="ta-section-title">
         <span class="ta-section-icon">${inbound_icon}</span>
@@ -5520,7 +5622,7 @@ async function render_actions_tab() {
   `;
 
   for (let action of ta_actions) {
-    let btn = root.querySelector(`[data-ta-action="${action.id}"]`);
+    let btn = bulk_inner.querySelector(`[data-ta-action="${action.id}"]`);
     btn.addEventListener("click", () => {
       if (btn.disabled || btn.classList.contains("ta-running")) return;
       let is_overpay = action.id.endsWith("_overpaying");
@@ -5542,9 +5644,748 @@ async function render_actions_tab() {
     });
   }
 
-  ta_update_buttons(progress);
-  if (progress?.running) ta_start_polling();
+  void ta_send("ta_progress").then((p) => {
+    ta_update_buttons(p);
+    if (p?.running) ta_start_polling();
+  });
 }
+
+const mass_send_config_key = "mass_send_config";
+const mass_send_rate_unlocked_key = "mass_send_rate_unlocked";
+const mass_send_rate_store_opened_key = "mass_send_rate_store_opened";
+let ms_poll_timer = null;
+let ms_inventory_session_items = null;
+let ms_inventory_session_promise = null;
+
+function ms_reset_inventory_session() {
+  ms_inventory_session_items = null;
+  ms_inventory_session_promise = null;
+}
+
+async function ms_load_inventory_session() {
+  if (ms_inventory_session_items != null) return ms_inventory_session_items;
+  if (ms_inventory_session_promise) return ms_inventory_session_promise;
+  ms_inventory_session_promise = (async () => {
+    let res = await new Promise((resolve) =>
+      chrome.runtime.sendMessage({ type: "ms_inventory" }, resolve),
+    );
+    ms_inventory_session_promise = null;
+    if (!res?.ok) throw new Error(res?.error || "Could not load inventory");
+    ms_inventory_session_items = res.items || [];
+    return ms_inventory_session_items;
+  })();
+  return ms_inventory_session_promise;
+}
+
+function ms_send(type, extra) {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage({ type, ...extra }, (r) => {
+      if (chrome.runtime.lastError) resolve(null);
+      else resolve(r);
+    });
+  });
+}
+
+function ms_default_config() {
+  return {
+    offer_slots: [null, null, null, null],
+    request_slots: [null, null, null, null],
+    presets: [null, null, null, null],
+    preset_editor_index: 0,
+    online_hours: 24,
+    max_trades: 25,
+    avoid_recent_days: 2,
+  };
+}
+
+function ms_normalize_slots(slots) {
+  let out = Array.isArray(slots) ? slots.slice(0, 4) : [];
+  while (out.length < 4) out.push(null);
+  return out.map((x) => {
+    let n = Number(x);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  });
+}
+
+function ms_normalize_preset(raw, index) {
+  if (!raw || typeof raw !== "object") return null;
+  let name = String(raw.name || `Preset ${index + 1}`).trim();
+  let p = {
+    name: name.slice(0, 28) || `Preset ${index + 1}`,
+    offer_slots: ms_normalize_slots(raw.offer_slots),
+    request_slots: ms_normalize_slots(raw.request_slots),
+  };
+  let has_offer = p.offer_slots.some((x) => x != null);
+  let has_request = p.request_slots.some((x) => x != null);
+  return has_offer || has_request ? p : null;
+}
+
+function ms_normalize_presets(input) {
+  let raw = Array.isArray(input) ? input : [];
+  let out = [];
+  for (let i = 0; i < 4; i++) out.push(ms_normalize_preset(raw[i], i));
+  return out;
+}
+
+function ms_clamp_hours(value) {
+  let n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) n = 24;
+  return Math.max(1, Math.min(168, n));
+}
+
+function ms_clamp_max_trades(value) {
+  let n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) n = 25;
+  return Math.max(1, Math.min(100, n));
+}
+
+function ms_clamp_avoid_days(value) {
+  let n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) n = 2;
+  return Math.max(0, Math.min(365, n));
+}
+
+function ms_normalize_config(raw) {
+  let base = ms_default_config();
+  let cfg = raw && typeof raw === "object" ? raw : {};
+  let avoid_days =
+    cfg.avoid_recent === false
+      ? 0
+      : cfg.avoid_recent_days != null
+        ? cfg.avoid_recent_days
+        : base.avoid_recent_days;
+  return {
+    offer_slots: ms_normalize_slots(cfg.offer_slots),
+    request_slots: ms_normalize_slots(cfg.request_slots),
+    presets: ms_normalize_presets(cfg.presets),
+    preset_editor_index: Math.max(
+      0,
+      Math.min(3, Math.floor(Number(cfg.preset_editor_index)) || 0),
+    ),
+    online_hours: ms_clamp_hours(
+      cfg.online_hours != null ? cfg.online_hours : base.online_hours,
+    ),
+    max_trades: ms_clamp_max_trades(
+      cfg.max_trades != null ? cfg.max_trades : base.max_trades,
+    ),
+    avoid_recent_days: ms_clamp_avoid_days(avoid_days),
+  };
+}
+
+async function ms_load_config() {
+  let saved = await get_storage([mass_send_config_key]);
+  return ms_normalize_config(saved[mass_send_config_key]);
+}
+
+async function ms_save_config(next) {
+  let cfg = ms_normalize_config(next);
+  await set_storage({ [mass_send_config_key]: cfg });
+  return cfg;
+}
+
+function ms_preset_summary(preset) {
+  if (!preset) return "Empty";
+  let offer_count = preset.offer_slots.filter((x) => x != null).length;
+  let request_count = preset.request_slots.filter((x) => x != null).length;
+  return `${offer_count} offer · ${request_count} want`;
+}
+
+function ms_slot_html(side, i, id) {
+  if (id != null) {
+    let aid = Number(id);
+    return `<div class="ta-slot" data-ms-side="${side}" data-index="${i}"><div class="ta-slot-thumb-wrap"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" /><button type="button" class="ta-slot-clear" data-ms-side="${side}" data-index="${i}" aria-label="Clear">×</button></div></div>`;
+  }
+  return `<div class="ta-slot ta-slot-is-empty" data-ms-side="${side}" data-index="${i}"><span class="ta-slot-empty">${side === "offer" ? "Offer" : "Want"}</span></div>`;
+}
+
+function ms_sum_slot_metrics(slots, metrics) {
+  let value = 0;
+  let count = 0;
+  for (let id of slots || []) {
+    if (id == null) continue;
+    let m = metrics[String(id)];
+    if (!m) continue;
+    let value_line =
+      m.valueLine != null
+        ? Number(m.valueLine) || 0
+        : Number(m.rolimonsValue) || 0;
+    if (!(value_line > 0)) value_line = Number(m.rap) || 0;
+    value += value_line;
+    count += 1;
+  }
+  return { value, count };
+}
+
+function ms_side_label_html(title, totals, extra_class) {
+  let mod = extra_class ? ` ${extra_class}` : "";
+  if (!(totals?.count > 0)) {
+    return `<div class="ta-preview-label${mod}">${escape_html(title)}</div>`;
+  }
+  let roli_icon_url = escape_html(get_asset_url("assets/rolimons.png"));
+  return `<div class="ta-preview-label ta-preview-label-with-total${mod}">
+    <span class="ta-preview-label-text">${escape_html(title)}</span>
+    <span class="ta-preview-label-total" title="Rolimons-side total">
+      <img class="ta-preview-label-roli" src="${roli_icon_url}" width="15" height="15" alt="" decoding="async" />
+      <span class="ta-preview-label-value">${escape_html(format_number(totals.value))}</span>
+    </span>
+  </div>`;
+}
+
+async function ms_fetch_slot_metrics(cfg) {
+  let ids = [
+    ...(cfg?.offer_slots || []),
+    ...(cfg?.request_slots || []),
+  ]
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  ids = [...new Set(ids)];
+  if (!ids.length) return {};
+  let res = await ms_send("ms_item_metrics", { asset_ids: ids });
+  return res?.metrics && typeof res.metrics === "object" ? res.metrics : {};
+}
+
+async function ms_fill_user_avatars(scope_el) {
+  if (!scope_el) return;
+  let imgs = [
+    ...scope_el.querySelectorAll("img[data-ms-avatar]:not([data-ms-avatar-done])"),
+  ];
+  if (!imgs.length) return;
+  let ids = [];
+  let seen = new Set();
+  for (let img of imgs) {
+    let id = String(img.dataset.msAvatar || "").trim();
+    if (!/^\d+$/.test(id) || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  if (!ids.length) return;
+  let url_map = {};
+  for (let i = 0; i < ids.length; i += 100) {
+    let chunk = ids.slice(i, i + 100);
+    try {
+      let res = await fetch(
+        `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${chunk.join(",")}&size=48x48&format=Png&isCircular=true`,
+      );
+      if (!res.ok) continue;
+      let data = await res.json().catch(() => null);
+      for (let row of data?.data || []) {
+        if (row?.targetId != null && row?.imageUrl) {
+          url_map[String(row.targetId)] = row.imageUrl;
+        }
+      }
+    } catch {}
+  }
+  for (let img of imgs) {
+    if (!img.isConnected) continue;
+    let u = url_map[String(img.dataset.msAvatar || "")];
+    if (u) img.src = u;
+    img.setAttribute("data-ms-avatar-done", "1");
+  }
+}
+
+function ms_progress_text(progress) {
+  if (!progress) return "Idle";
+  if (progress.running) {
+    let status = String(progress.status || "");
+    if (/ratelimited waiting \d+s/i.test(status)) return status;
+    if (/waiting for new 2fa code/i.test(status)) return status;
+    let wait_sec = progress.wait_until
+      ? Math.max(0, Math.ceil((progress.wait_until - Date.now()) / 1000))
+      : 0;
+    if (wait_sec > 0) return `Ratelimited waiting ${wait_sec}s`;
+    return (
+      status ||
+      `Sending… ${progress.sent || 0} sent, ${progress.skipped || 0} skipped, ${progress.failed || 0} failed`
+    );
+  }
+  if (progress.error) return `Stopped: ${progress.error}`;
+  if (progress.total > 0 || progress.sent > 0 || progress.failed > 0) {
+    return `Done — ${progress.sent || 0} sent, ${progress.skipped || 0} skipped, ${progress.failed || 0} failed`;
+  }
+  return progress.status || "Idle";
+}
+
+function ms_update_progress_ui(root, progress) {
+  if (!root) return;
+  let line = root.querySelector("#ms-progress-line");
+  let start_btn = root.querySelector("#ms-start");
+  let stop_btn = root.querySelector("#ms-stop");
+  if (line) line.textContent = ms_progress_text(progress);
+  let running = !!progress?.running;
+  if (start_btn) start_btn.disabled = running;
+  if (stop_btn) stop_btn.disabled = !running;
+  root.classList.toggle("is-running", running);
+}
+
+function ms_start_polling(root) {
+  if (ms_poll_timer) clearInterval(ms_poll_timer);
+  ms_poll_timer = setInterval(async () => {
+    let progress = await ms_send("ms_progress");
+    ms_update_progress_ui(root, progress);
+    if (!progress?.running) {
+      clearInterval(ms_poll_timer);
+      ms_poll_timer = null;
+    }
+  }, 800);
+}
+
+async function render_mass_send_panel(root) {
+  if (!root) return;
+  if (typeof nte_is_lite === "function" && nte_is_lite()) {
+    root.dataset.msMounted = "1";
+    root.innerHTML = `<div class="ta-notifs-empty-card ta-notifs-lite-card"><div class="ta-notifs-lite-badge">LITE</div><p class="ta-notifs-empty-title">Mass Sending needs Full</p><p class="ta-notifs-empty-copy">LITE stays fully client-side. Grab the full extension to mass-send trades to recent owners.</p><a class="ta-notifs-lite-link" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer" data-open-new-tab="true">Get Full on nevos-extension.com</a></div>`;
+    return;
+  }
+
+  let store = get_extension_store_review_info();
+  let unlock_st = await get_storage([
+    mass_send_rate_unlocked_key,
+    mass_send_rate_store_opened_key,
+  ]);
+  let rate_unlocked = !!unlock_st[mass_send_rate_unlocked_key];
+  let store_opened = !!unlock_st[mass_send_rate_store_opened_key];
+  if (!store) {
+    // No store page for this runtime — don't brick Mass Sending.
+    if (!rate_unlocked) {
+      await set_storage({ [mass_send_rate_unlocked_key]: true });
+      rate_unlocked = true;
+    }
+  } else if (!rate_unlocked) {
+    root.dataset.msMounted = "1";
+    root.innerHTML = `<div class="ms-rate-gate">
+      <div class="ms-rate-gate-glow" aria-hidden="true"></div>
+      <div class="ms-rate-gate-stars" aria-hidden="true">
+        <span>★</span><span>★</span><span>★</span><span>★</span><span>★</span>
+      </div>
+      <div class="ms-rate-gate-kicker">${escape_html(store.label)}</div>
+      <h3 class="ms-rate-gate-title">Unlock Mass Sending</h3>
+      <p class="ms-rate-gate-copy">Rate the extension <strong>5 stars</strong> and leave a short review. Then come back here.</p>
+      <a href="${escape_html_attr(store.url)}" data-open-new-tab="true" rel="noopener noreferrer" class="ms-rate-gate-cta" id="ms-rate-open">
+        <span class="ms-rate-gate-cta-star" aria-hidden="true">★</span>
+        Rate 5 stars on ${escape_html(store.label)}
+      </a>
+      <button type="button" class="ms-rate-gate-unlock${store_opened ? " is-shown" : ""}" id="ms-rate-unlock" aria-hidden="${store_opened ? "false" : "true"}">I've rated 5 stars</button>
+    </div>`;
+    bind_popup_external_links();
+    let open_btn = root.querySelector("#ms-rate-open");
+    let unlock_btn = root.querySelector("#ms-rate-unlock");
+    open_btn?.addEventListener("click", () => {
+      void set_storage({ [mass_send_rate_store_opened_key]: true });
+      if (!unlock_btn) return;
+      unlock_btn.classList.add("is-shown");
+      unlock_btn.setAttribute("aria-hidden", "false");
+    });
+    unlock_btn?.addEventListener("click", async () => {
+      await set_storage({
+        [mass_send_rate_unlocked_key]: true,
+        [mass_send_rate_store_opened_key]: true,
+      });
+      await render_mass_send_panel(root);
+    });
+    return;
+  }
+
+  let cfg = await ms_load_config();
+  let progress = await ms_send("ms_progress");
+  let recent = await ms_send("ms_recent");
+  let recent_rows = Array.isArray(recent?.sends) ? recent.sends : [];
+  let slot_metrics = await ms_fetch_slot_metrics(cfg);
+  let offer_totals = ms_sum_slot_metrics(cfg.offer_slots, slot_metrics);
+  let request_totals = ms_sum_slot_metrics(cfg.request_slots, slot_metrics);
+  root.dataset.msMounted = "1";
+
+  let selected_preset = cfg.preset_editor_index;
+  let filled_preset_count = cfg.presets.filter(Boolean).length;
+  let preset_chips = cfg.presets
+    .map((preset, index) => {
+      let active = index === selected_preset;
+      return `<button type="button" class="ta-preset-chip${active ? " is-active" : ""}" data-ms-preset-index="${index}">
+        <span class="ta-preset-chip-name">${escape_html(preset?.name || `Slot ${index + 1}`)}</span>
+        <span class="ta-preset-chip-note">${escape_html(ms_preset_summary(preset))}</span>
+      </button>`;
+    })
+    .join("");
+
+  let rows = "";
+  rows += ms_side_label_html("You offer", offer_totals);
+  rows += `<div class="ta-slot-row">`;
+  for (let i = 0; i < 4; i++) rows += ms_slot_html("offer", i, cfg.offer_slots[i]);
+  rows += `</div>`;
+  rows += ms_side_label_html(
+    "You request",
+    request_totals,
+    "ta-preview-label-section-gap",
+  );
+  rows += `<div class="ta-slot-row">`;
+  for (let i = 0; i < 4; i++)
+    rows += ms_slot_html("request", i, cfg.request_slots[i]);
+  rows += `</div>`;
+
+  let recent_items = "";
+  if (recent_rows.length) {
+    recent_items = recent_rows
+      .map((row, index) => {
+        let name = String(row?.name || `User ${row?.user_id || "?"}`).trim();
+        let profile = row?.user_id
+          ? `https://www.roblox.com/users/${encodeURIComponent(String(row.user_id))}/profile`
+          : "";
+        let sent = escape_html(format_relative_time(Number(row?.at) || 0));
+        let online_label = "";
+        let lo = Number(row?.last_online);
+        if (Number.isFinite(lo) && lo > 0) {
+          let ms = lo > 1e12 ? lo : lo * 1000;
+          online_label = `online ${format_relative_time(ms)}`;
+        }
+        let name_html = profile
+          ? `<a href="${profile}" target="_blank" rel="noopener noreferrer" class="ms-recent-link">${escape_html(name)}</a>`
+          : `<span class="ms-recent-name">${escape_html(name)}</span>`;
+        let offers = Array.isArray(row?.offer_items) ? row.offer_items : [];
+        let requests = Array.isArray(row?.request_items) ? row.request_items : [];
+        let has_items = offers.length > 0 || requests.length > 0;
+        let expand_btn = has_items
+          ? `<button type="button" class="ms-recent-expand" data-ms-recent-index="${index}" aria-expanded="false" aria-label="Show trade items"><span aria-hidden="true">›</span></button>`
+          : "";
+        let avatar_html = row?.user_id
+          ? `<img class="ms-recent-avatar" src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-ms-avatar="${escape_html(String(row.user_id))}" width="32" height="32" decoding="async" />`
+          : `<span class="ms-recent-avatar ms-recent-avatar-empty" aria-hidden="true"></span>`;
+        function thumb_tag(it) {
+          if (!it || it.id == null) return "";
+          let aid = Number(it.id) || 0;
+          if (!(aid > 0)) return "";
+          let href = `https://www.rolimons.com/item/${aid}`;
+          return `<a href="${escape_html_attr(href)}" data-open-new-tab="true" rel="noopener noreferrer" class="ta-recent-thumb-link" title="Open on Rolimons"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" class="ta-recent-thumb" /></a>`;
+        }
+        function side_html(label, items) {
+          let thumbs = items.map(thumb_tag).join("");
+          if (!thumbs) {
+            return `<div class="ta-recent-side"><span class="ta-recent-side-label">${label}</span><span class="ta-recent-no-items">—</span></div>`;
+          }
+          let total = items.reduce((s, it) => s + (Number(it.value) || 0), 0);
+          let total_str = total > 0 ? format_number(total) : "";
+          return `<div class="ta-recent-side"><span class="ta-recent-side-label">${label}</span><div class="ta-recent-thumbs">${thumbs}</div>${total_str ? `<span class="ta-recent-total">${total_str}</span>` : ""}</div>`;
+        }
+        let detail = has_items
+          ? `<div class="ms-recent-detail" hidden>
+              ${side_html("Offered", offers)}
+              ${side_html("Requested", requests)}
+            </div>`
+          : "";
+        let meta = online_label
+          ? `${sent} · ${escape_html(online_label)}`
+          : sent;
+        return `<div class="ms-recent-item${has_items ? " has-detail" : ""}">
+          <div class="ms-recent-row">
+            ${avatar_html}
+            <div class="ms-recent-copy">
+              <div class="ms-recent-main">${name_html}</div>
+              <div class="ms-recent-meta">${meta}</div>
+            </div>
+            ${expand_btn}
+          </div>
+          ${detail}
+        </div>`;
+      })
+      .join("");
+  } else {
+    recent_items = `<div class="ta-recent-empty">No mass sends yet.</div>`;
+  }
+
+  root.innerHTML = `
+    <p class="ta-lede">Send the same offer to recent owners of your requested items. Runs in the background even if you close this popup.</p>
+    <div class="ta-card">
+      <div class="ta-card-head">
+        <div>
+          <div class="ta-card-title">Mass send preview</div>
+          <div class="ta-card-sub">Tap a square to fill offer and request slots.</div>
+        </div>
+      </div>
+      ${rows}
+      <div class="ta-presets">
+        <div class="ta-presets-head">
+          <div>
+            <div class="ta-presets-title">Mass send presets</div>
+            <div class="ta-presets-sub">${filled_preset_count ? `${filled_preset_count}/4 saved · ` : ""}Separate from Trade Ads.</div>
+          </div>
+        </div>
+        <div class="ta-preset-strip">${preset_chips}</div>
+        <div class="ta-preset-actions">
+          <button type="button" class="ta-btn ta-btn-secondary" id="ms-preset-save">Save to slot ${selected_preset + 1}</button>
+          <button type="button" class="ta-btn ta-btn-ghost" id="ms-preset-load" ${cfg.presets[selected_preset] ? "" : "disabled"}>Load</button>
+          <button type="button" class="ta-btn ta-btn-ghost" id="ms-preset-clear" ${cfg.presets[selected_preset] ? "" : "disabled"}>Clear</button>
+        </div>
+      </div>
+      <div class="ta-divider"></div>
+      <div class="ms-filters">
+        <label class="ta-field">
+          <span class="ms-field-label">
+            Online within (hours)
+            <span class="ms-field-help" tabindex="0" role="button" aria-label="About online within hours">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span class="ms-field-tooltip" role="tooltip">Only send to owners last seen online within this many hours (from Rolimons).</span>
+            </span>
+          </span>
+          <input type="number" id="ms-online-hours" min="1" max="168" step="1" value="${cfg.online_hours}" />
+        </label>
+        <label class="ta-field">
+          <span class="ms-field-label">
+            Trades to send
+            <span class="ms-field-help" tabindex="0" role="button" aria-label="About trades to send">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              <span class="ms-field-tooltip" role="tooltip">How many successful sends to complete. Failed or privacy-blocked people are skipped and don’t count — it keeps going until this many succeed or no one is left.</span>
+            </span>
+          </span>
+          <input type="number" id="ms-max-trades" min="1" max="100" step="1" value="${cfg.max_trades}" />
+        </label>
+      </div>
+      <label class="ms-avoid-row">
+        <span class="ms-avoid-text">Skip people sent to within</span>
+        <input type="number" id="ms-avoid-days" class="ms-avoid-days" min="0" max="365" step="1" value="${cfg.avoid_recent_days}" />
+        <span class="ms-avoid-text">days</span>
+      </label>
+      <div class="ms-run-row">
+        <button type="button" class="ta-btn ta-btn-primary" id="ms-start">Start</button>
+        <button type="button" class="ta-btn ta-btn-ghost" id="ms-stop" disabled>Stop</button>
+      </div>
+      <div class="ta-status-line" id="ms-progress-line">${escape_html(ms_progress_text(progress))}</div>
+    </div>
+    <div class="ta-recent-posts ms-recent-posts">
+      <button type="button" class="ta-recent-toggle" id="ms-recent-toggle">
+        <span>Recent sends</span>
+        <svg class="ta-recent-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </button>
+      <div class="ta-recent-list" id="ms-recent-list">${recent_items}</div>
+    </div>
+  `;
+
+  ms_update_progress_ui(root, progress);
+  if (progress?.running) ms_start_polling(root);
+  void trade_ads_fill_thumbnails(root);
+  void ms_fill_user_avatars(root);
+  if (typeof init_tap_tooltips === "function") init_tap_tooltips(root);
+  bind_popup_external_links();
+
+  root.querySelector("#ms-recent-toggle")?.addEventListener("click", () => {
+    let list = root.querySelector("#ms-recent-list");
+    let chevron = root.querySelector("#ms-recent-toggle .ta-recent-chevron");
+    if (!list) return;
+    let open = list.classList.toggle("is-open");
+    if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "";
+  });
+
+  root.querySelectorAll(".ms-recent-expand").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      let item = btn.closest(".ms-recent-item");
+      if (!item) return;
+      let detail = item.querySelector(".ms-recent-detail");
+      if (!detail) return;
+      let open = detail.hasAttribute("hidden");
+      if (open) detail.removeAttribute("hidden");
+      else detail.setAttribute("hidden", "");
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+      item.classList.toggle("is-open", open);
+      if (open) {
+        void trade_ads_fill_thumbnails(detail);
+        bind_popup_external_links();
+      }
+    });
+  });
+
+  async function refresh(next_cfg) {
+    cfg = await ms_save_config(next_cfg || cfg);
+    await render_mass_send_panel(root);
+  }
+
+  function sync_preset_editor_ui(editor_index) {
+    cfg.preset_editor_index = editor_index;
+    root.querySelectorAll(".ta-preset-chip").forEach((chip) => {
+      let i = Number(chip.dataset.msPresetIndex) || 0;
+      chip.classList.toggle("is-active", i === editor_index);
+    });
+    let save_btn = root.querySelector("#ms-preset-save");
+    if (save_btn) save_btn.textContent = `Save to slot ${editor_index + 1}`;
+    let has_preset = !!cfg.presets[editor_index];
+    let load_btn = root.querySelector("#ms-preset-load");
+    let clear_btn = root.querySelector("#ms-preset-clear");
+    if (load_btn) load_btn.disabled = !has_preset;
+    if (clear_btn) clear_btn.disabled = !has_preset;
+  }
+
+  root.querySelectorAll(".ta-preset-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      let index = Math.max(0, Math.min(3, Number(btn.dataset.msPresetIndex) || 0));
+      if (index === cfg.preset_editor_index) return;
+      sync_preset_editor_ui(index);
+      void ms_save_config({ ...cfg, preset_editor_index: index });
+    });
+  });
+
+  root.querySelector("#ms-preset-save")?.addEventListener("click", async () => {
+    let presets = ms_normalize_presets(cfg.presets);
+    presets[cfg.preset_editor_index] = ms_normalize_preset(
+      {
+        name: `Preset ${cfg.preset_editor_index + 1}`,
+        offer_slots: cfg.offer_slots,
+        request_slots: cfg.request_slots,
+      },
+      cfg.preset_editor_index,
+    );
+    await refresh({ ...cfg, presets });
+  });
+
+  root.querySelector("#ms-preset-load")?.addEventListener("click", async () => {
+    let preset = cfg.presets[cfg.preset_editor_index];
+    if (!preset) return;
+    await refresh({
+      ...cfg,
+      offer_slots: preset.offer_slots,
+      request_slots: preset.request_slots,
+    });
+  });
+
+  root.querySelector("#ms-preset-clear")?.addEventListener("click", async () => {
+    let presets = ms_normalize_presets(cfg.presets);
+    presets[cfg.preset_editor_index] = null;
+    await refresh({ ...cfg, presets });
+  });
+
+  async function persist_filters() {
+    let hours = ms_clamp_hours(root.querySelector("#ms-online-hours")?.value);
+    let max_trades = ms_clamp_max_trades(
+      root.querySelector("#ms-max-trades")?.value,
+    );
+    let avoid_recent_days = ms_clamp_avoid_days(
+      root.querySelector("#ms-avoid-days")?.value,
+    );
+    cfg = await ms_save_config({
+      ...cfg,
+      online_hours: hours,
+      max_trades,
+      avoid_recent_days,
+    });
+    let hours_el = root.querySelector("#ms-online-hours");
+    let max_el = root.querySelector("#ms-max-trades");
+    let days_el = root.querySelector("#ms-avoid-days");
+    if (hours_el) hours_el.value = String(cfg.online_hours);
+    if (max_el) max_el.value = String(cfg.max_trades);
+    if (days_el) days_el.value = String(cfg.avoid_recent_days);
+  }
+
+  root.querySelector("#ms-online-hours")?.addEventListener("change", () => {
+    void persist_filters();
+  });
+  root.querySelector("#ms-max-trades")?.addEventListener("change", () => {
+    void persist_filters();
+  });
+  root.querySelector("#ms-avoid-days")?.addEventListener("change", () => {
+    void persist_filters();
+  });
+
+  root.querySelectorAll('.ta-slot[data-ms-side="offer"]').forEach((el) => {
+    el.addEventListener("click", async () => {
+      let idx = Number(el.dataset.index);
+      let pick_opts = {
+        side: "offer",
+        allowTags: false,
+        onInventoryError: (msg) => {
+          let line = root.querySelector("#ms-progress-line");
+          if (line) {
+            line.textContent = msg;
+            line.classList.add("ta-err");
+          }
+        },
+        onPick: async (id) => {
+          let slots = cfg.offer_slots.slice();
+          slots[idx] = Number(id) || null;
+          await refresh({ ...cfg, offer_slots: slots });
+        },
+      };
+      if (ms_inventory_session_items != null) {
+        pick_opts.inventory = ms_inventory_session_items;
+      } else {
+        pick_opts.inventoryPromise = ms_load_inventory_session();
+      }
+      trade_ads_attach_picker(root, pick_opts);
+    });
+  });
+
+  root.querySelectorAll('.ta-slot[data-ms-side="request"]').forEach((el) => {
+    el.addEventListener("click", () => {
+      let idx = Number(el.dataset.index);
+      trade_ads_attach_picker(root, {
+        side: "request",
+        allowTags: false,
+        inventory: [],
+        onPick: async (id) => {
+          let slots = cfg.request_slots.slice();
+          slots[idx] = Number(id) || null;
+          await refresh({ ...cfg, request_slots: slots });
+        },
+      });
+    });
+  });
+
+  root.querySelectorAll(".ta-slot-clear").forEach((btn) => {
+    btn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      let side = btn.dataset.msSide;
+      let idx = Number(btn.dataset.index);
+      if (side === "offer") {
+        let slots = cfg.offer_slots.slice();
+        slots[idx] = null;
+        void refresh({ ...cfg, offer_slots: slots });
+      } else {
+        let slots = cfg.request_slots.slice();
+        slots[idx] = null;
+        void refresh({ ...cfg, request_slots: slots });
+      }
+    });
+  });
+
+  root.querySelector("#ms-start")?.addEventListener("click", async () => {
+    await persist_filters();
+    let offer_count = cfg.offer_slots.filter((x) => x != null).length;
+    let request_count = cfg.request_slots.filter((x) => x != null).length;
+    if (!offer_count || !request_count) {
+      let line = root.querySelector("#ms-progress-line");
+      if (line) {
+        line.textContent = "Add at least one offer and one request item.";
+        line.classList.add("ta-err");
+      }
+      return;
+    }
+    let start_res = await ms_send("ms_start", {
+      config: {
+        offer_slots: cfg.offer_slots,
+        request_slots: cfg.request_slots,
+        online_hours: cfg.online_hours,
+        max_trades: cfg.max_trades,
+        avoid_recent_days: cfg.avoid_recent_days,
+      },
+    });
+    if (start_res && start_res.ok === false) {
+      let line = root.querySelector("#ms-progress-line");
+      if (line) {
+        line.textContent =
+          start_res.error ||
+          "Rate the extension 5 stars to unlock Mass Sending.";
+        line.classList.add("ta-err");
+      }
+      return;
+    }
+    let next = await ms_send("ms_progress");
+    ms_update_progress_ui(root, next);
+    ms_start_polling(root);
+  });
+
+  root.querySelector("#ms-stop")?.addEventListener("click", async () => {
+    await ms_send("ms_stop");
+    let next = await ms_send("ms_progress");
+    ms_update_progress_ui(root, next);
+  });
+}
+
 
 sync_mobile_popup_class();
 init_popup_theme_switcher();
@@ -5563,7 +6404,25 @@ if (about_logo_el) {
 const manifest = chrome.runtime.getManifest();
 const version_el = document.getElementById("extensionVersion");
 if (version_el && manifest.version) {
-  version_el.textContent = `v${manifest.version}`;
+  let lite_tag =
+    typeof nte_is_lite === "function" && nte_is_lite() ? " LITE" : "";
+  version_el.textContent = `v${manifest.version}${lite_tag}`;
+}
+
+if (typeof nte_is_lite === "function" && nte_is_lite()) {
+  document.body.classList.add("nte-lite");
+  // Hide Full-only contributor credits (proofs / analyzer / history backends).
+  document.querySelectorAll(".about-thanks-card").forEach((card) => {
+    let role = (card.querySelector(".about-thanks-role")?.textContent || "")
+      .toLowerCase();
+    if (
+      role.includes("proof") ||
+      role.includes("analyzer") ||
+      role.includes("trade history")
+    ) {
+      card.hidden = true;
+    }
+  });
 }
 
 render_about_review_cta();

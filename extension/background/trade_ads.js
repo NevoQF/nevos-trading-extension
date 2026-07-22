@@ -1423,7 +1423,12 @@ async function trade_ads_sync_alarm() {
 
 // Message handlers
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (trade_ad_notif_handle_message(message, respond)) return true;
+  if (
+    typeof trade_ad_notif_handle_message === "function" &&
+    trade_ad_notif_handle_message(message, respond)
+  ) {
+    return true;
+  }
 
   if (message?.type === "trade_ads_get_status") {
     (async () => {

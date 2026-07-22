@@ -40,11 +40,15 @@
       .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   }
 
-  function is_friend_requests_view() {
-    const hash = String(location.hash || "");
+  function is_friends_value_view() {
+    const hash = String(location.hash || "").toLowerCase();
+    const path = String(location.pathname || "").toLowerCase();
+    if (!/\/users(?:\/\d+)?\/friends\/?$/i.test(path)) return false;
+    if (/^#!\/?(friends|following|followers|trusted-friends)$/i.test(hash))
+      return true;
     if (/friend-requests/i.test(hash)) return true;
     return (
-      /\/users\/friends\/?$/i.test(location.pathname) &&
+      /\/users\/friends\/?$/i.test(path) &&
       (!hash || hash === "#" || hash === "#!")
     );
   }
@@ -356,7 +360,7 @@
   }
 
   function sync_cards() {
-    if (!enabled || !is_friend_requests_view()) {
+    if (!enabled || !is_friends_value_view()) {
       cleanup();
       return;
     }

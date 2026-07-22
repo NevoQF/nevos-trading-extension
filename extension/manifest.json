@@ -52,6 +52,7 @@
     {
       "js": [
         "shared/browser_compat.js",
+        "shared/build_variant.js",
         "shared/rolimons_item_details.js",
         "shared/username_lookup_guard.js",
         "shared/nte_icon_utils.js",
@@ -117,7 +118,9 @@
       ],
       "matches": [
         "https://www.roblox.com/users/friends*",
-        "https://www.roblox.com/*/users/friends*"
+        "https://www.roblox.com/users/*/friends*",
+        "https://www.roblox.com/*/users/friends*",
+        "https://www.roblox.com/*/users/*/friends*"
       ],
       "run_at": "document_idle"
     },
@@ -125,7 +128,8 @@
       "all_frames": true,
       "js": [
         "shared/browser_compat.js",
-        "content/roblox_totp_autofill.js"
+        "content/roblox_totp_autofill.js",
+        "content/mass_send_2fa.js"
       ],
       "matches": [
         "https://www.roblox.com/*",
@@ -136,7 +140,8 @@
     {
       "js": [
         "shared/browser_compat.js",
-        "content/navbar_quick_search.js"
+        "content/navbar_quick_search.js",
+        "content/navbar_people_search.js"
       ],
       "matches": [
         "https://www.roblox.com/*",
@@ -152,6 +157,17 @@
       "matches": [
         "https://www.roblox.com/*",
         "https://roblox.com/*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": [
+        "shared/browser_compat.js",
+        "content/rolimons_player_page.js"
+      ],
+      "matches": [
+        "https://www.rolimons.com/player/*",
+        "https://rolimons.com/player/*"
       ],
       "run_at": "document_idle"
     }
@@ -170,10 +186,13 @@
     "https://auth.roblox.com/*",
     "https://trades.roblox.com/*",
     "https://users.roblox.com/*",
+    "https://friends.roblox.com/*",
+    "https://presence.roblox.com/*",
     "https://inventory.roblox.com/*",
     "https://catalog.roblox.com/*",
     "https://economy.roblox.com/*",
     "https://apis.roblox.com/*",
+    "https://twostepverification.roblox.com/*",
     "https://thumbnails.roblox.com/*",
     "https://discord.com/api/webhooks/*",
     "https://www.discord.com/api/webhooks/*",
@@ -203,7 +222,7 @@
     "cookies"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.43",
+  "version": "3.10.44",
   "web_accessible_resources": [
     {
       "matches": [

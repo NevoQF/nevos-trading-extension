@@ -107,6 +107,17 @@
     return true;
   }
 
+  function is_projected_row(row) {
+    return Array.isArray(row) && Number(row[7]) === 1;
+  }
+
+  function offer_has_projected(have_ids, get_row) {
+    for (let id of Array.isArray(have_ids) ? have_ids : []) {
+      if (is_projected_row(get_row(Number(id)))) return true;
+    }
+    return false;
+  }
+
   function build_match(ad, owned_ids, get_row, viewer_user_id, options = null) {
     if (!passes_single_item_want_filter(ad)) return null;
     if (
@@ -119,6 +130,11 @@
     let wanted_id = Number(ad.want.itemIds[0]);
     if (!Number.isFinite(wanted_id) || wanted_id <= 0) return null;
     if (!owned_ids.has(String(wanted_id))) return null;
+
+    if (options?.ignoreProjecteds === true) {
+      let have_ids = Array.isArray(ad?.have?.itemIds) ? ad.have.itemIds : [];
+      if (offer_has_projected(have_ids, get_row)) return null;
+    }
 
     let { offer_items, wanted_item, have_total, want_total, have_robux } =
       summarize_ad_values(ad, get_row);
@@ -219,6 +235,8 @@
     normalize_thresholds,
     effective_value_from_row,
     item_summary_from_row,
+    is_projected_row,
+    offer_has_projected,
     passes_single_item_want_filter,
     summarize_ad_values,
     is_overpay_trade,

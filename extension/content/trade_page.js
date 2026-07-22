@@ -4174,9 +4174,11 @@
     async function n(r) {
       let a = r - 1,
         s = "dark" === c.getColorMode() ? "xDark.svg" : "x.svg",
-        u = document.querySelectorAll(".inventory-type-dropdown")[a];
-      if (!u) return;
-      let m = u.getElementsByClassName("rolimons-search")[0];
+        panel_el = document.getElementsByClassName("trade-inventory-panel")[a],
+        u = panel_el?.querySelector(".inventory-type-dropdown");
+      if (!u || !panel_el) return;
+      let search_root = panel_el.querySelector(".nte-trade-search-wrap"),
+        m = search_root?.querySelector(".rolimons-search");
       if (
         m ||
         "true" === u.dataset.nteTradeSearchMounted ||
@@ -4185,7 +4187,6 @@
         return;
       u.dataset.nteTradeSearchMounting = "true";
       let d = E();
-      m = u.getElementsByClassName("rolimons-search")[0];
       let overlay_el = null;
       let search_timer = null;
       let search_syntax_panel_open = !1;
@@ -4979,18 +4980,34 @@
           }
         }
       }
+      function get_search_x_btn() {
+        return search_root?.querySelector(".rolimons-search-x-button") || null;
+      }
       function clear_search() {
-        cancel_search(!0),
-          hide_overlay(),
-          (u.getElementsByClassName(
-            "rolimons-search-x-button",
-          )[0].style.display = "none");
+        cancel_search(!0), hide_overlay();
+        let x_btn = get_search_x_btn();
+        if (x_btn) x_btn.style.display = "none";
+      }
+      function mount_trade_search_ui(html) {
+        // Keep Roblox's Angular inventory filter intact.
+        // Append search into the same container as before, but never
+        // rewrite .inventory-type-dropdown innerHTML (that kills Angular).
+        let holder = document.createElement("div");
+        holder.innerHTML = String(html || "").trim();
+        let root = holder.firstElementChild;
+        if (!root) return null;
+        u.appendChild(root);
+        return root;
       }
       if (!m) {
-        u.innerHTML += d;
-        let loading_svg = u.getElementsByTagName("svg")[0];
+        search_root = mount_trade_search_ui(d);
+        if (!search_root) {
+          delete u.dataset.nteTradeSearchMounting;
+          return;
+        }
+        let loading_svg = search_root.getElementsByTagName("svg")[0];
         if (loading_svg) loading_svg.style.display = "none";
-        let x_btn_el = u.getElementsByClassName("rolimons-search-x-button")[0];
+        let x_btn_el = get_search_x_btn();
         let x_icon_el =
           x_btn_el && x_btn_el.querySelector(".nte-search-x-icon");
         if (x_icon_el) {
@@ -5002,8 +5019,13 @@
           x_icon_el.style.pointerEvents = "none";
           nte_append_trade_search_clear_icon(x_icon_el, "xDark.svg" === s);
         }
-        (m = u.getElementsByClassName("rolimons-search")[0]),
-          x_btn_el.addEventListener("click", clear_search);
+        m = search_root.querySelector(".rolimons-search");
+        if (!m) {
+          search_root.remove();
+          delete u.dataset.nteTradeSearchMounting;
+          return;
+        }
+        x_btn_el?.addEventListener("click", clear_search);
         let user_id = get_side_user_id();
         user_id &&
           (fetch_tradable_items(user_id),
@@ -5045,11 +5067,12 @@
         });
         m.addEventListener("input", () => {
           let q = m.value;
-          let x_btn = u.getElementsByClassName("rolimons-search-x-button")[0];
+          let x_btn = get_search_x_btn();
           if (q.trim()) {
-            x_btn.style.removeProperty("display");
+            if (x_btn) x_btn.style.removeProperty("display");
           } else {
-            (x_btn.style.display = "none"), hide_overlay();
+            if (x_btn) x_btn.style.display = "none";
+            hide_overlay();
             return;
           }
           clearTimeout(search_timer),
@@ -5135,6 +5158,142 @@
             </button>
         </div>
         </div>`;
+  }
+  function inject_trade_inventory_reload_styles() {
+    if (document.getElementById("nte-inv-reload-style")) return;
+    let style = document.createElement("style");
+    style.id = "nte-inv-reload-style";
+    style.textContent = `
+      .nte-inv-reload-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        margin: 6px 0 2px;
+        padding: 0 10px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .nte-inv-reload-btn {
+        min-width: 0;
+        white-space: nowrap;
+      }
+      .nte-inv-reload-btn[disabled] {
+        opacity: 0.65;
+        cursor: wait;
+      }
+      .nte-inv-reload-error-wrap {
+        display: flex;
+        justify-content: center;
+        margin: 10px 0 4px;
+        width: 100%;
+      }
+      .nte-inv-reload-error-wrap .nte-inv-reload-btn {
+        min-width: 140px;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+  function is_trade_inventory_load_failed(panel) {
+    return Array.from(panel.querySelectorAll(".container-empty")).some((el) => {
+      if (el.classList.contains("ng-hide")) return false;
+      return /unknown error|error occurred/i.test((el.textContent || "").trim());
+    });
+  }
+  async function reload_trade_inventory_side(side_index, btn) {
+    if (btn?.disabled) return;
+    let label = btn?.textContent || "Reload items";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Reloading...";
+    }
+    try {
+      await run_custom_trade_bridge_action("reloadInventory", {
+        side_index,
+      });
+    } catch (e) {
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = label;
+      }
+      setTimeout(() => {
+        try {
+          mount_trade_inventory_reload_buttons();
+        } catch (e) {}
+      }, 450);
+    }
+  }
+  function create_trade_inventory_reload_button(side_index, label, class_name) {
+    let btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = class_name;
+    btn.textContent = label;
+    btn.title = "Retry loading this inventory";
+    btn.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      reload_trade_inventory_side(side_index, btn);
+    });
+    return btn;
+  }
+  function mount_trade_inventory_reload_buttons() {
+    if ("sendOrCounter" !== c.getPageType()) {
+      document
+        .querySelectorAll(".nte-inv-reload-wrap, .nte-inv-reload-error-wrap")
+        .forEach((el) => el.remove());
+      return;
+    }
+
+    inject_trade_inventory_reload_styles();
+    let panels = document.querySelectorAll(".trade-inventory-panel");
+    panels.forEach((panel, side_index) => {
+      let dropdown = panel.querySelector(".inventory-type-dropdown");
+      let row = dropdown?.closest(".row");
+      if (row) {
+        let wrap = row.querySelector(".nte-inv-reload-wrap");
+        if (!wrap) {
+          wrap = document.createElement("div");
+          wrap.className = "nte-inv-reload-wrap";
+          wrap.appendChild(
+            create_trade_inventory_reload_button(
+              side_index,
+              "Reload items",
+              "btn-control-xs nte-inv-reload-btn",
+            ),
+          );
+          row.appendChild(wrap);
+        }
+      }
+
+      let error_el = Array.from(panel.querySelectorAll(".container-empty")).find(
+        (el) =>
+          !el.classList.contains("ng-hide") &&
+          /unknown error|error occurred/i.test((el.textContent || "").trim()),
+      );
+      let err_wrap = panel.querySelector(".nte-inv-reload-error-wrap");
+      if (error_el || is_trade_inventory_load_failed(panel)) {
+        if (!err_wrap) {
+          err_wrap = document.createElement("div");
+          err_wrap.className = "nte-inv-reload-error-wrap";
+          err_wrap.appendChild(
+            create_trade_inventory_reload_button(
+              side_index,
+              "Try again",
+              "btn-control-md nte-inv-reload-btn",
+            ),
+          );
+          (error_el || panel).insertAdjacentElement(
+            error_el ? "afterend" : "beforeend",
+            err_wrap,
+          );
+        } else if (error_el && err_wrap.previousElementSibling !== error_el) {
+          error_el.insertAdjacentElement("afterend", err_wrap);
+        }
+      } else {
+        err_wrap?.remove();
+      }
+    });
   }
   async function S() {
     if (!(await c.getOption("Values on Trading Window")))
@@ -11688,6 +11847,7 @@
       schedule_ownership_check();
     await Promise.allSettled([Promise.resolve(m()), S(), p(), C()]);
     w();
+    mount_trade_inventory_reload_buttons();
     (0, B.default)();
     (0, A.default)();
     ensure_nte_serial_hash_button();
@@ -11696,8 +11856,10 @@
     F();
     mount_trade_sales_hover_targets();
     sync_mobile_trade_inventory_scroll();
-    if (typeof inject_trade_history_button === "function")
-      inject_trade_history_button();
+    if (typeof nte_is_lite !== "function" || !nte_is_lite()) {
+      if (typeof inject_trade_history_button === "function")
+        inject_trade_history_button();
+    }
     if (typeof inject_trade_request_analyze_button === "function")
       inject_trade_request_analyze_button();
     if (typeof schedule_ownership_check === "function")
@@ -11960,8 +12122,10 @@
     if (trade_ui_refresh_messages.includes(e)) N();
     if (e === "Show Quick Decline Button") L();
     if (e === "Analyze Trade") {
-      inject_trade_history_button();
-      inject_trade_request_analyze_button();
+      if (typeof nte_is_lite !== "function" || !nte_is_lite()) {
+        inject_trade_history_button();
+        inject_trade_request_analyze_button();
+      }
     }
     if (e === "Duplicate Trade Warning")
       schedule_duplicate_trade_warning_update(0);
@@ -12719,19 +12883,55 @@
     if (duplicate_trade_warning_observer_started || !document.body) return;
     duplicate_trade_warning_observer_started = true;
     document.addEventListener("click", note_duplicate_trade_warning_send, true);
-    new MutationObserver(() => {
-      if (!is_duplicate_trade_warning_relevant_page()) {
+    ensure_trade_confirm_modal_observer();
+    schedule_duplicate_trade_warning_update(0);
+  }
+
+  function trade_confirm_modal_node_relevant(node) {
+    if (!(node instanceof Element)) return false;
+    return !!(
+      node.matches?.(
+        '.modal-dialog, .modal-content, .modal-body, [role="dialog"], .rbx-overlay, .rbx-modal, .modal-container',
+      ) ||
+      node.querySelector?.(
+        '.modal-dialog, .modal-content, .modal-body, [role="dialog"], .rbx-overlay, .rbx-modal, .modal-container',
+      )
+    );
+  }
+
+  function trade_confirm_modal_mutations_relevant(mutations) {
+    for (let mutation of mutations || []) {
+      for (let node of mutation.addedNodes || []) {
+        if (trade_confirm_modal_node_relevant(node)) return true;
+      }
+      for (let node of mutation.removedNodes || []) {
+        if (trade_confirm_modal_node_relevant(node)) return true;
+      }
+    }
+    return false;
+  }
+
+  let trade_confirm_modal_observer_started = false;
+  function ensure_trade_confirm_modal_observer() {
+    if (trade_confirm_modal_observer_started || !document.body) return;
+    trade_confirm_modal_observer_started = true;
+    new MutationObserver((mutations) => {
+      if (!trade_confirm_modal_mutations_relevant(mutations)) return;
+      let relevant = is_duplicate_trade_warning_relevant_page();
+      if (!relevant) {
         remove_duplicate_trade_warning();
+        remove_miss_send_warning();
         return;
       }
       let modal = find_duplicate_trade_warning_modal();
       if (!modal) {
         remove_duplicate_trade_warning();
+        remove_miss_send_warning();
         return;
       }
       schedule_duplicate_trade_warning_update();
+      schedule_miss_send_warning_update();
     }).observe(document.body, { childList: true, subtree: true });
-    schedule_duplicate_trade_warning_update(0);
   }
 
   ensure_duplicate_trade_warning_observer();
@@ -13027,17 +13227,7 @@
   function ensure_miss_send_warning_observer() {
     if (miss_send_warning_observer_started || !document.body) return;
     miss_send_warning_observer_started = true;
-    new MutationObserver(() => {
-      if (!is_miss_send_warning_relevant_page()) {
-        remove_miss_send_warning();
-        return;
-      }
-      if (!find_miss_send_warning_modal()) {
-        remove_miss_send_warning();
-        return;
-      }
-      schedule_miss_send_warning_update();
-    }).observe(document.body, { childList: true, subtree: true });
+    ensure_trade_confirm_modal_observer();
     schedule_miss_send_warning_update(0);
   }
 
@@ -13067,6 +13257,23 @@
   var ownership_run_token = 0;
   var ownership_selected_row_key = "";
   var ownership_fetch_backoff = {};
+  var ownership_cache_max_entries = 40;
+
+  function prune_ts_cache(cache, max_entries) {
+    let keys = Object.keys(cache || {});
+    if (keys.length <= max_entries) return;
+    keys
+      .sort((a, b) => (cache[a]?.ts || 0) - (cache[b]?.ts || 0))
+      .slice(0, keys.length - max_entries)
+      .forEach((key) => {
+        delete cache[key];
+      });
+  }
+
+  function set_ownership_cache_entry(user_id, entry) {
+    ownership_cache[String(user_id)] = entry;
+    prune_ts_cache(ownership_cache, ownership_cache_max_entries);
+  }
 
   function is_ownership_check_allowed() {
     if (!/\/trades\b/i.test(location.pathname)) return false;
@@ -13394,11 +13601,11 @@
       }
       owned.is_complete = !json?.nextPageCursor;
       if (!has_owned_item_state(owned)) {
-        ownership_cache[id] = {
+        set_ownership_cache_entry(id, {
           ids: owned,
           ts: Date.now(),
           complete: owned.is_complete,
-        };
+        });
         return owned;
       }
       let merged = cache?.ids || create_owned_item_state();
@@ -13414,11 +13621,11 @@
           Math.max(merged.name_counts.get(key) || 0, value),
         );
       merged.is_complete = !!owned.is_complete || !!cache?.complete;
-      ownership_cache[id] = {
+      set_ownership_cache_entry(id, {
         ids: merged,
         ts: Date.now(),
         complete: merged.is_complete,
-      };
+      });
       return merged;
     })().finally(() => {
       delete ownership_pending[pending_key];
@@ -13451,11 +13658,11 @@
           await fetch_asset_owned_items(user_id, wanted_offers),
         );
       if (owned)
-        ownership_cache[user_id] = {
+        set_ownership_cache_entry(user_id, {
           ids: owned,
           ts: Date.now(),
           complete: !!owned.is_complete,
-        };
+        });
       return owned;
     })().finally(() => {
       delete ownership_pending[pending_key];
@@ -13731,6 +13938,7 @@
   var nte_history_request_token = 0;
   var nte_analyze_trade_feature = null;
   var nte_history_owner_asset_cache = {};
+  var nte_history_owner_asset_cache_max = 30;
 
   function inject_trade_history_styles() {
     if (nte_history_style_injected) return;
@@ -15135,14 +15343,15 @@
     return found;
   }
 
-  async function fetch_history_bridge_asset_map(wanted_instance_ids) {
+  async function fetch_history_bridge_maps(wanted_instance_ids) {
     let wanted = new Set(
       (wanted_instance_ids || [])
         .map(normalize_history_instance_id)
         .filter(Boolean),
     );
-    let found = {};
-    if (!wanted.size) return found;
+    let asset_map = {};
+    let item_map = {};
+    if (!wanted.size) return { asset_map, item_map };
 
     let result = await run_custom_trade_bridge_action("getDetailTradeItems", {
       timeout_ms: 2200,
@@ -15164,43 +15373,9 @@
         parseInt(entry?.id ?? 0, 10) ||
         parseInt(entry?.item?.id ?? 0, 10) ||
         0;
-      if (user_asset_id > 0) found[instance_id] = user_asset_id;
-    }
+      if (user_asset_id > 0) asset_map[instance_id] = user_asset_id;
 
-    return found;
-  }
-
-  async function fetch_history_bridge_item_map(wanted_instance_ids) {
-    let wanted = new Set(
-      (wanted_instance_ids || [])
-        .map(normalize_history_instance_id)
-        .filter(Boolean),
-    );
-    let found = {};
-    if (!wanted.size) return found;
-
-    let result = await run_custom_trade_bridge_action("getDetailTradeItems", {
-      timeout_ms: 2200,
-    }).catch(() => null);
-
-    for (let entry of Array.isArray(result?.items) ? result.items : []) {
-      let instance_id = normalize_history_instance_id(
-        entry?.collectibleItemInstanceId ||
-          entry?.item?.collectibleItemInstanceId ||
-          entry?.item?.collectibleItemInstance?.collectibleItemInstanceId,
-      );
-      if (!instance_id || !wanted.has(instance_id)) continue;
-
-      let user_asset_id =
-        parseInt(entry?.userAssetId ?? 0, 10) ||
-        parseInt(entry?.item?.userAssetId ?? 0, 10) ||
-        parseInt(entry?.item?.userAsset?.id ?? 0, 10) ||
-        parseInt(entry?.item?.userAsset?.userAssetId ?? 0, 10) ||
-        parseInt(entry?.id ?? 0, 10) ||
-        parseInt(entry?.item?.id ?? 0, 10) ||
-        0;
-
-      found[instance_id] = {
+      item_map[instance_id] = {
         userAssetId: user_asset_id,
         assetId: resolve_history_asset_id_from_trade_item(
           entry,
@@ -15215,7 +15390,17 @@
       };
     }
 
-    return found;
+    return { asset_map, item_map };
+  }
+
+  async function fetch_history_bridge_asset_map(wanted_instance_ids) {
+    let maps = await fetch_history_bridge_maps(wanted_instance_ids);
+    return maps.asset_map;
+  }
+
+  async function fetch_history_bridge_item_map(wanted_instance_ids) {
+    let maps = await fetch_history_bridge_maps(wanted_instance_ids);
+    return maps.item_map;
   }
 
   async function fetch_history_user_asset_map_from_inventory(
@@ -15314,6 +15499,10 @@
       complete: !wanted.some((instance_id) => !merged[instance_id]),
       map: merged,
     };
+    prune_ts_cache(
+      nte_history_owner_asset_cache,
+      nte_history_owner_asset_cache_max,
+    );
 
     let out = {};
     for (let instance_id of wanted) {
@@ -15340,12 +15529,11 @@
 
     let instance_ids = items.map((item) => item.ciiid).filter(Boolean);
     if (instance_ids.length) {
-      let bridge_item_map = await fetch_history_bridge_item_map(
-        instance_ids,
-      ).catch(() => ({}));
-      let bridge_asset_map = await fetch_history_bridge_asset_map(
-        instance_ids,
-      ).catch(() => ({}));
+      let bridge_maps = await fetch_history_bridge_maps(instance_ids).catch(
+        () => ({ asset_map: {}, item_map: {} }),
+      );
+      let bridge_item_map = bridge_maps.item_map || {};
+      let bridge_asset_map = bridge_maps.asset_map || {};
       items = items.map((item) => ({
         ...item,
         heldSince:
@@ -16124,6 +16312,14 @@
   }
 
   async function inject_trade_history_button() {
+    if (typeof nte_is_lite === "function" && nte_is_lite()) {
+      document
+        .querySelectorAll(
+          ".nte-history-panel, .nte-history-btn, .nte-history-fallback-row, .nte-analyze-trade-btn",
+        )
+        .forEach((el) => el.remove());
+      return;
+    }
     if ("details" !== c.getPageType()) {
       document
         .querySelectorAll(".nte-history-panel")

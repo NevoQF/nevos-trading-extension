@@ -31,6 +31,8 @@ function trade_ad_notif_default_state() {
     viewerUserId: null,
     ownedCount: 0,
     ignoredUsers: [],
+    dismissedTrades: [],
+    ignoreProjecteds: false,
     disabledWantItemIds: [],
     watchableItemCount: 0,
     feedScanOffset: 0,
@@ -121,9 +123,12 @@ function trade_ad_notif_apply_scan_results(
   state.watchableItemCount = viewer.owned.size;
   let owned = trade_ad_notif_owned_for_scan(viewer.owned, state.disabledWantItemIds);
 
-  state.matches = trade_ad_notif_filter_matches_by_ignored_users(
-    trade_ad_notif_rescore_matches(state, viewer.owned, get_row, viewer.userId),
-    ignored_users,
+  state.matches = trade_ad_notif_filter_matches_by_dismissed(
+    trade_ad_notif_filter_matches_by_ignored_users(
+      trade_ad_notif_rescore_matches(state, viewer.owned, get_row, viewer.userId),
+      ignored_users,
+    ),
+    state.dismissedTrades,
   );
 
   let new_matches = TradeAdNotificationsCore.scan_ads_for_matches(
@@ -134,13 +139,19 @@ function trade_ad_notif_apply_scan_results(
     trade_ad_notif_match_options(state),
   );
   new_matches = trade_ad_notif_filter_matches_by_disabled_items(
-    trade_ad_notif_filter_matches_by_ignored_users(new_matches, ignored_users),
+    trade_ad_notif_filter_matches_by_dismissed(
+      trade_ad_notif_filter_matches_by_ignored_users(new_matches, ignored_users),
+      state.dismissedTrades,
+    ),
     state.disabledWantItemIds,
   );
   if (new_matches.length) {
-    state.matches = trade_ad_notif_filter_matches_by_ignored_users(
-      trade_ad_notif_merge_matches(state.matches, new_matches),
-      ignored_users,
+    state.matches = trade_ad_notif_filter_matches_by_dismissed(
+      trade_ad_notif_filter_matches_by_ignored_users(
+        trade_ad_notif_merge_matches(state.matches, new_matches),
+        ignored_users,
+      ),
+      state.dismissedTrades,
     );
   }
 
@@ -164,13 +175,22 @@ async function trade_ad_notif_backfill_feed(state, max_batches = 30) {
 async function trade_ad_notif_load_state() {
   let raw = await get_local_value(trade_ad_notif_state_key);
   if (!raw || typeof raw !== "object") return trade_ad_notif_default_state();
-  return trade_ad_notif_normalize_thresholds_on_state({
+  let state = trade_ad_notif_normalize_thresholds_on_state({
     ...trade_ad_notif_default_state(),
     ...raw,
     matches: Array.isArray(raw.matches) ? raw.matches : [],
     seenAdIds: Array.isArray(raw.seenAdIds) ? raw.seenAdIds : [],
     lastScannedCreatedAt: Math.max(0, Number(raw.lastScannedCreatedAt) || 0),
   });
+  state.ignoredUsers = trade_ad_notif_normalize_ignored_users(state.ignoredUsers);
+  state.dismissedTrades = trade_ad_notif_normalize_dismissed_trades(
+    state.dismissedTrades,
+  );
+  state.disabledWantItemIds = trade_ad_notif_normalize_disabled_want_items(
+    state.disabledWantItemIds,
+  );
+  state.ignoreProjecteds = state.ignoreProjecteds === true;
+  return state;
 }
 
 async function trade_ad_notif_save_state(state) {
@@ -192,7 +212,10 @@ function trade_ad_notif_normalize_thresholds_on_state(state) {
 }
 
 function trade_ad_notif_match_options(state) {
-  return trade_ad_notif_normalize_thresholds(state);
+  return {
+    ...trade_ad_notif_normalize_thresholds(state),
+    ignoreProjecteds: state?.ignoreProjecteds === true,
+  };
 }
 
 function trade_ad_notif_normalize_ignored_users(input) {
@@ -227,6 +250,59 @@ function trade_ad_notif_filter_matches_by_ignored_users(matches, ignored_users) 
       .toLowerCase();
     return username ? !blocked.has(username) : true;
   });
+}
+
+function trade_ad_notif_normalize_dismissed_trades(input) {
+  let out = [];
+  let seen = new Set();
+  for (let raw of Array.isArray(input) ? input : []) {
+    let ad_id =
+      raw && typeof raw === "object"
+        ? String(raw.adId ?? "").trim()
+        : String(raw || "").trim();
+    if (!ad_id || seen.has(ad_id)) continue;
+    seen.add(ad_id);
+    out.push({
+      adId: ad_id,
+      username: String(raw?.username || "").trim(),
+      userId: raw?.userId ?? null,
+      overpayAmount: Math.max(0, Number(raw?.overpayAmount) || 0),
+      wantedName: String(
+        raw?.wantedName || raw?.wantedItem?.name || "",
+      ).trim(),
+      dismissedAt: Number(raw?.dismissedAt) || Date.now(),
+    });
+  }
+  return out.slice(0, 200);
+}
+
+function trade_ad_notif_dismissed_ad_set(dismissed_trades) {
+  return new Set(
+    trade_ad_notif_normalize_dismissed_trades(dismissed_trades).map(
+      (row) => row.adId,
+    ),
+  );
+}
+
+function trade_ad_notif_filter_matches_by_dismissed(matches, dismissed_trades) {
+  let blocked = trade_ad_notif_dismissed_ad_set(dismissed_trades);
+  if (!blocked.size) return Array.isArray(matches) ? matches : [];
+  return (Array.isArray(matches) ? matches : []).filter((match) => {
+    let id = match?.adId != null ? String(match.adId) : "";
+    return id ? !blocked.has(id) : true;
+  });
+}
+
+function trade_ad_notif_snapshot_dismissed_trade(match) {
+  if (!match || match.adId == null) return null;
+  return {
+    adId: String(match.adId),
+    username: String(match.username || "").trim(),
+    userId: match.userId ?? null,
+    overpayAmount: Math.max(0, Number(match.overpayAmount) || 0),
+    wantedName: String(match.wantedItem?.name || "").trim(),
+    dismissedAt: Date.now(),
+  };
 }
 
 function trade_ad_notif_normalize_disabled_want_items(input) {
@@ -272,9 +348,12 @@ function trade_ad_notif_filter_matches_by_disabled_items(
 
 function trade_ad_notif_filter_matches(state) {
   return trade_ad_notif_filter_matches_by_disabled_items(
-    trade_ad_notif_filter_matches_by_ignored_users(
-      state.matches,
-      state.ignoredUsers,
+    trade_ad_notif_filter_matches_by_dismissed(
+      trade_ad_notif_filter_matches_by_ignored_users(
+        state.matches,
+        state.ignoredUsers,
+      ),
+      state.dismissedTrades,
     ),
     state.disabledWantItemIds,
   );
@@ -349,7 +428,10 @@ async function trade_ad_notif_rescan_feed_for_want_items(
     viewer.userId,
     trade_ad_notif_match_options(state),
   );
-  found = trade_ad_notif_filter_matches_by_ignored_users(found, ignored_users);
+  found = trade_ad_notif_filter_matches_by_dismissed(
+    trade_ad_notif_filter_matches_by_ignored_users(found, ignored_users),
+    state.dismissedTrades,
+  );
   if (!found.length) return;
 
   let seen = new Set((state.seenAdIds || []).map((id) => String(id)));
@@ -660,7 +742,10 @@ async function trade_ad_notif_fetch_feed(options) {
 
   let url = `${trade_ad_notif_api_url}?${params.toString()}`;
   let res = await fetch(url, {
-    headers: { Accept: "application/json" },
+    headers:
+      typeof nte_api_headers === "function"
+        ? nte_api_headers()
+        : { Accept: "application/json", "X-NTE-Client": "nte-x7Km2Qp9Wv4s", "From-Extension": "1" },
     cache: "no-store",
   });
   if (!res.ok) {
@@ -871,9 +956,17 @@ async function trade_ad_notif_poll_once(options) {
 
     if (!had_fresh) {
       state.watchableItemCount = viewer.owned.size;
-      state.matches = trade_ad_notif_filter_matches_by_ignored_users(
-        trade_ad_notif_rescore_matches(state, viewer.owned, get_row, viewer.userId),
-        ignored_users,
+      state.matches = trade_ad_notif_filter_matches_by_dismissed(
+        trade_ad_notif_filter_matches_by_ignored_users(
+          trade_ad_notif_rescore_matches(
+            state,
+            viewer.owned,
+            get_row,
+            viewer.userId,
+          ),
+          ignored_users,
+        ),
+        state.dismissedTrades,
       );
     }
     if (caught_up && max_created > Number(state.lastScannedCreatedAt || 0)) {
@@ -947,6 +1040,16 @@ function trade_ad_notif_handle_message(message, respond) {
       state.enabled = prev.enabled === true;
       state.minOverpayAmount = prev.minOverpayAmount;
       state.minOverpayPercent = prev.minOverpayPercent;
+      state.ignoredUsers = trade_ad_notif_normalize_ignored_users(
+        prev.ignoredUsers,
+      );
+      state.dismissedTrades = trade_ad_notif_normalize_dismissed_trades(
+        prev.dismissedTrades,
+      );
+      state.ignoreProjecteds = prev.ignoreProjecteds === true;
+      state.disabledWantItemIds = trade_ad_notif_normalize_disabled_want_items(
+        prev.disabledWantItemIds,
+      );
       await trade_ad_notif_save_state(state);
       respond({ ok: true, state: trade_ad_notif_state_for_ui(state) });
     })();
@@ -1040,6 +1143,122 @@ function trade_ad_notif_handle_message(message, respond) {
     return true;
   }
 
+  if (message?.type === "trade_ad_notifications_dismiss_ad") {
+    (async () => {
+      let prev = await trade_ad_notif_load_state();
+      let ad_id = String(message.adId ?? "").trim();
+      if (!ad_id) {
+        respond({ ok: false, error: "Missing ad id." });
+        return;
+      }
+      let match =
+        (Array.isArray(prev.matches) ? prev.matches : []).find(
+          (row) => String(row?.adId) === ad_id,
+        ) || null;
+      let snapshot =
+        trade_ad_notif_snapshot_dismissed_trade(
+          message.match && typeof message.match === "object"
+            ? { ...message.match, adId: ad_id }
+            : match || { adId: ad_id },
+        ) || { adId: ad_id, dismissedAt: Date.now() };
+      let dismissed = trade_ad_notif_normalize_dismissed_trades([
+        snapshot,
+        ...(Array.isArray(prev.dismissedTrades) ? prev.dismissedTrades : []),
+      ]);
+      let next = {
+        ...prev,
+        dismissedTrades: dismissed,
+        matches: trade_ad_notif_filter_matches_by_dismissed(
+          prev.matches,
+          dismissed,
+        ),
+      };
+      await trade_ad_notif_save_state(next);
+      respond({ ok: true, state: trade_ad_notif_state_for_ui(next) });
+    })().catch((err) => {
+      respond({ ok: false, error: err?.message || String(err) });
+    });
+    return true;
+  }
+
+  if (message?.type === "trade_ad_notifications_restore_dismissed_ad") {
+    (async () => {
+      let prev = await trade_ad_notif_load_state();
+      let ad_id = String(message.adId ?? "").trim();
+      let dismissed = trade_ad_notif_normalize_dismissed_trades(
+        prev.dismissedTrades,
+      ).filter((row) => row.adId !== ad_id);
+      let next = { ...prev, dismissedTrades: dismissed };
+      await trade_ad_notif_save_state(next);
+      respond({ ok: true, state: trade_ad_notif_state_for_ui(next) });
+    })().catch((err) => {
+      respond({ ok: false, error: err?.message || String(err) });
+    });
+    return true;
+  }
+
+  if (message?.type === "trade_ad_notifications_clear_dismissed") {
+    (async () => {
+      let prev = await trade_ad_notif_load_state();
+      let next = { ...prev, dismissedTrades: [] };
+      await trade_ad_notif_save_state(next);
+      respond({ ok: true, state: trade_ad_notif_state_for_ui(next) });
+    })().catch((err) => {
+      respond({ ok: false, error: err?.message || String(err) });
+    });
+    return true;
+  }
+
+  if (message?.type === "trade_ad_notifications_set_settings") {
+    (async () => {
+      let prev = await trade_ad_notif_load_state();
+      let thresholds = trade_ad_notif_normalize_thresholds(message);
+      let ignored_users = trade_ad_notif_normalize_ignored_users(
+        message.ignoredUsers,
+      );
+      let dismissed = trade_ad_notif_normalize_dismissed_trades(
+        message.dismissedTrades != null
+          ? message.dismissedTrades
+          : prev.dismissedTrades,
+      );
+      let ignore_projecteds = message.ignoreProjecteds === true;
+      let next = {
+        ...prev,
+        minOverpayAmount: thresholds.minOverpayAmount,
+        minOverpayPercent: thresholds.minOverpayPercent,
+        ignoredUsers: ignored_users,
+        dismissedTrades: dismissed,
+        ignoreProjecteds: ignore_projecteds,
+      };
+      let thresholds_changed =
+        prev.minOverpayAmount !== next.minOverpayAmount ||
+        prev.minOverpayPercent !== next.minOverpayPercent ||
+        prev.ignoreProjecteds !== next.ignoreProjecteds;
+      if (thresholds_changed) {
+        trade_ad_notif_reset_scan_progress(next);
+        if (next.enabled) next.lastPollAt = Date.now();
+      } else {
+        next.matches = trade_ad_notif_filter_matches_by_dismissed(
+          trade_ad_notif_filter_matches_by_ignored_users(
+            prev.matches,
+            ignored_users,
+          ),
+          dismissed,
+        );
+      }
+      await trade_ad_notif_save_state(next);
+      if (thresholds_changed && next.enabled) {
+        let state = await trade_ad_notif_backfill_feed(next);
+        respond({ ok: true, state: trade_ad_notif_state_for_ui(state) });
+        return;
+      }
+      respond({ ok: true, state: trade_ad_notif_state_for_ui(next) });
+    })().catch((err) => {
+      respond({ ok: false, error: err?.message || String(err) });
+    });
+    return true;
+  }
+
   if (message?.type === "trade_ad_notifications_get_watch_items") {
     (async () => {
       try {
@@ -1083,14 +1302,17 @@ function trade_ad_notif_handle_message(message, respond) {
             ctx.get_row,
             ignored_users,
           );
-          next.matches = trade_ad_notif_filter_matches_by_ignored_users(
-            trade_ad_notif_rescore_matches(
-              next,
-              ctx.viewer.owned,
-              ctx.get_row,
-              ctx.viewer.userId,
+          next.matches = trade_ad_notif_filter_matches_by_dismissed(
+            trade_ad_notif_filter_matches_by_ignored_users(
+              trade_ad_notif_rescore_matches(
+                next,
+                ctx.viewer.owned,
+                ctx.get_row,
+                ctx.viewer.userId,
+              ),
+              ignored_users,
             ),
-            ignored_users,
+            next.dismissedTrades,
           );
           next.lastError = "";
         } catch (err) {

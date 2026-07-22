@@ -9,6 +9,24 @@
 
   let cached_trade_items = new Map();
   let cancelled_request_ids = new Set();
+  const cancelled_request_ids_max = 64;
+
+  function remember_cancelled_request(request_id) {
+    let id = String(request_id || "");
+    if (!id) return;
+    cancelled_request_ids.add(id);
+    if (cancelled_request_ids.size <= cancelled_request_ids_max) return;
+    let drop = cancelled_request_ids.size - cancelled_request_ids_max;
+    for (let old_id of cancelled_request_ids) {
+      cancelled_request_ids.delete(old_id);
+      drop -= 1;
+      if (drop <= 0) break;
+    }
+  }
+
+  function clear_side_cache(side_index) {
+    cached_trade_items.delete(String(Number(side_index) || 0));
+  }
 
   function get_side_cache(side_index) {
     let cache_key = String(Number(side_index) || 0);
@@ -599,6 +617,218 @@
     });
   }
 
+  function resolve_filter_owner(candidate) {
+    for (let owner of get_candidate_owners(candidate)) {
+      if (owner && "function" == typeof owner.onFilterClick && owner.layout) {
+        return owner;
+      }
+    }
+    if (
+      candidate &&
+      "function" == typeof candidate.onFilterClick &&
+      candidate.layout
+    ) {
+      return candidate;
+    }
+    return null;
+  }
+
+  function get_inventory_filter_binding(side_index) {
+    if (!window.angular?.element) return null;
+
+    let panels = document.querySelectorAll(".trade-inventory-panel");
+    let panel = panels?.[side_index];
+    if (!panel) return null;
+
+    let nodes = [
+      panel,
+      panel.firstElementChild,
+      panel.parentElement,
+      panel.closest(".inventory-panel-holder"),
+      panel.querySelector(".inventory-type-dropdown"),
+    ].filter(Boolean);
+
+    let seen_scopes = new Set();
+    let queue = [];
+
+    function push_scope(scope) {
+      if (!scope || seen_scopes.has(scope)) return;
+      seen_scopes.add(scope);
+      queue.push(scope);
+    }
+
+    for (let node of nodes) {
+      let element = window.angular.element(node);
+      push_scope(element.scope?.());
+      push_scope(element.isolateScope?.());
+    }
+
+    while (queue.length) {
+      let scope = queue.shift();
+      let owner = resolve_filter_owner(scope);
+      if (owner) return { scope, owner, panel };
+      push_scope(scope?.$parent);
+    }
+
+    return { scope: null, owner: null, panel };
+  }
+
+  function reload_inventory_via_dom(panel) {
+    let dropdown = panel?.querySelector(".inventory-type-dropdown");
+    if (!dropdown) return false;
+
+    let current =
+      dropdown
+        .querySelector(".rbx-selection-label")
+        ?.getAttribute("title")
+        ?.trim() ||
+      dropdown.querySelector(".rbx-selection-label")?.textContent?.trim() ||
+      "";
+    let links = Array.from(dropdown.querySelectorAll(".dropdown-menu a"));
+    if (!links.length) return false;
+
+    let current_link =
+      links.find((a) => a.textContent.trim() === current) ||
+      links.find((a) => "All" === a.textContent.trim()) ||
+      links[0];
+
+    // Re-click current only. Do not bounce to another category — that can
+    // leave the panel stuck (e.g. Hats) and hide faces/bundles.
+    current_link.click();
+    return true;
+  }
+
+  function is_inventory_busy(side_index) {
+    let binding = get_inventory_filter_binding(side_index);
+    let owner = binding?.owner;
+    let scope = binding?.scope;
+    if (owner?.loading === true || scope?.loading === true) return true;
+    let panel = binding?.panel;
+    if (!panel) return false;
+    return !!panel.querySelector(
+      ".spinner.spinner-default:not(.ng-hide), .spinner:not(.ng-hide)",
+    );
+  }
+
+  async function wait_for_inventory_idle(side_index, timeout = 5000) {
+    let started = Date.now();
+    // Allow the reload request to start.
+    await delay(80);
+    while (Date.now() - started < timeout) {
+      if (!is_inventory_busy(side_index)) {
+        await delay(120);
+        if (!is_inventory_busy(side_index)) {
+          return get_inventory_filter_binding(side_index);
+        }
+      }
+      await delay(60);
+    }
+    return get_inventory_filter_binding(side_index);
+  }
+
+  function find_direct_reload(owner, scope) {
+    let candidates = [owner, scope, owner?.$ctrl, scope?.$ctrl].filter(Boolean);
+
+    for (let candidate of candidates) {
+      if ("function" == typeof candidate.loadInventory) {
+        return () => candidate.loadInventory();
+      }
+
+      let paging = candidate.cursorPaging || candidate.pager;
+      if (paging) {
+        if ("function" == typeof paging.loadFirstPage) {
+          return () => paging.loadFirstPage();
+        }
+        if ("function" == typeof paging.reload) {
+          return () => paging.reload();
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function same_filter(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.label && b.label && a.label === b.label) return true;
+    if (
+      void 0 !== a.assetType &&
+      void 0 !== b.assetType &&
+      a.assetType === b.assetType
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  async function reload_inventory(side_index) {
+    clear_side_cache(side_index);
+    let binding = get_inventory_filter_binding(side_index);
+    let owner = binding?.owner;
+    let scope = binding?.scope;
+
+    if (owner && "function" == typeof owner.onFilterClick) {
+      let selected = owner.layout?.selectedFilter;
+
+      if (selected) {
+        // Force a same-filter reload without visiting another category.
+        // Clearing selectedFilter bypasses Roblox's same-filter no-op.
+        // (Toggling Hats→All was leaving panels stuck / missing faces.)
+        await run_in_scope(scope, () => {
+          try {
+            if ("loadFailed" in owner) owner.loadFailed = false;
+          } catch {}
+          owner.layout.selectedFilter = null;
+          owner.onFilterClick(selected);
+        });
+        await wait_for_inventory_idle(side_index);
+
+        binding = get_inventory_filter_binding(side_index);
+        owner = binding?.owner;
+        scope = binding?.scope;
+        if (
+          owner &&
+          selected &&
+          !same_filter(owner.layout?.selectedFilter, selected)
+        ) {
+          await run_in_scope(scope, () => owner.onFilterClick(selected));
+          await wait_for_inventory_idle(side_index);
+        }
+
+        return { method: "filter-force" };
+      }
+
+      let direct = find_direct_reload(owner, scope);
+      if (direct) {
+        await run_in_scope(scope, () => {
+          try {
+            if ("loadFailed" in owner) owner.loadFailed = false;
+          } catch {}
+          direct();
+        });
+        await wait_for_inventory_idle(side_index);
+        return { method: "direct" };
+      }
+
+      let filters = Array.isArray(owner.layout?.filters)
+        ? owner.layout.filters
+        : [];
+      if (filters[0]) {
+        await run_in_scope(scope, () => owner.onFilterClick(filters[0]));
+        await wait_for_inventory_idle(side_index);
+        return { method: "filter-first" };
+      }
+    }
+
+    if (reload_inventory_via_dom(binding?.panel)) {
+      await wait_for_inventory_idle(side_index);
+      return { method: "dom" };
+    }
+
+    throw Error("Could not reload trade inventory");
+  }
+
   function send_result(request_id, ok, error, payload) {
     document.dispatchEvent(
       new CustomEvent("nruTradeBridgeResult", {
@@ -804,13 +1034,18 @@
         }
         if ("cancelRequest" === action) {
           let cancel_request_id = String(detail.cancel_request_id || "");
-          cancel_request_id && cancelled_request_ids.add(cancel_request_id);
+          cancel_request_id && remember_cancelled_request(cancel_request_id);
           return send_result(request_id, true);
         }
         if ("getDetailTradeItems" === action) {
           return send_result(request_id, true, null, {
             items: get_trade_detail_items_snapshot(),
           });
+        }
+
+        if ("reloadInventory" === action) {
+          let result = await reload_inventory(Number(detail.side_index) || 0);
+          return send_result(request_id, true, null, result);
         }
 
         send_result(request_id, false, `Unknown action: ${action}`);

@@ -3,9 +3,9 @@
 
   const OPEN_CLASS = "is-open";
   const HOST_SELECTOR =
-    ".nte-tap-tooltip-host, .about-thanks-hint, .nte-trade-limit-help";
+    ".nte-tap-tooltip-host, .about-thanks-hint, .nte-trade-limit-help, .ms-field-help";
   const TIP_SELECTOR =
-    '[role="tooltip"], .nte-tap-tooltip, .about-thanks-tooltip, .nte-trade-limit-tooltip';
+    '[role="tooltip"], .nte-tap-tooltip, .about-thanks-tooltip, .nte-trade-limit-tooltip, .ms-field-tooltip';
 
   let doc_listeners_bound = false;
 
@@ -52,12 +52,14 @@
     style.textContent = `
       .nte-tap-tooltip-host,
       .about-thanks-hint,
-      .nte-trade-limit-help {
+      .nte-trade-limit-help,
+      .ms-field-help {
         -webkit-tap-highlight-color: transparent;
       }
       .nte-tap-tooltip-host:focus-visible,
       .about-thanks-hint:focus-visible,
-      .nte-trade-limit-help:focus-visible {
+      .nte-trade-limit-help:focus-visible,
+      .ms-field-help:focus-visible {
         outline: 2px solid rgba(34, 211, 238, 0.55);
         outline-offset: 2px;
       }
@@ -65,8 +67,10 @@
       .nte-tap-tooltip-host.is-open .nte-tap-tooltip,
       .nte-tap-tooltip-host.is-open .about-thanks-tooltip,
       .nte-tap-tooltip-host.is-open .nte-trade-limit-tooltip,
+      .nte-tap-tooltip-host.is-open .ms-field-tooltip,
       .about-thanks-hint.is-open .about-thanks-tooltip,
-      .nte-trade-limit-help.is-open .nte-trade-limit-tooltip {
+      .nte-trade-limit-help.is-open .nte-trade-limit-tooltip,
+      .ms-field-help.is-open .ms-field-tooltip {
         opacity: 1 !important;
         visibility: visible !important;
         pointer-events: auto;

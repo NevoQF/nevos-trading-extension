@@ -597,6 +597,12 @@
           data-fallback-url="${escape_html(send_trade_fallback_url)}"
         >Send Trade</button>
         <a class="ta-notif-link ta-notif-link-muted" href="${roli}" target="_blank" rel="noopener noreferrer">Rolimons Profile</a>
+        <button
+          type="button"
+          class="ta-notif-dismiss-btn"
+          data-ad-id="${escape_html(String(match.adId))}"
+          title="Hide this trade alert"
+        >Don't see again</button>
       </div>
     </article>`;
   }
@@ -1002,6 +1008,209 @@
     });
   }
 
+  function trade_ad_notif_dismissed_row_html(row) {
+    let name = escape_html(row?.username || "Trader");
+    let wanted = escape_html(row?.wantedName || "item");
+    let overpay = trade_ad_notif_format_number(row?.overpayAmount || 0);
+    let ad_id = escape_html(String(row?.adId || ""));
+    return `<div class="ta-notif-settings-dismissed-row" data-ad-id="${ad_id}">
+      <div class="ta-notif-settings-dismissed-copy">
+        <strong>${name}</strong>
+        <span>+${overpay} for ${wanted}</span>
+      </div>
+      <button type="button" class="ta-notif-settings-restore-btn" data-ad-id="${ad_id}">Restore</button>
+    </div>`;
+  }
+
+  function trade_ad_notif_open_settings_modal(state) {
+    return new Promise((resolve) => {
+      let existing = document.getElementById("ta-notif-settings-overlay");
+      if (existing) existing.remove();
+
+      let thresholds = trade_ad_notif_normalize_thresholds(state);
+      let ignored = trade_ad_notif_normalize_ignore_names(state?.ignoredUsers || []);
+      let dismissed = Array.isArray(state?.dismissedTrades)
+        ? state.dismissedTrades.slice()
+        : [];
+      let ignore_projecteds = state?.ignoreProjecteds === true;
+      let watch_label = trade_ad_notif_watch_badge_label(state);
+
+      let overlay = document.createElement("div");
+      overlay.id = "ta-notif-settings-overlay";
+      overlay.className = "ta-notif-settings-overlay";
+      overlay.innerHTML = `
+        <div class="ta-notif-settings-card" role="dialog" aria-modal="true" aria-labelledby="ta-notif-settings-title">
+          <div class="ta-notif-settings-head">
+            <div>
+              <h3 id="ta-notif-settings-title" class="ta-notif-settings-title">Alert Settings</h3>
+              <p class="ta-notif-settings-subtitle">Profit, items, ignore list, and hidden trades.</p>
+            </div>
+            <button type="button" class="ta-notif-settings-close" aria-label="Close settings">✕</button>
+          </div>
+          <div class="ta-notif-settings-body">
+            <section class="ta-notif-settings-section">
+              <div class="ta-notif-settings-section-title">Profit filter</div>
+              <div class="ta-notif-settings-grid">
+                <label class="ta-notif-settings-field">
+                  <span>Minimum profit amount</span>
+                  <input type="number" min="0" step="100" id="ta-notif-settings-min-amount" value="${escape_html(String(Math.round(thresholds.amount)))}" />
+                </label>
+                <label class="ta-notif-settings-field">
+                  <span>Minimum profit percent</span>
+                  <input type="number" min="0" step="0.1" id="ta-notif-settings-min-percent" value="${escape_html(String(Number(thresholds.percent.toFixed(2))))}" />
+                </label>
+              </div>
+              <p class="ta-notif-settings-hint">Both enabled filters must pass. Set one to 0 to use only the other.</p>
+            </section>
+
+            <section class="ta-notif-settings-section">
+              <div class="ta-notif-settings-section-title">Offer filters</div>
+              <label class="ta-notif-settings-toggle-row">
+                <span>
+                  <strong>Ignore projecteds</strong>
+                  <em>Skip offers that include a projected item</em>
+                </span>
+                <input type="checkbox" id="ta-notif-settings-ignore-projecteds" ${ignore_projecteds ? "checked" : ""} />
+              </label>
+              <div class="ta-notif-settings-row">
+                <div>
+                  <strong>Items</strong>
+                  <em>Choose which items can trigger alerts</em>
+                </div>
+                <button type="button" class="ta-notif-settings-secondary-btn" id="ta-notif-settings-items-btn">
+                  Manage <span id="ta-notif-settings-items-badge">${escape_html(watch_label)}</span>
+                </button>
+              </div>
+            </section>
+
+            <section class="ta-notif-settings-section">
+              <div class="ta-notif-settings-section-title">Ignore users</div>
+              <textarea id="ta-notif-settings-ignore-input" class="ta-notif-settings-textarea" spellcheck="false" placeholder="TraderOne&#10;TraderTwo">${escape_html(ignored.join("\n"))}</textarea>
+              <p class="ta-notif-settings-hint">One username per line. Their ads will never show.</p>
+            </section>
+
+            <section class="ta-notif-settings-section">
+              <div class="ta-notif-settings-section-head">
+                <div class="ta-notif-settings-section-title">Hidden trades</div>
+                <button type="button" class="ta-notif-settings-text-btn" id="ta-notif-settings-clear-dismissed" ${dismissed.length ? "" : "hidden"}>Clear all</button>
+              </div>
+              <div class="ta-notif-settings-dismissed-list" id="ta-notif-settings-dismissed-list">
+                ${
+                  dismissed.length
+                    ? dismissed.map(trade_ad_notif_dismissed_row_html).join("")
+                    : `<p class="ta-notif-settings-empty">No hidden trades yet. Use Don't see again on a card.</p>`
+                }
+              </div>
+            </section>
+          </div>
+          <div class="ta-notif-settings-actions">
+            <button type="button" class="ta-notif-settings-btn ta-notif-settings-btn-cancel" data-role="cancel">Cancel</button>
+            <button type="button" class="ta-notif-settings-btn ta-notif-settings-btn-save" data-role="save">Save</button>
+          </div>
+        </div>
+      `;
+      document.body.append(overlay);
+
+      let card = overlay.querySelector(".ta-notif-settings-card");
+      let amount_input = overlay.querySelector("#ta-notif-settings-min-amount");
+      let percent_input = overlay.querySelector("#ta-notif-settings-min-percent");
+      let projected_input = overlay.querySelector(
+        "#ta-notif-settings-ignore-projecteds",
+      );
+      let ignore_input = overlay.querySelector("#ta-notif-settings-ignore-input");
+      let dismissed_list = overlay.querySelector(
+        "#ta-notif-settings-dismissed-list",
+      );
+      let clear_dismissed_btn = overlay.querySelector(
+        "#ta-notif-settings-clear-dismissed",
+      );
+      let items_btn = overlay.querySelector("#ta-notif-settings-items-btn");
+      let items_badge = overlay.querySelector("#ta-notif-settings-items-badge");
+      let close_btn = overlay.querySelector(".ta-notif-settings-close");
+      let cancel_btn = overlay.querySelector('[data-role="cancel"]');
+      let save_btn = overlay.querySelector('[data-role="save"]');
+
+      let finish = (result) => {
+        overlay.remove();
+        resolve(result);
+      };
+
+      let refresh_dismissed_list = () => {
+        if (!dismissed_list) return;
+        if (!dismissed.length) {
+          dismissed_list.innerHTML = `<p class="ta-notif-settings-empty">No hidden trades yet. Use Don't see again on a card.</p>`;
+          if (clear_dismissed_btn) clear_dismissed_btn.hidden = true;
+          return;
+        }
+        dismissed_list.innerHTML = dismissed
+          .map(trade_ad_notif_dismissed_row_html)
+          .join("");
+        if (clear_dismissed_btn) clear_dismissed_btn.hidden = false;
+        dismissed_list
+          .querySelectorAll(".ta-notif-settings-restore-btn")
+          .forEach((btn) => {
+            btn.addEventListener("click", () => {
+              let ad_id = String(btn.dataset.adId || "");
+              dismissed = dismissed.filter((row) => String(row.adId) !== ad_id);
+              refresh_dismissed_list();
+            });
+          });
+      };
+
+      refresh_dismissed_list();
+
+      clear_dismissed_btn?.addEventListener("click", () => {
+        dismissed = [];
+        refresh_dismissed_list();
+      });
+
+      items_btn?.addEventListener("click", async () => {
+        let disabled = await trade_ad_notif_open_watch_modal();
+        if (disabled === null) return;
+        globalThis.__taNotifWatchItemsCache = null;
+        let res = await trade_ad_notif_send(
+          "trade_ad_notifications_set_disabled_want_items",
+          { disabledWantItemIds: disabled },
+        );
+        if (res?.ok && res.state) {
+          globalThis.__taNotifLastState = res.state;
+          if (items_badge) {
+            items_badge.textContent = trade_ad_notif_watch_badge_label(res.state);
+          }
+        }
+      });
+
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) finish(null);
+      });
+      card.addEventListener("click", (event) => event.stopPropagation());
+      close_btn.addEventListener("click", () => finish(null));
+      cancel_btn.addEventListener("click", () => finish(null));
+      overlay.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          finish(null);
+        }
+      });
+
+      save_btn.addEventListener("click", () => {
+        let lines = String(ignore_input.value || "")
+          .split(/\r?\n/g)
+          .map((s) => s.trim())
+          .filter(Boolean);
+        finish({
+          minOverpayAmount: Math.max(0, Number(amount_input.value) || 0),
+          minOverpayPercent: Math.max(0, Number(percent_input.value) || 0),
+          ignoreProjecteds: projected_input?.checked === true,
+          ignoredUsers: trade_ad_notif_normalize_ignore_names(lines),
+          dismissedTrades: dismissed,
+        });
+      });
+
+      setTimeout(() => amount_input.focus(), 0);
+    });
+  }
+
   function trade_ad_notif_start_countdown(root, state) {
     if (!root) return;
     if (root.__taNotifCountdownTimer) {
@@ -1075,6 +1284,45 @@
     if (state?.lastError && text_el) {
       text_el.textContent = `${label} · ${String(state.lastError)}`;
     }
+  }
+
+  function trade_ad_notif_bind_dismiss_buttons(scope, root) {
+    if (!scope) return;
+    scope.querySelectorAll(".ta-notif-dismiss-btn").forEach((btn) => {
+      if (btn.dataset.taDismissBound === "1") return;
+      btn.dataset.taDismissBound = "1";
+      btn.addEventListener("click", async () => {
+        let ad_id = String(btn.dataset.adId || "").trim();
+        if (!ad_id) return;
+        let card = btn.closest(".ta-notif-card");
+        let state = globalThis.__taNotifLastState || {};
+        let match =
+          (Array.isArray(state.matches) ? state.matches : []).find(
+            (row) => String(row?.adId) === ad_id,
+          ) || null;
+        btn.disabled = true;
+        let res = await trade_ad_notif_send(
+          "trade_ad_notifications_dismiss_ad",
+          { adId: ad_id, match },
+        );
+        if (res?.ok && res.state) {
+          globalThis.__taNotifLastState = res.state;
+          if (card) card.remove();
+          if (root) {
+            let list = root.querySelector("#ta-notif-list");
+            let remaining = list?.querySelectorAll(".ta-notif-card").length || 0;
+            root.__taNotifRenderedCount = remaining;
+            if (!remaining) {
+              trade_ad_notif_render_shell(root, res.state);
+            } else {
+              trade_ad_notif_update_status(root, res.state, false);
+            }
+          }
+        } else {
+          btn.disabled = false;
+        }
+      });
+    });
   }
 
   function trade_ad_notif_bind_send_trade_buttons(scope) {
@@ -1172,6 +1420,7 @@
       chunk.map(trade_ad_notif_card_html).join(""),
     );
     trade_ad_notif_bind_send_trade_buttons(list);
+    trade_ad_notif_bind_dismiss_buttons(list, root);
     void trade_ad_notif_resolve_thumbs(list);
     trade_ad_notif_restore_list_scroll(list, at_bottom, previous_top);
     return matches.length;
@@ -1318,15 +1567,9 @@
             </label>
           </div>
           <div class="ta-notif-head-toolbar">
-            <button type="button" class="ta-notif-watch-btn-head" id="ta-notif-watch-btn" title="Choose which items trigger alerts">
-              <span class="ta-notif-watch-btn-label">Items</span>
-              <span class="ta-notif-watch-btn-badge" id="ta-notif-watch-badge">${escape_html(trade_ad_notif_watch_badge_label(state))}</span>
+            <button type="button" class="ta-notif-settings-btn-head" id="ta-notif-settings-btn" title="Alert settings">
+              Settings
             </button>
-            <button type="button" class="ta-notif-threshold-btn-head" id="ta-notif-threshold-btn" title="Profit filter: ${escape_html(trade_ad_notif_threshold_label(state))}">
-              <span class="ta-notif-threshold-btn-label">Profit</span>
-              <span class="ta-notif-threshold-btn-badge" id="ta-notif-threshold-badge">${escape_html(trade_ad_notif_threshold_badge(state))}</span>
-            </button>
-            <button type="button" class="ta-notif-ignore-btn-head" id="ta-notif-ignore-btn">Ignore list</button>
           </div>
         </div>
         ${err ? `<p class="ta-notif-error">${escape_html(err)}</p>` : ""}
@@ -1349,45 +1592,14 @@
       }
     });
 
-    root
-      .querySelector("#ta-notif-threshold-btn")
-      ?.addEventListener("click", async () => {
-        let thresholds = await trade_ad_notif_open_threshold_modal(state);
-        if (!thresholds) return;
-        let res = await trade_ad_notif_send(
-          "trade_ad_notifications_set_thresholds",
-          thresholds,
-        );
-        if (res?.ok && res.state) {
-          root.__taNotifRenderedCount = 0;
-          trade_ad_notif_render_shell(root, res.state);
-        } else {
-          trade_ad_notif_refresh_ui(root).catch(() => {});
-        }
-      });
-
-    root.querySelector("#ta-notif-ignore-btn")?.addEventListener("click", async () => {
-      let next_names = await trade_ad_notif_open_ignore_modal(state?.ignoredUsers || []);
-      if (!next_names) return;
-      let res = await trade_ad_notif_send("trade_ad_notifications_set_ignored_users", {
-        ignoredUsers: next_names,
-      });
-      if (res?.ok && res.state) {
-        trade_ad_notif_render_shell(root, res.state);
-      } else {
-        trade_ad_notif_refresh_ui(root).catch(() => {});
-      }
-    });
-
-    trade_ad_notif_update_watch_badge(root, state);
-    trade_ad_notif_update_threshold_badge(root, state);
-    root.querySelector("#ta-notif-watch-btn")?.addEventListener("click", async () => {
-      let disabled = await trade_ad_notif_open_watch_modal();
-      if (disabled === null) return;
-      globalThis.__taNotifWatchItemsCache = null;
+    root.querySelector("#ta-notif-settings-btn")?.addEventListener("click", async () => {
+      let next = await trade_ad_notif_open_settings_modal(
+        globalThis.__taNotifLastState || state,
+      );
+      if (!next) return;
       let res = await trade_ad_notif_send(
-        "trade_ad_notifications_set_disabled_want_items",
-        { disabledWantItemIds: disabled },
+        "trade_ad_notifications_set_settings",
+        next,
       );
       if (res?.ok && res.state) {
         root.__taNotifRenderedCount = 0;
@@ -1398,6 +1610,7 @@
     });
 
     trade_ad_notif_bind_send_trade_buttons(root);
+    trade_ad_notif_bind_dismiss_buttons(root, root);
     trade_ad_notif_bind_list_scroll(root);
     trade_ad_notif_update_status(root, state, false);
     trade_ad_notif_start_countdown(root, state);
