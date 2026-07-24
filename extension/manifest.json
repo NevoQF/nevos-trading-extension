@@ -140,6 +140,8 @@
     {
       "js": [
         "shared/browser_compat.js",
+        "shared/rolimons_item_details.js",
+        "content/navbar_search_keyboard.js",
         "content/navbar_quick_search.js",
         "content/navbar_people_search.js"
       ],
@@ -195,11 +197,7 @@
     "https://twostepverification.roblox.com/*",
     "https://thumbnails.roblox.com/*",
     "https://discord.com/api/webhooks/*",
-    "https://www.discord.com/api/webhooks/*",
-    "https://canary.discord.com/api/webhooks/*",
-    "https://ptb.discord.com/api/webhooks/*",
-    "https://discordapp.com/api/webhooks/*",
-    "https://www.discordapp.com/api/webhooks/*"
+    "https://www.discord.com/api/webhooks/*"
   ],
   "icons": {
     "128": "assets/icons/logo128.png",
@@ -222,7 +220,7 @@
     "cookies"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.44",
+  "version": "3.10.45",
   "web_accessible_resources": [
     {
       "matches": [

@@ -179,12 +179,6 @@
     return is_limited && (creator_id === 1 || creator_name === "roblox");
   }
 
-  function get_bundle_asset_id(detail) {
-    let assets = (Array.isArray(detail?.items) ? detail.items : [])
-      .filter((item) => String(item?.type || "").toLowerCase() === "asset" && /^\d+$/.test(String(item?.id || "")));
-    return String((assets.find((item) => Number(item?.assetType) === 78) || assets[0] || {})?.id || "");
-  }
-
   function get_rolimons_item_data() {
     if (!rolimons_item_data_promise) {
       rolimons_item_data_promise = new Promise((resolve) =>
@@ -197,13 +191,19 @@
     return rolimons_item_data_promise;
   }
 
-  function find_rolimons_asset_id(item_data, item_name) {
+  function find_rolimons_bundle_id(item_data, page_id, item_name) {
+    let pid = String(page_id || "").trim();
+    if (pid && item_data?.items?.[pid]) return pid;
+    if (pid && item_data?.bundleIds?.[pid]) return pid;
     let name = clean_name(item_name);
-    if (!name || !item_data?.items) return "";
-    for (let [asset_id, row] of Object.entries(item_data.items)) {
-      if (clean_name(row?.[0]) === name && /^\d+$/.test(asset_id)) return asset_id;
+    if (!name || !item_data?.items) return pid;
+    let bundle_id = "";
+    for (let [id, row] of Object.entries(item_data.items)) {
+      if (clean_name(row?.[0]) !== name || !/^\d+$/.test(id)) continue;
+      if (item_data.bundleIds?.[id]) return id;
+      if (!bundle_id) bundle_id = id;
     }
-    return "";
+    return bundle_id || pid;
   }
 
   function get_dom_context() {
@@ -247,9 +247,13 @@
     let detail = await get_bundle_detail(context.page_id);
     if (!is_roblox_limited_bundle(detail)) return null;
     let item_data = await get_rolimons_item_data().catch(() => null);
-    let asset_id = find_rolimons_asset_id(item_data, context.item_name) || get_bundle_asset_id(detail);
+    let asset_id = find_rolimons_bundle_id(
+      item_data,
+      context.page_id,
+      context.item_name,
+    );
     if (!asset_id) return null;
-    return { ...context, asset_id };
+    return { ...context, asset_id, is_bundle: true };
   }
 
   function reset_state(context) {
@@ -473,7 +477,7 @@
                 <span class="nte-history-pill">${trade_count} trade${trade_count === 1 ? "" : "s"}</span>
                 <span class="nte-history-pill is-note">All copies</span>
               </div>
-              <div class="nte-history-card-link"><a href="${attr_esc(rolimons_profile_href(item.assetId || context.asset_id))}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>
+              <div class="nte-history-card-link"><a href="${attr_esc(rolimons_profile_href(item.assetId || context.asset_id, { isBundle: context.is_bundle === true || context.kind === "bundles" }))}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>
             </div>
           </div>
           ${trade_count ? `<div class="nte-history-list">${item.history.map((entry, index) => render_history_entry(entry, index, context)).join("")}</div>` : '<div class="nte-history-empty">No recorded trade history for this item across all copies yet.</div>'}

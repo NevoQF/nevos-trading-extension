@@ -271,11 +271,9 @@ function trade_ads_clamp_requests(offer_ids, request_ids, item_data) {
     .map(Number)
     .filter((n) => Number.isFinite(n) && n > 0);
   let sum = ids.reduce((s, id) => s + get_val(id), 0);
-  if (sum <= cap)
-    return {
-      ids: ids.slice(0, 4),
-      tags: ids.length < 4 && ids.length > 0 ? ["any"] : [],
-    };
+  // Manual requests: never invent an "any" tag. Only keep what the user chose
+  // (trimmed to Rolimons' value cap). Random ads still pad with "any" themselves.
+  if (sum <= cap) return { ids: ids.slice(0, 4), tags: [] };
 
   let by_asc = ids.slice().sort((a, b) => get_val(a) - get_val(b));
   let kept = [];
@@ -291,10 +289,7 @@ function trade_ads_clamp_requests(offer_ids, request_ids, item_data) {
     kept = [by_asc[0]];
     running = get_val(by_asc[0]);
   }
-  return {
-    ids: kept.slice(0, 4),
-    tags: kept.length < 4 && kept.length > 0 ? ["any"] : [],
-  };
+  return { ids: kept.slice(0, 4), tags: [] };
 }
 
 let trade_ads_legacy_item_cache_mem;
@@ -364,15 +359,18 @@ async function trade_ads_resolve_legacy_trade_ad_id(id, item_data) {
   return Number.isFinite(by_acr) && by_acr > 0 ? by_acr : n;
 }
 
-async function trade_ads_resolve_legacy_trade_ad_ids(ids, item_data) {
+async function trade_ads_resolve_legacy_trade_ad_ids(ids, item_data, options = {}) {
+  let allow_duplicates = options.allow_duplicates === true;
   let out = [];
   let seen = new Set();
   for (let id of ids || []) {
     let n = await trade_ads_resolve_legacy_trade_ad_id(id, item_data);
     if (!Number.isFinite(n) || n <= 0) continue;
     let key = String(n);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (!allow_duplicates) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
     out.push(n);
   }
   return out.slice(0, 4);
@@ -1063,11 +1061,16 @@ async function trade_ads_advance_rotation_preset(config, used_index) {
 async function trade_ads_build_post_body(
   config,
   item_data,
-  owned_set,
+  owned_counts,
   inv_raw,
 ) {
   let offer_ids;
   if (config.offer_random) {
+    let owned_set = new Set(
+      Object.keys(owned_counts || {})
+        .map(Number)
+        .filter((n) => Number.isFinite(n) && n > 0 && (owned_counts[n] || 0) > 0),
+    );
     offer_ids = await trade_ads_pick_random_offer_ids(
       inv_raw || [],
       item_data,
@@ -1082,9 +1085,16 @@ async function trade_ads_build_post_body(
     let offer_slots = (config.offer_slots || []).map((x) =>
       x != null ? Number(x) : null,
     );
-    offer_ids = offer_slots
-      .filter((id) => id != null && owned_set.has(id))
-      .slice(0, 4);
+    offer_ids = [];
+    let used = {};
+    for (let id of offer_slots) {
+      if (id == null || !Number.isFinite(id) || id <= 0) continue;
+      let taken = used[id] || 0;
+      if ((owned_counts?.[id] || 0) <= taken) continue;
+      used[id] = taken + 1;
+      offer_ids.push(id);
+      if (offer_ids.length >= 4) break;
+    }
     if (!offer_ids.length) {
       throw new Error("Pick at least one item you own in the offering row.");
     }
@@ -1144,17 +1154,15 @@ async function trade_ads_build_post_body(
     let user_tags = Array.isArray(config.request_tags)
       ? config.request_tags.filter(Boolean)
       : [];
-    request_tags =
-      manual_tags.length > 0
-        ? manual_tags
-        : user_tags.length > 0
-          ? user_tags
-          : clamped.tags;
+    // Prefer tags the user explicitly placed in slots; never fall back to an
+    // auto-injected "any" from clamping.
+    request_tags = manual_tags.length > 0 ? manual_tags : user_tags;
   }
 
   let post_offer_ids = await trade_ads_resolve_legacy_trade_ad_ids(
     offer_ids,
     item_data,
+    { allow_duplicates: true },
   );
   let post_request_ids = await trade_ads_resolve_legacy_trade_ad_ids(
     request_item_ids || [],
@@ -1256,9 +1264,12 @@ async function trade_ads_post_now(options) {
   }
 
   let inv = await trade_ads_fetch_inventory_collectibles(me.id);
-  let owned_set = new Set(
-    inv.map((x) => x.assetId).filter((n) => Number.isFinite(n)),
-  );
+  let owned_counts = {};
+  for (let row of inv || []) {
+    let id = Number(row?.assetId);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    owned_counts[id] = (owned_counts[id] || 0) + 1;
+  }
 
   let stored_config = await trade_ads_get_config_merged();
   let rotation_hit =
@@ -1274,7 +1285,7 @@ async function trade_ads_post_now(options) {
       "Item values are still loading. Open the extension again in a few seconds.",
     );
 
-  let body = await trade_ads_build_post_body(config, item_data, owned_set, inv);
+  let body = await trade_ads_build_post_body(config, item_data, owned_counts, inv);
 
   let response = await fetch("https://api.rolimons.com/tradeads/v1/createad", {
     method: "POST",

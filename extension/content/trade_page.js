@@ -523,7 +523,11 @@
         for (let [e, t] of Object.entries(n?.items || {})) {
           if (!Array.isArray(t) || "string" != typeof t[0]) continue;
           let r = M(t[0]);
-          r && void 0 === q[r] && (q[r] = { id: parseInt(e, 10), item: t });
+          if (!r) continue;
+          let is_bundle = !!(n?.bundleIds && n.bundleIds[e]);
+          if (void 0 === q[r]) q[r] = { id: parseInt(e, 10), item: t };
+          else if (n?.bundleIds?.[String(q[r].id)] && !is_bundle)
+            q[r] = { id: parseInt(e, 10), item: t };
         }
         q.__ready = !0;
       }
@@ -539,30 +543,30 @@
         });
         if (resolved) return resolved;
       }
+      let key = String(e ?? "").trim();
+      if (key) {
+        if (n?.bundleIds?.[key]) return key;
+        if (n?.items?.[key]) return key;
+      }
       let bundle_id = null;
-      if (n?.bundleIds && n?.items) {
-        let key = String(e ?? "").trim();
-        if (key && n.bundleIds[key]) bundle_id = key;
-        else if (t) {
-          let labels = new Set();
-          let norm = M(t);
-          if (norm) labels.add(norm);
-          if (labels.size) {
-            for (let rid of Object.keys(n.bundleIds)) {
-              let row = n.items[rid];
-              if (!Array.isArray(row) || typeof row[0] !== "string") continue;
-              let row_name = M(row[0]);
-              let row_acr = M(row[1]);
-              if (labels.has(row_name) || labels.has(row_acr)) {
-                bundle_id = rid;
-                break;
-              }
+      if (r && n?.bundleIds && n?.items && t) {
+        let labels = new Set();
+        let norm = M(t);
+        if (norm) labels.add(norm);
+        if (labels.size) {
+          for (let rid of Object.keys(n.bundleIds)) {
+            let row = n.items[rid];
+            if (!Array.isArray(row) || typeof row[0] !== "string") continue;
+            let row_name = M(row[0]);
+            let row_acr = M(row[1]);
+            if (labels.has(row_name) || labels.has(row_acr)) {
+              bundle_id = rid;
+              break;
             }
           }
         }
       }
       if (bundle_id) return bundle_id;
-      if (!r && n?.items?.[String(e)]) return e;
       if (!t) return null;
       D(e, t);
       return q?.[M(t)]?.id ?? null;
@@ -815,6 +819,7 @@
       r(e.exports, "removeTwoLetterPath", () => E),
       r(e.exports, "getItemIdFromElement", () => I),
       r(e.exports, "getItemNameFromElement", () => R),
+      r(e.exports, "extractDisplayedRap", () => extract_displayed_rap),
       r(e.exports, "resolveRolimonsItemId", () => P),
       r(e.exports, "getRolimonsProfileUrl", () => get_rolimons_profile_url),
       r(e.exports, "isUnsupportedBundle", () => is_unsupported_bundle),
@@ -864,12 +869,21 @@
           .getElementsByTagName("h1")[0];
         if (null === e.querySelector(".icon-link")) {
           e.style.overflow = "visible";
-          let t = document.getElementById("asset-resale-data-container"),
-            r = window.location.pathname.match(/\/catalog\/(\d+)\//)?.[1],
-            n = parseInt(t.getAttribute("data-asset-type"));
-          if (a.checkIfAssetTypeIsOnRolimons(n)) {
+          let path = window.location.pathname,
+            bundle_match = path.match(/\/bundles\/(\d+)(?:\/|$)/i),
+            catalog_match = path.match(/\/catalog\/(\d+)(?:\/|$)/i),
+            r = bundle_match?.[1] || catalog_match?.[1],
+            is_bundle = !!bundle_match,
+            t = document.getElementById("asset-resale-data-container");
+          if (!r) return;
+          let allow = is_bundle;
+          if (!is_bundle) {
+            let n = parseInt(t?.getAttribute("data-asset-type"));
+            allow = a.checkIfAssetTypeIsOnRolimons(n);
+          }
+          if (allow) {
             let t = document.createElement("a");
-            (t.href = a.getRolimonsProfileUrl(r)),
+            (t.href = a.getRolimonsProfileUrl(r, { isBundle: is_bundle })),
               (t.target = "_blank"),
               (t.style.display = "inline-block"),
               (t.style.width = "28px"),
@@ -1505,6 +1519,28 @@
       e
     );
   }
+  const ownership_link_provider_key = "ownership_link_provider";
+  let ownership_link_provider_cache = "rolimons";
+  function normalize_ownership_link_provider(value) {
+    return String(value || "").toLowerCase() === "routility"
+      ? "routility"
+      : "rolimons";
+  }
+  function ownership_link_url(instance_id) {
+    let id = encodeURIComponent(String(instance_id));
+    return ownership_link_provider_cache === "routility"
+      ? `https://routility.io/ciiid/${id}`
+      : `https://www.rolimons.com/ciiid/${id}`;
+  }
+  function ownership_link_label() {
+    return "Open this copy's ownership page";
+  }
+  async function refresh_ownership_link_provider() {
+    ownership_link_provider_cache = normalize_ownership_link_provider(
+      await c.getOption(ownership_link_provider_key),
+    );
+    return ownership_link_provider_cache;
+  }
   function sync_uaid_link_overlay(e, t, r) {
     if (!(e instanceof Element) || !(t instanceof Element) || !r) return null;
     let n =
@@ -1547,21 +1583,19 @@
       l = Math.max(Math.round(o.height || t.offsetHeight || 0), 16),
       d = Math.round(o.left - a.left),
       s = Math.round(o.top - a.top);
+    let label = ownership_link_label();
     return (
       Number.isFinite(d) || (d = 0),
       Number.isFinite(s) || (s = 0),
-      (n.href = `https://www.rolimons.com/ciiid/${encodeURIComponent(String(r))}`),
-      n.setAttribute(
-        "aria-label",
-        "Quick link to this specific copy's Rolimon's page",
-      ),
+      (n.href = ownership_link_url(r)),
+      n.setAttribute("aria-label", label),
       n.setAttribute("data-nte-uaid-link", "1"),
       n.setAttribute("data-nte-uaid-instance-id", String(r)),
       (n.style.left = `${Math.max(0, d)}px`),
       (n.style.top = `${Math.max(0, s)}px`),
       (n.style.width = `${i}px`),
       (n.style.height = `${l}px`),
-      c.addTooltip(n, "Quick link to this specific copy's Rolimon's page"),
+      c.addTooltip(n, label),
       n
     );
   }
@@ -1632,6 +1666,7 @@
         for (let item_card of document.querySelectorAll(".item-cards"))
           item_card.style.setProperty("overflow", "hidden");
       })();
+    await refresh_ownership_link_provider();
     let e = new Set(),
       t = !1;
     for (let text_div of document.querySelectorAll(
@@ -6905,7 +6940,7 @@
         y += draw_h / scale_y;
         out_y += draw_h;
       }
-      canvas = await nte_quick_proof_add_watermark(canvas);
+      // Watermark removed — keep canvas as captured.
       return await nte_quick_proof_canvas_blob(canvas);
     } finally {
       restore_ui();
@@ -7465,6 +7500,36 @@
       e
     );
   }
+  function refresh_trade_list_via_active_tab() {
+    let root =
+      document.querySelector(".trades-container") ||
+      document.querySelector(".content") ||
+      document;
+    let active =
+      root.querySelector(
+        ".rbx-tab.active .rbx-tab-heading, .rbx-tab.active a, li.rbx-tab.active a, .nav-tabs .active a, [role='tab'][aria-selected='true']",
+      ) || root.querySelector(".rbx-tab.active, .nav-tabs li.active");
+    if (active instanceof Element) {
+      try {
+        active.click();
+        return true;
+      } catch {}
+    }
+    let type_control =
+      root.querySelector(
+        '.trade-list-dropdown button.input-dropdown-btn[aria-expanded], .trades-header .input-dropdown-btn, button[ng-click*="loadTrades"]',
+      ) ||
+      document.querySelector(
+        `.rbx-tab a[href*="tab=${get_current_trade_tab()}"]`,
+      );
+    if (type_control instanceof Element) {
+      try {
+        type_control.click();
+        return true;
+      } catch {}
+    }
+    return false;
+  }
   function get_trade_list_scroll_element() {
     return (
       document.querySelector(
@@ -7800,11 +7865,32 @@
           sync_trade_focus_button();
           apply_trade_list_filter();
         });
+        let refresh_btn = document.createElement("button");
+        refresh_btn.type = "button";
+        refresh_btn.id = "nteTradeListRefreshBtn";
+        refresh_btn.textContent = "Refresh";
+        refresh_btn.title = "Refresh trade list";
+        refresh_btn.setAttribute("aria-label", "Refresh trade list");
+        refresh_btn.style.cssText =
+          "margin-top:4px;margin-left:6px;height:23px;padding:0 9px;border-radius:999px;border:1px solid rgba(128,128,128,0.24);background:rgba(128,128,128,0.10);color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:22px;white-space:nowrap;transition:background .14s,border-color .14s,opacity .14s;";
+        refresh_btn.addEventListener("mouseenter", () => {
+          refresh_btn.style.background = "rgba(128,128,128,0.18)";
+          refresh_btn.style.borderColor = "rgba(128,128,128,0.34)";
+        });
+        refresh_btn.addEventListener("mouseleave", () => {
+          refresh_btn.style.background = "rgba(128,128,128,0.10)";
+          refresh_btn.style.borderColor = "rgba(128,128,128,0.24)";
+        });
+        refresh_btn.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          refresh_trade_list_via_active_tab();
+        });
         let focus_bar = document.createElement("div");
         focus_bar.id = "nteTradeFocusSelectedBar";
         focus_bar.style.cssText =
-          "width:100%;display:flex;align-items:center;justify-content:flex-start;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
-        focus_bar.append(focus_btn);
+          "width:100%;display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:0;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
+        focus_bar.append(focus_btn, refresh_btn);
         r._nte_focus_bar = focus_bar;
         left.append(lbl);
         create_trade_daily_limit_counter(left);
@@ -7927,7 +8013,31 @@
       focus_bar = document.createElement("div");
       focus_bar.id = "nteTradeFocusSelectedBar";
       focus_bar.style.cssText =
-        "width:100%;display:flex;align-items:center;justify-content:flex-start;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
+        "width:100%;display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:0;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
+    }
+    if (!focus_bar.querySelector("#nteTradeListRefreshBtn")) {
+      let refresh_btn = document.createElement("button");
+      refresh_btn.type = "button";
+      refresh_btn.id = "nteTradeListRefreshBtn";
+      refresh_btn.textContent = "Refresh";
+      refresh_btn.title = "Refresh trade list";
+      refresh_btn.setAttribute("aria-label", "Refresh trade list");
+      refresh_btn.style.cssText =
+        "margin-top:4px;margin-left:6px;height:23px;padding:0 9px;border-radius:999px;border:1px solid rgba(128,128,128,0.24);background:rgba(128,128,128,0.10);color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:22px;white-space:nowrap;transition:background .14s,border-color .14s,opacity .14s;";
+      refresh_btn.addEventListener("mouseenter", () => {
+        refresh_btn.style.background = "rgba(128,128,128,0.18)";
+        refresh_btn.style.borderColor = "rgba(128,128,128,0.34)";
+      });
+      refresh_btn.addEventListener("mouseleave", () => {
+        refresh_btn.style.background = "rgba(128,128,128,0.10)";
+        refresh_btn.style.borderColor = "rgba(128,128,128,0.24)";
+      });
+      refresh_btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        refresh_trade_list_via_active_tab();
+      });
+      focus_bar.appendChild(refresh_btn);
     }
     let scroll_container = document.getElementById(
       "trade-row-scroll-container",
@@ -9396,7 +9506,7 @@
         a = c.getItemIdFromElement(n),
         o = c.getItemNameFromElement(n),
         i = find_collectible_item_instance_id(n),
-        l = e ? extract_displayed_rap(e) : 0,
+        l = e ? c.extractDisplayedRap(e) : 0,
         s = get_trade_el_value_ctx(n, a, o, l),
         d = i || `${s.targetId || "0"}:${s.name || "item"}:${t.length}`;
       if (!e && !s.targetId && !s.name) continue;
@@ -11500,6 +11610,7 @@
       .trade-buttons .nte-history-btn,
       .trade-buttons .nte-analyze-trade-btn,
       .trade-buttons .nte-poison-btn,
+      .trade-buttons .nte-counter-send-btn,
       .nte-history-fallback-row .nte-history-btn,
       .nte-history-fallback-row .nte-analyze-trade-btn,
       .nte-poison-fallback-row .nte-analyze-trade-btn,
@@ -11522,6 +11633,7 @@
       html.nte-trade-ui-fight .trade-buttons .nte-history-btn,
       html.nte-trade-ui-fight .trade-buttons .nte-analyze-trade-btn,
       html.nte-trade-ui-fight .trade-buttons .nte-poison-btn,
+      html.nte-trade-ui-fight .trade-buttons .nte-counter-send-btn,
       html.nte-trade-ui-fight .nte-history-fallback-row .nte-history-btn,
       html.nte-trade-ui-fight .nte-history-fallback-row .nte-analyze-trade-btn,
       html.nte-trade-ui-fight .nte-poison-fallback-row .nte-analyze-trade-btn,
@@ -11640,11 +11752,29 @@
     for (let child of children) {
       if (is_trade_action_button(child)) after = child;
     }
+    if (btn.classList.contains("nte-counter-send-btn")) {
+      let counter_btn = children.find(
+        (child) =>
+          is_trade_action_button(child) &&
+          child.matches?.('button[ng-click*="counterTrade"]'),
+      );
+      if (counter_btn) after = counter_btn;
+    }
+    if (btn.classList.contains("nte-history-btn")) {
+      let send_btn = children.find((child) =>
+        child.classList?.contains("nte-counter-send-btn"),
+      );
+      if (send_btn) after = send_btn;
+    }
     if (btn.classList.contains("nte-analyze-trade-btn")) {
       let history_btn = children.find((child) =>
         child.classList?.contains("nte-history-btn"),
       );
+      let send_btn = children.find((child) =>
+        child.classList?.contains("nte-counter-send-btn"),
+      );
       if (history_btn) after = history_btn;
+      else if (send_btn) after = send_btn;
     }
     if (btn.classList.contains("nte-poison-btn")) {
       let analyze_btn = children.find((child) =>
@@ -11750,7 +11880,7 @@
         }
       }
       for (let el of document.querySelectorAll(
-        ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn",
+        ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn,.nte-counter-send-btn",
       )) {
         fight_mode
           ? mark_trade_dominant(el, 2147483588)
@@ -12127,10 +12257,26 @@
         inject_trade_request_analyze_button();
       }
     }
+    if (
+      e === "Add Item Ownership Buttons" ||
+      e === ownership_link_provider_key
+    ) {
+      schedule_uaid_link_refresh(0, !0);
+    }
     if (e === "Duplicate Trade Warning")
       schedule_duplicate_trade_warning_update(0);
     if (e === "Miss Send Warning") schedule_miss_send_warning_update(0);
   });
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      if (
+        changes["Add Item Ownership Buttons"] ||
+        changes[ownership_link_provider_key]
+      )
+        schedule_uaid_link_refresh(0, !0);
+    });
+  } catch {}
   try {
     let keepalive_port = chrome.runtime.connect({ name: "nte-keepalive" });
     setInterval(() => {
@@ -16382,6 +16528,8 @@
         .forEach((el) => el.remove());
       close_analyze_trade_modal(null);
       assert_trade_page_dominance();
+      if (typeof sync_counter_send_buttons_fn === "function")
+        sync_counter_send_buttons_fn().catch(() => {});
       return;
     }
 
@@ -16394,10 +16542,12 @@
     }
     container
       .querySelectorAll(
-        ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn",
+        ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn,.nte-counter-send-btn",
       )
       .forEach((btn) => sync_trade_button_position(btn));
     assert_trade_page_dominance();
+    if (typeof sync_counter_send_buttons_fn === "function")
+      sync_counter_send_buttons_fn().catch(() => {});
   }
 
   function sync_trade_request_analyze_spacing(make_offer_btn, row) {
@@ -16474,10 +16624,41 @@
     sync_trade_request_analyze_spacing(make_offer_btn, row);
   }
 
+  let sync_counter_send_buttons_fn = null;
+
   (function init_counter_prompt() {
     let style_injected = false;
     let modal_el = null;
     let escape_handler = null;
+    const counter_trade_choices_option_name = "Counter Trade Choices";
+    const legacy_counter_trade_prompt_option_name = "Counter Trade Prompt";
+    const counter_trade_choice_mode_key = "counter_trade_choice_mode";
+    let counter_choice_mode_cache = "prompt";
+    let counter_choices_enabled_cache = true;
+
+    function normalize_counter_trade_choice_mode(value) {
+      return String(value || "").toLowerCase() === "buttons"
+        ? "buttons"
+        : "prompt";
+    }
+
+    async function get_counter_choices_enabled() {
+      let value = await c.getOption(counter_trade_choices_option_name);
+      if (value === undefined)
+        value = await c.getOption(legacy_counter_trade_prompt_option_name);
+      return false !== value;
+    }
+
+    async function refresh_counter_choice_state() {
+      counter_choices_enabled_cache = await get_counter_choices_enabled();
+      counter_choice_mode_cache = normalize_counter_trade_choice_mode(
+        await c.getOption(counter_trade_choice_mode_key),
+      );
+      return {
+        enabled: counter_choices_enabled_cache,
+        mode: counter_choice_mode_cache,
+      };
+    }
 
     function inject_styles() {
       if (style_injected) return;
@@ -16504,6 +16685,7 @@
         .nte-counter-prompt-btn:hover{transform:translateY(-1px);background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14)}
         .nte-counter-prompt-btn.is-primary{background:linear-gradient(180deg,#8576f9,#6c5ce7);border-color:transparent;color:#fff;box-shadow:0 6px 18px rgba(108,92,231,.22)}
         .nte-counter-prompt-btn.is-primary:hover{box-shadow:0 10px 26px rgba(108,92,231,.32)}
+        .nte-counter-send-btn{margin-left:8px}
         @keyframes ntePromptIn{from{opacity:0}to{opacity:1}}
         @keyframes ntePromptCardIn{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
       `;
@@ -16530,6 +16712,86 @@
       }
     }
 
+    function navigate_to_partner_trade() {
+      let row = document.querySelector(".trade-row.selected");
+      let partner_id = get_selected_trade_partner_id(row);
+      if (partner_id) location.href = `/users/${partner_id}/trade`;
+    }
+
+    function clear_counter_send_buttons() {
+      for (let btn of document.querySelectorAll(".nte-counter-send-btn"))
+        btn.remove();
+    }
+
+    function create_counter_send_button(reference) {
+      let btn = reference
+        ? reference.cloneNode(true)
+        : document.createElement("button");
+      btn.type = "button";
+      btn.removeAttribute("ng-bind");
+      btn.removeAttribute("ng-click");
+      btn.removeAttribute("ng-show");
+      btn.removeAttribute("ng-disabled");
+      btn.removeAttribute("disabled");
+      btn.className = String(btn.className || "")
+        .replace(/\bng-hide\b/g, "")
+        .trim();
+      btn.classList.remove("btn-cta-md", "ng-hide");
+      btn.classList.add("btn-control-md", "nte-counter-send-btn");
+      btn.textContent = "Send";
+      btn.setAttribute("aria-label", "Send a new trade to this user");
+      btn.title = "Send a new trade to this user";
+      btn.onclick = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        navigate_to_partner_trade();
+      };
+      return btn;
+    }
+
+    function find_visible_counter_buttons() {
+      return [
+        ...document.querySelectorAll(
+          '.trade-buttons button[ng-click*="counterTrade"]',
+        ),
+      ].filter(
+        (btn) =>
+          btn instanceof HTMLElement &&
+          btn.isConnected &&
+          !btn.classList.contains("ng-hide"),
+      );
+    }
+
+    async function sync_counter_send_buttons() {
+      inject_styles();
+      await refresh_counter_choice_state();
+      if (
+        !counter_choices_enabled_cache ||
+        counter_choice_mode_cache !== "buttons"
+      ) {
+        clear_counter_send_buttons();
+        return;
+      }
+      let counter_btns = find_visible_counter_buttons();
+      let keep = new Set();
+      for (let counter_btn of counter_btns) {
+        let parent = counter_btn.parentElement;
+        if (!parent) continue;
+        let existing = parent.querySelector(":scope > .nte-counter-send-btn");
+        if (!(existing instanceof HTMLElement)) {
+          existing = create_counter_send_button(counter_btn);
+          parent.insertBefore(existing, counter_btn.nextSibling);
+        }
+        sync_trade_button_position(existing);
+        keep.add(existing);
+      }
+      for (let btn of document.querySelectorAll(".nte-counter-send-btn"))
+        keep.has(btn) || btn.remove();
+      if (keep.size) assert_trade_page_dominance();
+    }
+
+    sync_counter_send_buttons_fn = sync_counter_send_buttons;
+
     function show_prompt(counter_btn) {
       inject_styles();
       close_modal();
@@ -16540,10 +16802,10 @@
         <div class="nte-counter-prompt-card" role="dialog" aria-modal="true" aria-label="Counter or send trade">
           <div class="nte-counter-prompt-head">
             <div class="nte-counter-prompt-mark">
-              ${logo ? `<img src="${nte_history_attr_esc(logo)}" alt="">` : "<span>N</span>"}
+              ${logo ? `<img src="${nte_history_attr_esc(logo)}" alt="">` : "<span>E</span>"}
             </div>
             <div class="nte-counter-prompt-titles">
-              <div class="nte-counter-prompt-title">Nevos Trading Extension</div>
+              <div class="nte-counter-prompt-title">Trading Extension</div>
               <div class="nte-counter-prompt-sub">Trade action</div>
             </div>
             <button type="button" class="nte-counter-prompt-close" aria-label="Cancel">&times;</button>
@@ -16575,9 +16837,7 @@
       };
       modal.querySelector('[data-action="send"]').onclick = () => {
         close_modal();
-        let row = document.querySelector(".trade-row.selected");
-        let partner_id = get_selected_trade_partner_id(row);
-        if (partner_id) location.href = `/users/${partner_id}/trade`;
+        navigate_to_partner_trade();
       };
 
       escape_handler = (event) => {
@@ -16586,7 +16846,7 @@
       document.addEventListener("keydown", escape_handler, true);
     }
 
-    async function on_doc_click(event) {
+    function on_doc_click(event) {
       let btn = event.target?.closest?.('button[ng-click*="counterTrade"]');
       if (!btn) return;
       if (btn.__nte_counter_bypass) {
@@ -16594,19 +16854,55 @@
         return;
       }
       if (btn.classList.contains("ng-hide") || btn.disabled) return;
+      if (
+        !counter_choices_enabled_cache ||
+        counter_choice_mode_cache === "buttons"
+      )
+        return;
       event.stopImmediatePropagation();
       event.preventDefault();
-      let enabled = false !== (await c.getOption("Counter Trade Prompt"));
-      if (!enabled) {
-        btn.__nte_counter_bypass = true;
-        try {
-          btn.click();
-        } catch {}
-        return;
-      }
       show_prompt(btn);
     }
 
     document.addEventListener("click", on_doc_click, true);
+
+    chrome.runtime.onMessage.addListener(function (msg) {
+      if (
+        msg === counter_trade_choices_option_name ||
+        msg === legacy_counter_trade_prompt_option_name ||
+        msg === counter_trade_choice_mode_key
+      ) {
+        sync_counter_send_buttons().catch(() => {});
+      }
+    });
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== "local") return;
+        if (
+          changes[counter_trade_choices_option_name] ||
+          changes[legacy_counter_trade_prompt_option_name] ||
+          changes[counter_trade_choice_mode_key]
+        )
+          sync_counter_send_buttons().catch(() => {});
+      });
+    } catch {}
+
+    let counter_sync_timer = 0;
+    function schedule_counter_send_sync() {
+      clearTimeout(counter_sync_timer);
+      counter_sync_timer = setTimeout(() => {
+        counter_sync_timer = 0;
+        sync_counter_send_buttons().catch(() => {});
+      }, 80);
+    }
+    // Counter visibility toggles via class (ng-hide), not childList.
+    new MutationObserver(schedule_counter_send_sync).observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    schedule_counter_send_sync();
+    refresh_counter_choice_state().catch(() => {});
   })();
 })();

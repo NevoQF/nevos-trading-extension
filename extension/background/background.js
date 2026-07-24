@@ -64,7 +64,7 @@ if (typeof importScripts === "function") {
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick People Search","enabledByDefault":true,"path":"quick-people-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick People Search","enabledByDefault":true,"path":"quick-people-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
@@ -76,6 +76,12 @@ const legacy_post_tax_trade_value_option_name = "Post-Tax Trade Value";
 const add_item_ownership_buttons_option_name = "Add Item Ownership Buttons";
 const legacy_add_item_ownership_uaid_links_option_name =
   "Add Item Ownership History (UAID) Links";
+const ownership_link_provider_key = "ownership_link_provider";
+const ownership_link_provider_default = "rolimons";
+const counter_trade_choices_option_name = "Counter Trade Choices";
+const legacy_counter_trade_prompt_option_name = "Counter Trade Prompt";
+const counter_trade_choice_mode_key = "counter_trade_choice_mode";
+const counter_trade_choice_mode_default = "prompt";
 const colorblind_mode_profile_key = "colorblind_mode_profile";
 const colorblind_mode_profile_default = "deuteranopia";
 const colorblind_mode_profiles = [
@@ -84,6 +90,16 @@ const colorblind_mode_profiles = [
   "tritanopia",
   "achromatopsia",
 ];
+
+function normalize_ownership_link_provider(value) {
+  return String(value || "").toLowerCase() === "routility"
+    ? "routility"
+    : "rolimons";
+}
+
+function normalize_counter_trade_choice_mode(value) {
+  return String(value || "").toLowerCase() === "buttons" ? "buttons" : "prompt";
+}
 
 const trade_cache_alarm_name = "cachingSystem";
 const trade_notification_prefix = "nru_trade_notification_";
@@ -533,11 +549,7 @@ function normalize_inbound_trade_notification_webhook_url(value) {
     let host = String(parsed.hostname || "").toLowerCase();
     let valid_host =
       host === "discord.com" ||
-      host === "www.discord.com" ||
-      host === "canary.discord.com" ||
-      host === "ptb.discord.com" ||
-      host === "discordapp.com" ||
-      host === "www.discordapp.com";
+      host === "www.discord.com";
     if (!valid_host) return "";
     if (parsed.protocol !== "https:") return "";
     if (!String(parsed.pathname || "").startsWith("/api/webhooks/")) return "";
@@ -614,13 +626,39 @@ function has_item_data(data) {
   return !!(data?.items && Object.keys(data.items).length);
 }
 
-async function cache_item_data(data) {
+function item_data_has_bundle_ids(data) {
+  return !!(data?.bundleIds && Object.keys(data.bundleIds).length);
+}
+
+function coerce_item_data(data) {
+  if (!data || typeof data !== "object") return null;
+  if (
+    typeof RolimonsItemDetails !== "undefined" &&
+    RolimonsItemDetails.normalize_rolimons_item_details_payload
+  ) {
+    let normalized =
+      RolimonsItemDetails.normalize_rolimons_item_details_payload(data);
+    if (has_item_data(normalized)) return normalized;
+  }
   if (!has_item_data(data)) return null;
+  return {
+    success: data.success !== false,
+    items: data.items,
+    bundleIds:
+      data.bundleIds && typeof data.bundleIds === "object"
+        ? data.bundleIds
+        : {},
+  };
+}
+
+async function cache_item_data(data) {
+  let normalized = coerce_item_data(data);
+  if (!has_item_data(normalized)) return null;
   await set_local_values({
-    [item_data_key]: data,
+    [item_data_key]: normalized,
     [item_data_time_key]: Date.now(),
   });
-  return data;
+  return normalized;
 }
 
 function retry_item_data_until_success() {
@@ -679,11 +717,14 @@ async function sync_item_data_from_server() {
     });
     if (!response.ok) return null;
     let body = await parse_json_response_safe(response, "Server Rolimons items");
-    if (!body?.ok || !has_item_data(body)) return null;
+    if (!body?.ok) return null;
 
     let server_at = Number(body.fetchedAt) || 0;
-    let payload = { items: body.items };
-    if (body.success !== undefined) payload.success = body.success;
+    let payload = coerce_item_data(body);
+    if (!has_item_data(payload)) return null;
+    // Flattened item lists without bundleIds break catalog/bundle links
+    // (e.g. Tattletale → /catalog/{bundleId} 404). Prefer Rolimons v3 then.
+    if (!item_data_has_bundle_ids(payload)) return null;
 
     let { [item_data_time_key]: local_at } = await get_local_values([
       item_data_time_key,
@@ -707,9 +748,11 @@ async function get_cached_item_data(max_age_ms = 300000) {
 
   let { [item_data_key]: data, [item_data_time_key]: last_request } =
     await get_local_values([item_data_key, item_data_time_key]);
+  data = coerce_item_data(data);
 
   if (
     has_item_data(data) &&
+    item_data_has_bundle_ids(data) &&
     last_request &&
     Date.now() - last_request < max_age_ms
   ) {
@@ -728,14 +771,23 @@ async function get_cached_item_data(max_age_ms = 300000) {
         fresh_data = await fetch_item_data();
       } catch {}
     }
+    // Server/cache without bundle metadata → force Rolimons v3 normalize.
+    if (fresh_data && !item_data_has_bundle_ids(fresh_data)) {
+      try {
+        let roli = await fetch_item_data();
+        if (has_item_data(roli) && item_data_has_bundle_ids(roli))
+          fresh_data = roli;
+      } catch {}
+    }
     if (fresh_data) {
       return cache_item_data(fresh_data);
     }
 
     let stored = await get_local_values([item_data_key]);
-    if (has_item_data(stored?.[item_data_key])) {
+    let stored_data = coerce_item_data(stored?.[item_data_key]);
+    if (has_item_data(stored_data)) {
       start_item_data_retry();
-      return stored[item_data_key];
+      return stored_data;
     }
 
     start_item_data_retry();
@@ -1986,6 +2038,9 @@ function ensure_default_options() {
   option_names.push(legacy_colorblind_mode_option_name);
   option_names.push(legacy_post_tax_trade_value_option_name);
   option_names.push(legacy_add_item_ownership_uaid_links_option_name);
+  option_names.push(legacy_counter_trade_prompt_option_name);
+  option_names.push(ownership_link_provider_key);
+  option_names.push(counter_trade_choice_mode_key);
   option_names.push(colorblind_mode_profile_key);
   option_names.push(inbound_trade_notification_min_gain_key);
   option_names.push(inbound_trade_notification_webhook_enabled_key);
@@ -2039,6 +2094,15 @@ function ensure_default_options() {
         });
         return;
       }
+      if (
+        entry.name === counter_trade_choices_option_name &&
+        saved_values[legacy_counter_trade_prompt_option_name] !== undefined
+      ) {
+        chrome.storage.local.set({
+          [entry.name]: !!saved_values[legacy_counter_trade_prompt_option_name],
+        });
+        return;
+      }
       chrome.storage.local.set({ [entry.name]: entry.enabledByDefault });
     });
     if (
@@ -2046,6 +2110,22 @@ function ensure_default_options() {
     ) {
       chrome.storage.local.set({
         [legacy_colorblind_mode_option_name]: colorblind_enabled,
+      });
+    }
+    let ownership_provider = normalize_ownership_link_provider(
+      saved_values[ownership_link_provider_key],
+    );
+    if (saved_values[ownership_link_provider_key] !== ownership_provider) {
+      chrome.storage.local.set({
+        [ownership_link_provider_key]: ownership_provider,
+      });
+    }
+    let counter_mode = normalize_counter_trade_choice_mode(
+      saved_values[counter_trade_choice_mode_key],
+    );
+    if (saved_values[counter_trade_choice_mode_key] !== counter_mode) {
+      chrome.storage.local.set({
+        [counter_trade_choice_mode_key]: counter_mode,
       });
     }
     let colorblind_profile = normalize_colorblind_mode_profile(

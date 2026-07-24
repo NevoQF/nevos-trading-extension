@@ -93,25 +93,27 @@
       return candidates.filter((value, index) => value && candidates.indexOf(value) === index);
     }
 
-    async function inject_trade_patch_inline() {
-      if ("1" === get_trade_patch_marker()) return true;
-      let source = "";
-      try {
-        let resp = await fetch(chrome.runtime.getURL("scripts/trade_list_request_patch.js"));
-        source = resp.ok ? await resp.text() : "";
-      } catch {}
-      if (!source) return false;
-
-      let script = document.createElement("script"),
-        nonce_node = document.querySelector("script[nonce]"),
-        nonce = nonce_node?.nonce || nonce_node?.getAttribute?.("nonce") || "",
-        target = document.head || document.documentElement;
-      if (!target) return false;
-      nonce && script.setAttribute("nonce", nonce);
-      script.textContent = `${source}\n;document.documentElement&&document.documentElement.setAttribute("data-nru-trade-list-request-patch-loaded","1");`;
-      target.appendChild(script);
-      script.remove();
-      return "1" === get_trade_patch_marker();
+    function inject_trade_patch() {
+      if ("1" === get_trade_patch_marker()) return Promise.resolve(true);
+      let target = document.head || document.documentElement;
+      if (!target) return Promise.resolve(false);
+      return new Promise((resolve) => {
+        let script = document.createElement("script"),
+          nonce_node = document.querySelector("script[nonce]"),
+          nonce = nonce_node?.nonce || nonce_node?.getAttribute?.("nonce") || "",
+          done = false,
+          finish = (ok) => {
+            if (done) return;
+            done = true;
+            script.remove();
+            resolve(!!ok || "1" === get_trade_patch_marker());
+          };
+        nonce && script.setAttribute("nonce", nonce);
+        script.src = chrome.runtime.getURL("scripts/trade_list_request_patch.js");
+        script.onload = () => finish(true);
+        script.onerror = () => finish(false);
+        target.appendChild(script);
+      });
     }
 
     function get_live_trade_detail(trade_id) {
@@ -235,6 +237,6 @@
       );
     });
 
-    inject_trade_patch_inline().catch(() => {});
+    inject_trade_patch().catch(() => {});
   }
 })();

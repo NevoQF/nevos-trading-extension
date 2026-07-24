@@ -9,6 +9,9 @@
   let item_data = null;
   let item_data_time = 0;
   let item_data_promise = null;
+  let face_map = null;
+  let face_map_time = 0;
+  let face_map_promise = null;
   let name_index = null;
   let name_index_source = null;
   let thumb_cache = {};
@@ -38,7 +41,8 @@
     return new Promise((resolve) => {
       try {
         const r = chrome.runtime.sendMessage(message);
-        if (r && typeof r.then === "function") r.then((v) => resolve(v), () => resolve(null));
+        if (r && typeof r.then === "function")
+          r.then((v) => resolve(v), () => resolve(null));
         else resolve(null);
       } catch {
         resolve(null);
@@ -57,21 +61,41 @@
   }
 
   async function open_first_roblox_popup() {
-    if (window.top !== window || !/^https:\/\/(?:www\.)?roblox\.com\//i.test(location.href)) return;
+    if (
+      window.top !== window ||
+      !/^https:\/\/(?:www\.)?roblox\.com\//i.test(location.href)
+    )
+      return;
     const done_key = "nte_first_roblox_popup_done";
     const attempt_key = "nte_first_roblox_popup_attempt";
     const day_ms = 24 * 60 * 60 * 1000;
     const state = await new Promise((resolve) => {
       try {
-        chrome.storage.local.get([done_key, attempt_key], (r) => resolve(r || {}));
+        chrome.storage.local.get([done_key, attempt_key], (r) =>
+          resolve(r || {}),
+        );
       } catch {
         resolve({});
       }
     });
-    if (state[done_key] || Date.now() - Number(state[attempt_key] || 0) < day_ms) return;
+    if (state[done_key] || Date.now() - Number(state[attempt_key] || 0) < day_ms)
+      return;
     await set_storage_values({ [attempt_key]: Date.now() });
     const result = await send_message({ type: "open_first_roblox_popup" });
     if (result?.ok) await set_storage_values({ [done_key]: true });
+  }
+
+  function coerce_item_data(data) {
+    if (
+      typeof RolimonsItemDetails !== "undefined" &&
+      RolimonsItemDetails.normalize_rolimons_item_details_payload
+    ) {
+      return (
+        RolimonsItemDetails.normalize_rolimons_item_details_payload(data) ||
+        data
+      );
+    }
+    return data;
   }
 
   async function load_item_data() {
@@ -79,14 +103,61 @@
     if (item_data_promise) return item_data_promise;
     item_data_promise = (async () => {
       const data = await send_message(item_data ? "getDataPeriodic" : "getData");
-      if (data && data.items) {
-        item_data = data;
+      const normalized = coerce_item_data(data);
+      if (normalized && normalized.items) {
+        item_data = normalized;
         item_data_time = Date.now();
+        name_index = null;
+        name_index_source = null;
       }
       item_data_promise = null;
       return item_data;
     })();
     return item_data_promise;
+  }
+
+  async function load_face_map() {
+    if (face_map && Date.now() - face_map_time < 30 * 60 * 1000) return face_map;
+    if (face_map_promise) return face_map_promise;
+    face_map_promise = (async () => {
+      const res = await send_message({ type: "rolimons_player_face_map" });
+      face_map =
+        res?.map && typeof res.map === "object"
+          ? res.map
+          : face_map && typeof face_map === "object"
+            ? face_map
+            : {};
+      face_map_time = Date.now();
+      face_map_promise = null;
+      return face_map;
+    })();
+    return face_map_promise;
+  }
+
+  function resolve_catalog_target(entry_id, data, map) {
+    if (
+      typeof RolimonsItemDetails !== "undefined" &&
+      RolimonsItemDetails.resolve_roblox_catalog_target
+    ) {
+      return (
+        RolimonsItemDetails.resolve_roblox_catalog_target(
+          data,
+          entry_id,
+          map,
+        ) || {
+          id: String(entry_id),
+          isBundle: !!data?.bundleIds?.[String(entry_id)],
+        }
+      );
+    }
+    let key = String(entry_id ?? "").trim();
+    let mapped = map?.[key];
+    if (mapped != null && mapped !== "")
+      return { id: String(mapped), isBundle: true };
+    return {
+      id: key,
+      isBundle: !!data?.bundleIds?.[key],
+    };
   }
 
   function normalize(name) {
@@ -97,7 +168,7 @@
       .trim();
   }
 
-  function build_index(data) {
+  function build_index(data, map) {
     if (name_index_source === data && name_index) return name_index;
     const list = [];
     for (const id in data.items) {
@@ -105,18 +176,25 @@
       if (!Array.isArray(row) || typeof row[0] !== "string") continue;
       const norm = normalize(row[0]);
       if (!norm) continue;
-      const abbr = typeof row[1] === "string" && row[1].trim() && row[1] !== "-1" ? row[1].trim() : "";
-      const value = typeof RolimonsItemDetails !== "undefined" && RolimonsItemDetails.get_item_value
-        ? RolimonsItemDetails.get_item_value(row)
-        : Number(row[3]) || Number(row[4]) || 0;
+      const abbr =
+        typeof row[1] === "string" && row[1].trim() && row[1] !== "-1"
+          ? row[1].trim()
+          : "";
+      const value =
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.get_item_value
+          ? RolimonsItemDetails.get_item_value(row)
+          : Number(row[3]) || Number(row[4]) || 0;
+      const target = resolve_catalog_target(id, data, map);
       list.push({
-        id,
+        id: target.id,
+        roli_id: String(id),
         name: row[0],
         norm,
         abbr,
         value,
         rap: Number(row[2]) || 0,
-        is_bundle: !!data.bundleIds?.[String(id)],
+        is_bundle: !!target.isBundle,
       });
     }
     name_index = list;
@@ -144,7 +222,10 @@
       if (!abbr_norm || !abbr_norm.includes(tok)) return -1;
       score = abbr_norm === tok ? 80 : abbr_norm.startsWith(tok) ? 60 : 40;
     }
-    score += Math.min(60, Math.floor(Math.log10(Math.max(1, entry.value || entry.rap)) * 6));
+    score += Math.min(
+      60,
+      Math.floor(Math.log10(Math.max(1, entry.value || entry.rap)) * 6),
+    );
     return score;
   }
 
@@ -167,10 +248,12 @@
   }
 
   function slug_name(name) {
-    return String(name || "-")
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "-";
+    return (
+      String(name || "-")
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "-"
+    );
   }
 
   async function fetch_thumb_group(entries, is_bundle) {
@@ -184,7 +267,9 @@
     if (!r.ok) return;
     const j = await r.json();
     for (const row of j.data || []) {
-      const hit = entries.find((entry) => Number(entry.id) === Number(row?.targetId));
+      const hit = entries.find(
+        (entry) => Number(entry.id) === Number(row?.targetId),
+      );
       if (hit && row?.imageUrl) thumb_cache[thumb_key(hit)] = row.imageUrl;
     }
   }
@@ -193,14 +278,20 @@
     const need = entries.filter((entry) => !(thumb_key(entry) in thumb_cache));
     if (!need.length) return;
     try {
-      await fetch_thumb_group(need.filter((entry) => !entry.is_bundle), false);
-      await fetch_thumb_group(need.filter((entry) => entry.is_bundle), true);
+      await fetch_thumb_group(
+        need.filter((entry) => !entry.is_bundle),
+        false,
+      );
+      await fetch_thumb_group(
+        need.filter((entry) => entry.is_bundle),
+        true,
+      );
     } catch {}
   }
 
   function find_dropdown_list() {
     const direct = document.querySelector(
-      "ul.new-navbar-search-menu, ul.navbar-search-menu, ul.navbar-search-options"
+      "ul.new-navbar-search-menu, ul.navbar-search-menu, ul.navbar-search-options",
     );
     if (direct) return direct;
     const li = document.querySelector("li.navbar-search-option");
@@ -333,7 +424,6 @@
       if (!results.length) return;
       const frag = document.createDocumentFragment();
       for (const entry of results) frag.appendChild(build_item_li(entry));
-      // Always below people results.
       const people = list.querySelectorAll("li.nte-people-search-item");
       const last_person = people[people.length - 1];
       if (last_person) last_person.after(frag);
@@ -362,10 +452,10 @@
       return;
     }
     const token = ++pending_token;
-    const data = await load_item_data();
+    const [data, map] = await Promise.all([load_item_data(), load_face_map()]);
     if (token !== pending_token) return;
     if (!data || !data.items) return;
-    const list_index = build_index(data);
+    const list_index = build_index(data, map || {});
     const results = search(query, list_index);
     if (!results.length) {
       last_results = [];
@@ -403,7 +493,11 @@
     });
     input.addEventListener("focus", async () => {
       active_input = input;
-      if ((input.value || "").trim().length >= min_query_len && (await is_enabled())) on_input(input);
+      if (
+        (input.value || "").trim().length >= min_query_len &&
+        (await is_enabled())
+      )
+        on_input(input);
     });
     input.addEventListener("blur", () => {
       setTimeout(() => {
@@ -430,5 +524,8 @@
       reapply_if_missing();
     });
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
 })();

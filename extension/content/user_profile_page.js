@@ -130,7 +130,9 @@
       if (
         document
           .querySelector("[data-internal-page-name]")
-          ?.getAttribute("data-internal-page-name") === "CatalogItem"
+          ?.getAttribute("data-internal-page-name") === "CatalogItem" ||
+        (/\/(catalog|bundles)\/\d+/i.test(window.location.pathname) &&
+          document.querySelector(".item-name-container"))
       )
         return "itemProfile";
       if (document.querySelector("[data-profileuserid]")) return "userProfile";
@@ -167,9 +169,19 @@
         if (!Array.isArray(item_data) || typeof item_data[0] !== "string")
           continue;
         let normalized_name = normalize_rolimons_name(item_data[0]);
-        if (
-          normalized_name &&
-          rolimons_name_cache[normalized_name] === undefined
+        if (!normalized_name) continue;
+        let is_bundle = !!(
+          rolimons_data?.bundleIds && rolimons_data.bundleIds[item_id]
+        );
+        let existing = rolimons_name_cache[normalized_name];
+        if (!existing) {
+          rolimons_name_cache[normalized_name] = {
+            id: parseInt(item_id, 10),
+            item: item_data,
+          };
+        } else if (
+          rolimons_data?.bundleIds?.[String(existing.id)] &&
+          !is_bundle
         ) {
           rolimons_name_cache[normalized_name] = {
             id: parseInt(item_id, 10),
@@ -209,6 +221,21 @@
       item_name,
       resolve_bundle_by_name_only,
     ) {
+      if (
+        typeof RolimonsItemDetails !== "undefined" &&
+        RolimonsItemDetails.resolve_item_id
+      ) {
+        let resolved = RolimonsItemDetails.resolve_item_id(
+          rolimons_data,
+          item_id,
+          item_name,
+          { isBundle: !!resolve_bundle_by_name_only },
+        );
+        if (resolved != null && resolved !== "") {
+          let parsed = parseInt(resolved, 10);
+          return Number.isFinite(parsed) ? parsed : resolved;
+        }
+      }
       if (!resolve_bundle_by_name_only && rolimons_data?.items?.[item_id])
         return parseInt(item_id, 10);
       if (!item_name) return null;
@@ -1000,10 +1027,15 @@
           .forEach((el) => el.classList.remove("hasAssetLink"));
         return;
       }
-      if (utils.getPageType() === "itemProfile") add_item_page_link();
+      let page_type = utils.getPageType();
+      let is_item_page =
+        page_type === "itemProfile" ||
+        (/\/(catalog|bundles)\/\d+/i.test(window.location.pathname) &&
+          !!document.querySelector(".item-name-container"));
+      if (is_item_page) add_item_page_link();
       if (
         ["details", "sendOrCounter", "catalog", "userInventory"].indexOf(
-          utils.getPageType(),
+          page_type,
         ) !== -1
       )
         add_catalog_item_links();
@@ -1013,19 +1045,26 @@
       await utils.waitForElm(".item-name-container");
       let h1 = document
         .querySelector(".item-name-container")
-        .getElementsByTagName("h1")[0];
-      if (h1.querySelector(".icon-link") !== null) return;
+        ?.getElementsByTagName("h1")[0];
+      if (!h1 || h1.querySelector(".icon-link") !== null) return;
       h1.style.overflow = "visible";
-      let item_id = window.location.pathname.match(/\/catalog\/(\d+)\//)?.[1];
-      let asset_type = parseInt(
-        document
-          .getElementById("asset-resale-data-container")
-          .getAttribute("data-asset-type"),
-      );
-      if (!utils.checkIfAssetTypeIsOnRolimons(asset_type)) return;
+      let path = window.location.pathname;
+      let bundle_match = path.match(/\/bundles\/(\d+)(?:\/|$)/i);
+      let catalog_match = path.match(/\/catalog\/(\d+)(?:\/|$)/i);
+      let item_id = bundle_match?.[1] || catalog_match?.[1];
+      let is_bundle = !!bundle_match;
+      if (!item_id) return;
+      if (!is_bundle) {
+        let asset_type = parseInt(
+          document
+            .getElementById("asset-resale-data-container")
+            ?.getAttribute("data-asset-type"),
+        );
+        if (!utils.checkIfAssetTypeIsOnRolimons(asset_type)) return;
+      }
 
       let link = document.createElement("a");
-      link.href = get_rolimons_profile_url(item_id);
+      link.href = get_rolimons_profile_url(item_id, { isBundle: is_bundle });
       link.target = "_blank";
       link.style.display = "inline-block";
       link.style.width = "28px";

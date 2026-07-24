@@ -100,8 +100,11 @@ function ms_clamp_max_trades(value) {
 function ms_tradable_target_id(item) {
   return (
     parseInt(
-      item?.assetId ??
-        item?.itemTarget?.targetId ??
+      item?.itemTarget?.targetId ??
+        item?.itemTarget?.id ??
+        item?.itemTarget?.itemId ??
+        item?.itemTarget?.assetId ??
+        item?.assetId ??
         item?.targetId ??
         item?.itemId ??
         item?.asset?.id ??
@@ -113,30 +116,63 @@ function ms_tradable_target_id(item) {
   );
 }
 
+function ms_instance_id_from_row(row) {
+  if (!row || typeof row !== "object") return "";
+  let id =
+    row.collectibleItemInstanceId ??
+    row.collectibleItemInstance?.collectibleItemInstanceId ??
+    row.collectibleItemInstance?.id ??
+    row.instanceId ??
+    row.userAssetId ??
+    row.userAsset?.id ??
+    row.userAsset?.userAssetId ??
+    "";
+  return id == null ? "" : String(id).trim();
+}
+
 function ms_collect_instance_ids(item) {
-  let raw =
-    Array.isArray(item?.instances) && item.instances.length
-      ? item.instances
-      : [item];
-  return raw
-    .filter((x) => x && !x.isOnHold)
-    .map(
-      (x) =>
-        x?.collectibleItemInstanceId ??
-        x?.instanceId ??
-        x?.userAssetId ??
-        null,
-    )
-    .map((x) => (x == null ? "" : String(x)))
-    .filter(Boolean);
+  let out = [];
+  let seen = new Set();
+  let push = (row) => {
+    if (!row || row.isOnHold === true) return;
+    let id = ms_instance_id_from_row(row);
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push(id);
+  };
+  let instances = Array.isArray(item?.instances) ? item.instances : [];
+  if (instances.length) {
+    for (let inst of instances) push(inst);
+  }
+  // Some responses only put the instance id on the parent row.
+  push(item);
+  return out;
 }
 
 function ms_item_has_on_hold(item) {
-  let raw =
-    Array.isArray(item?.instances) && item.instances.length
-      ? item.instances
-      : [item];
-  return raw.some((x) => x && x.isOnHold === true);
+  return ms_item_hold_count(item) > 0;
+}
+
+function ms_item_instance_rows(item) {
+  return Array.isArray(item?.instances) && item.instances.length
+    ? item.instances
+    : [item];
+}
+
+function ms_item_hold_count(item) {
+  let held = 0;
+  for (let row of ms_item_instance_rows(item)) {
+    if (row && row.isOnHold === true) held += 1;
+  }
+  return held;
+}
+
+function ms_item_copy_count(item) {
+  let total = 0;
+  for (let row of ms_item_instance_rows(item)) {
+    if (row) total += 1;
+  }
+  return total;
 }
 
 function ms_item_display_name(item, asset_id, item_data) {
@@ -149,22 +185,53 @@ function ms_item_display_name(item, asset_id, item_data) {
   let acronym = Array.isArray(roli) ? String(roli[1] || "").trim() : "";
   if (acronym) return acronym;
   if (name) return String(name).trim();
+  if (Array.isArray(roli) && roli[0]) return String(roli[0]).trim();
   return `#${asset_id}`;
 }
 
-async function ms_fetch_tradable_items(user_id) {
+function ms_item_search_terms(asset_id, item_data) {
+  let terms = [];
+  let push = (value) => {
+    let term = String(value || "").trim();
+    if (!term || terms.includes(term)) return;
+    terms.push(term);
+  };
+  let roli =
+    typeof get_rolimons_item === "function"
+      ? get_rolimons_item(item_data, asset_id, "")
+      : null;
+  if (Array.isArray(roli)) {
+    push(roli[1]);
+    push(roli[0]);
+    let full = String(roli[0] || "").trim();
+    if (full) {
+      let word = full
+        .split(/\s+/)
+        .map((part) => part.trim())
+        .find((part) => part.length > 2 && !/^(the|and|for|of)$/i.test(part));
+      push(word);
+    }
+  }
+  return terms;
+}
+
+async function ms_fetch_tradable_items(user_id, options = {}) {
   let id = String(user_id || "").trim();
   if (!/^\d+$/.test(id)) return [];
+  let search = String(options.search || "").trim();
+  let max_pages = search ? 8 : 120;
   let items = [];
   let cursor = "";
-  let limit = "100";
-  for (let page = 0; page < 100; page++) {
+  // Roblox often breaks tradableItems pagination at higher limits.
+  let limit = "25";
+  for (let page = 0; page < max_pages; page++) {
     if (ms_abort) break;
     let params = new URLSearchParams({
-      sortBy: "CreationTime",
       limit,
       sortOrder: "Desc",
     });
+    if (!search) params.set("sortBy", "CreationTime");
+    if (search) params.set("search", search);
     if (cursor) params.set("cursor", cursor);
     let url = `https://trades.roblox.com/v2/users/${id}/tradableitems?${params.toString()}`;
     let res = null;
@@ -180,14 +247,15 @@ async function ms_fetch_tradable_items(user_id) {
     }
     if (!res || ms_abort) break;
     if (res.status === 401 || res.status === 403) return items;
-    if (res.status === 500 && limit === "100") {
-      limit = "50";
-      continue;
-    }
     if (!res.ok) break;
     let data = await res.json().catch(() => null);
     if (!data) break;
-    items = items.concat(Array.isArray(data.items) ? data.items : []);
+    let page_items = Array.isArray(data.items)
+      ? data.items
+      : Array.isArray(data.data)
+        ? data.data
+        : [];
+    items = items.concat(page_items);
     cursor = data.nextPageCursor || "";
     if (!cursor) break;
   }
@@ -202,18 +270,21 @@ function ms_resolve_instances_for_assets(items, asset_ids, options = {}) {
   }
   let collected = [];
   let matched_rows = {};
+  let used_ids = new Set();
   for (let item of items || []) {
     let target = String(ms_tradable_target_id(item) || "");
     if (!target || !needed[target]) continue;
     if (!matched_rows[target]) matched_rows[target] = item;
-    let instances = ms_collect_instance_ids(item);
+    let instances = ms_collect_instance_ids(item).filter((id) => !used_ids.has(id));
     while (needed[target] > 0 && instances.length) {
-      collected.push(instances.shift());
+      let inst = instances.shift();
+      used_ids.add(inst);
+      collected.push(inst);
       needed[target]--;
     }
   }
   let missing = Object.keys(needed).filter((key) => needed[key] > 0);
-  if (!missing.length) return { ok: true, instances: collected };
+  if (!missing.length) return { ok: true, instances: collected, missing: [] };
 
   let item_data = options.item_data || null;
   let on_hold_labels = [];
@@ -230,6 +301,7 @@ function ms_resolve_instances_for_assets(items, asset_ids, options = {}) {
   if (on_hold_labels.length) {
     return {
       ok: false,
+      missing,
       error:
         on_hold_labels.length === 1
           ? `${on_hold_labels[0]} is on hold.`
@@ -238,11 +310,35 @@ function ms_resolve_instances_for_assets(items, asset_ids, options = {}) {
   }
   return {
     ok: false,
+    missing,
     error:
       missing_labels.length === 1
         ? `${missing_labels[0]} is not available to trade.`
         : `These items are not available to trade: ${missing_labels.join(", ")}.`,
   };
+}
+
+async function ms_resolve_instances_for_user(user_id, asset_ids, options = {}) {
+  let item_data = options.item_data || null;
+  let items = await ms_fetch_tradable_items(user_id);
+  let resolved = ms_resolve_instances_for_assets(items, asset_ids, { item_data });
+  if (resolved.ok || ms_abort) return resolved;
+
+  let missing = Array.isArray(resolved.missing) ? resolved.missing : [];
+  if (!missing.length) return resolved;
+
+  let searched = new Set();
+  for (let asset_id of missing) {
+    if (ms_abort) break;
+    for (let term of ms_item_search_terms(asset_id, item_data)) {
+      let key = term.toLowerCase();
+      if (!key || searched.has(key)) continue;
+      searched.add(key);
+      let extra = await ms_fetch_tradable_items(user_id, { search: term });
+      if (extra.length) items = items.concat(extra);
+    }
+  }
+  return ms_resolve_instances_for_assets(items, asset_ids, { item_data });
 }
 
 async function ms_fetch_outbound_user_ids() {
@@ -308,6 +404,16 @@ function ms_parse_last_online(ts) {
   return n;
 }
 
+function ms_parse_owned_since(ts) {
+  return ms_parse_last_online(ts);
+}
+
+function ms_clamp_max_owned_days(value) {
+  let n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) n = 0;
+  return Math.max(0, Math.min(3650, n));
+}
+
 function ms_filter_owners_by_hours(owners, hours, self_id) {
   let max_age = ms_clamp_hours(hours) * 3600;
   let now = Math.floor(Date.now() / 1000);
@@ -317,9 +423,41 @@ function ms_filter_owners_by_hours(owners, hours, self_id) {
     if (!(user_id > 0) || user_id === self_id) continue;
     let last_online = ms_parse_last_online(row?.last_online);
     if (last_online == null || now - last_online > max_age) continue;
-    out.push({ user_id, last_online });
+    out.push({
+      user_id,
+      last_online,
+      owned_since: ms_parse_owned_since(row?.owned_since),
+    });
   }
   return out;
+}
+
+function ms_filter_owners_by_owned_days(candidates, max_owned_days) {
+  let days = ms_clamp_max_owned_days(max_owned_days);
+  if (!(days > 0) || !Array.isArray(candidates) || !candidates.length) {
+    return candidates || [];
+  }
+  let now = Math.floor(Date.now() / 1000);
+  let max_age = days * 86400;
+  let out = [];
+  for (let row of candidates) {
+    let owned_since = ms_parse_owned_since(row?.owned_since);
+    // Missing Owned Since → keep (can't verify).
+    if (owned_since != null && now - owned_since > max_age) continue;
+    out.push(row);
+  }
+  return out;
+}
+
+function ms_filter_blocked_users(candidates, blocked_users) {
+  if (!Array.isArray(candidates) || !candidates.length) return candidates || [];
+  let blocked = new Set();
+  for (let row of blocked_users || []) {
+    let id = Number(row?.user_id) || 0;
+    if (id > 0) blocked.add(id);
+  }
+  if (!blocked.size) return candidates;
+  return candidates.filter((row) => !blocked.has(Number(row?.user_id) || 0));
 }
 
 const mass_send_recent_key = "mass_send_recent";
@@ -394,6 +532,8 @@ async function ms_record_recent_send(entry) {
     at,
     offer_items,
     request_items,
+    offer_robux: ms_clamp_robux(entry?.offer_robux),
+    request_robux: ms_clamp_robux(entry?.request_robux),
   });
   if (list.length > mass_send_recent_max) list = list.slice(0, mass_send_recent_max);
   await set_local_value(mass_send_recent_key, list);
@@ -450,8 +590,11 @@ async function ms_inventory_for_picker() {
   for (let row of raw || []) {
     let asset_id = ms_tradable_target_id(row);
     if (!(asset_id > 0) || seen.has(asset_id)) continue;
-    // Skip items with no free (non-hold) copies.
-    if (!ms_collect_instance_ids(row).length) continue;
+    let free_ids = ms_collect_instance_ids(row);
+    let on_hold_count = ms_item_hold_count(row);
+    let copy_count = ms_item_copy_count(row);
+    // Keep fully held copies visible with a hold badge, but not selectable.
+    if (!free_ids.length && !on_hold_count) continue;
     seen.add(asset_id);
     let name =
       row?.itemName ||
@@ -478,6 +621,10 @@ async function ms_inventory_for_picker() {
       valueLine: ui.valueLine,
       rap: ui.rap,
       acronym,
+      onHoldCount: on_hold_count,
+      copyCount: copy_count,
+      isOnHold: on_hold_count > 0,
+      tradable: free_ids.length > 0,
       thumbType:
         item_data?.bundleIds?.[String(asset_id)] ? "Bundle" : "Asset",
     });
@@ -508,12 +655,20 @@ async function ms_wait_rate_limit() {
   ms_state.wait_until = 0;
 }
 
+function ms_clamp_robux(value) {
+  let n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(1_000_000_000, n);
+}
+
 async function ms_send_trade_with_rate_limit(
   csrf,
   self_id,
   recipient_id,
   offer_instances,
   their_instances,
+  offer_robux = 0,
+  request_robux = 0,
 ) {
   let result = await ms_send_trade(
     csrf,
@@ -521,6 +676,8 @@ async function ms_send_trade_with_rate_limit(
     recipient_id,
     offer_instances,
     their_instances,
+    offer_robux,
+    request_robux,
   );
   csrf = result.csrf || csrf;
   while (!ms_abort && result?.resp?.status === 429) {
@@ -532,6 +689,8 @@ async function ms_send_trade_with_rate_limit(
       recipient_id,
       offer_instances,
       their_instances,
+      offer_robux,
+      request_robux,
     );
     csrf = result.csrf || csrf;
   }
@@ -552,6 +711,52 @@ function ms_is_challenge_response(resp, data) {
     msg.includes("two step verification") ||
     msg.includes("2-step verification")
   );
+}
+
+function ms_is_skip_recipient_error(message) {
+  let msg = String(message || "").toLowerCase();
+  if (!msg) return false;
+  return (
+    msg.includes("privacy settings") ||
+    msg.includes("too strict to allow trading") ||
+    msg.includes("cannot trade with") ||
+    msg.includes("unable to trade with") ||
+    msg.includes("does not accept trades") ||
+    msg.includes("not accepting trades") ||
+    msg.includes("invalid challenge id")
+  );
+}
+
+function ms_has_invalid_challenge_id(data) {
+  let msg = ms_trade_error_message(data).toLowerCase();
+  if (msg.includes("invalid challenge id")) return true;
+  try {
+    return JSON.stringify(data || {})
+      .toLowerCase()
+      .includes("invalid challenge id");
+  } catch {
+    return false;
+  }
+}
+
+function ms_trade_error_message(data) {
+  let err = data?.errors?.[0];
+  if (!err || typeof err !== "object") return "";
+  return String(err.message || err.friendlyMessage || "").trim();
+}
+
+function ms_2fa_required_error() {
+  return "Could not solve 2FA. Enable authenticator autofill, or enter the code when prompted.";
+}
+
+function ms_2fa_failed_error(detail) {
+  let extra = String(detail || "").trim();
+  if (!extra) return "Could not solve 2FA.";
+  if (/2fa|two step|verification|authenticator|challenge/i.test(extra)) {
+    return extra.length > 160 ? `${extra.slice(0, 157)}…` : extra;
+  }
+  // Roblox often returns item/asset errors after an incomplete challenge continue.
+  return `Could not solve 2FA (${extra.slice(0, 100)}).`;
 }
 
 function ms_b64_json(obj) {
@@ -923,16 +1128,18 @@ async function ms_send_trade(
   recipient_id,
   offer_ids,
   request_ids,
+  offer_robux = 0,
+  request_robux = 0,
 ) {
   let body = {
     senderOffer: {
       userId: self_id,
-      robux: 0,
+      robux: ms_clamp_robux(offer_robux),
       collectibleItemInstanceIds: offer_ids,
     },
     recipientOffer: {
       userId: recipient_id,
-      robux: 0,
+      robux: ms_clamp_robux(request_robux),
       collectibleItemInstanceIds: request_ids,
     },
   };
@@ -957,15 +1164,20 @@ async function ms_send_trade(
   };
 
   let resp = await do_send(csrf, null);
-  if (resp.status === 403) {
+  let data = await resp.json().catch(() => ({}));
+  // Challenge responses are also 403. Parse body first so a body-only
+  // challenge is not mistaken for a CSRF refresh.
+  if (
+    resp.status === 403 &&
+    !ms_is_challenge_response(resp, data)
+  ) {
     let next = resp.headers.get("x-csrf-token");
-    // Challenge responses are also 403; only refresh CSRF when this is not a 2FA challenge.
-    if (next && !ms_is_challenge_response(resp, null)) {
+    if (next) {
       csrf = next;
       resp = await do_send(csrf, null);
+      data = await resp.json().catch(() => ({}));
     }
   }
-  let data = await resp.json().catch(() => ({}));
 
   if (ms_is_challenge_response(resp, data)) {
     let info = ms_extract_challenge_info(resp);
@@ -975,7 +1187,7 @@ async function ms_send_trade(
         resp,
         data,
         csrf: challenge_csrf,
-        error: "Could not read Roblox 2FA challenge.",
+        error: ms_2fa_failed_error("missing challenge data"),
       };
     }
     ms_state.status = "Solving 2FA…";
@@ -987,7 +1199,7 @@ async function ms_send_trade(
         resp,
         data,
         csrf: challenge_csrf,
-        error: err?.message || "2FA failed.",
+        error: ms_2fa_failed_error(err?.message || "2FA failed."),
       };
     }
     if (!code_info?.code) {
@@ -995,10 +1207,10 @@ async function ms_send_trade(
         resp,
         data,
         csrf: challenge_csrf,
-        error: "2FA cancelled.",
+        error: ms_2fa_required_error(),
       };
     }
-    let verified;
+    let verified = null;
     let code = String(code_info.code || "").replace(/\D/g, "");
     let secret = code_info.secret || ms_session_secret || null;
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -1007,7 +1219,7 @@ async function ms_send_trade(
           resp,
           data,
           csrf: challenge_csrf,
-          error: "2FA cancelled.",
+          error: ms_2fa_required_error(),
         };
       }
       try {
@@ -1031,7 +1243,7 @@ async function ms_send_trade(
                 resp,
                 data,
                 csrf: challenge_csrf,
-                error: "2FA cancelled.",
+                error: ms_2fa_required_error(),
               };
             }
             continue;
@@ -1044,7 +1256,7 @@ async function ms_send_trade(
               resp,
               data,
               csrf: challenge_csrf,
-              error: "2FA cancelled.",
+              error: ms_2fa_required_error(),
             };
           }
           code = String(next).replace(/\D/g, "");
@@ -1054,7 +1266,7 @@ async function ms_send_trade(
           resp,
           data,
           csrf: challenge_csrf,
-          error: err?.message || "2FA verification failed.",
+          error: ms_2fa_failed_error(err?.message || "2FA verification failed."),
         };
       }
     }
@@ -1063,7 +1275,7 @@ async function ms_send_trade(
         resp,
         data,
         csrf: challenge_csrf,
-        error: "2FA verification failed.",
+        error: ms_2fa_failed_error("verification failed"),
       };
     }
     csrf = verified.csrf || challenge_csrf;
@@ -1072,17 +1284,56 @@ async function ms_send_trade(
       continue_challenge_id: verified.continue_challenge_id,
       metadata: verified.metadata,
     });
-    if (resp.status === 403) {
+    data = await resp.json().catch(() => ({}));
+    if (
+      resp.status === 403 &&
+      !ms_is_challenge_response(resp, data)
+    ) {
       let next = resp.headers.get("x-csrf-token");
-      if (next && !ms_is_challenge_response(resp, null)) {
+      if (next) {
         csrf = next;
         resp = await do_send(csrf, {
           continue_challenge_id: verified.continue_challenge_id,
           metadata: verified.metadata,
         });
+        data = await resp.json().catch(() => ({}));
       }
     }
-    data = await resp.json().catch(() => ({}));
+
+    // Stale challenge IDs: retry once without challenge headers, then soft-fail.
+    if (!resp.ok && ms_has_invalid_challenge_id(data)) {
+      resp = await do_send(csrf, null);
+      data = await resp.json().catch(() => ({}));
+      if (
+        resp.status === 403 &&
+        !ms_is_challenge_response(resp, data)
+      ) {
+        let next = resp.headers.get("x-csrf-token");
+        if (next) {
+          csrf = next;
+          resp = await do_send(csrf, null);
+          data = await resp.json().catch(() => ({}));
+        }
+      }
+      return { resp, data, csrf };
+    }
+
+    // Incomplete/invalid 2FA retries often come back as another challenge.
+    // Other trade rejections (privacy, inventory, etc.) are normal failures.
+    if (!resp.ok) {
+      if (ms_has_invalid_challenge_id(data)) {
+        return { resp, data, csrf };
+      }
+      if (ms_is_challenge_response(resp, data)) {
+        return {
+          resp,
+          data,
+          csrf,
+          error: ms_2fa_failed_error(),
+        };
+      }
+      return { resp, data, csrf };
+    }
   }
 
   return { resp, data, csrf };
@@ -1104,6 +1355,12 @@ async function ms_run(config) {
     let request_assets = ms_normalize_asset_ids(config?.request_slots);
     let hours = ms_clamp_hours(config?.online_hours);
     let max_trades = ms_clamp_max_trades(config?.max_trades);
+    let offer_robux = ms_clamp_robux(config?.offer_robux);
+    let request_robux = ms_clamp_robux(config?.request_robux);
+    let max_owned_days = ms_clamp_max_owned_days(config?.max_owned_days);
+    let blocked_users = Array.isArray(config?.blocked_users)
+      ? config.blocked_users
+      : [];
 
     if (!offer_assets.length) {
       throw new Error("Add at least one offer item.");
@@ -1132,13 +1389,12 @@ async function ms_run(config) {
       typeof get_cached_item_data === "function"
         ? await get_cached_item_data()
         : null;
-    let my_items = await ms_fetch_tradable_items(self_id);
-    if (ms_abort) throw new Error("Cancelled by user");
-    let offer_resolved = ms_resolve_instances_for_assets(
-      my_items,
+    let offer_resolved = await ms_resolve_instances_for_user(
+      self_id,
       offer_assets,
       { item_data },
     );
+    if (ms_abort) throw new Error("Cancelled by user");
     if (!offer_resolved?.ok) {
       throw new Error(
         offer_resolved?.error || "One or more offer items are not available to trade.",
@@ -1154,6 +1410,8 @@ async function ms_run(config) {
     ms_state.phase = "filtering";
     ms_state.status = "Filtering recipients…";
     let candidates = ms_filter_owners_by_hours(owners, hours, self_id);
+    candidates = ms_filter_owners_by_owned_days(candidates, max_owned_days);
+    candidates = ms_filter_blocked_users(candidates, blocked_users);
     let outbound = await ms_fetch_outbound_user_ids();
     if (ms_abort) throw new Error("Cancelled by user");
     candidates = candidates.filter((row) => !outbound.has(row.user_id));
@@ -1200,16 +1458,15 @@ async function ms_run(config) {
       ms_state.status = `Sending ${ms_state.sent + 1}/${target_sends}…`;
       ms_state.remaining = Math.max(0, target_sends - ms_state.sent);
 
-      let their_items = await ms_fetch_tradable_items(recipient_id);
+      let their_instances_result = await ms_resolve_instances_for_user(
+        recipient_id,
+        request_assets,
+        { item_data },
+      );
       if (ms_abort) {
         ms_state.error = "Cancelled by user";
         break;
       }
-      let their_instances_result = ms_resolve_instances_for_assets(
-        their_items,
-        request_assets,
-        { item_data },
-      );
       if (!their_instances_result?.ok) {
         ms_state.skipped++;
         continue;
@@ -1222,6 +1479,8 @@ async function ms_run(config) {
         recipient_id,
         offer_instances,
         their_instances,
+        offer_robux,
+        request_robux,
       );
       csrf = result.csrf || csrf;
       if (ms_abort) {
@@ -1236,7 +1495,7 @@ async function ms_run(config) {
       }
 
       if (ms_is_challenge_response(result.resp, result.data)) {
-        ms_state.error = "Roblox 2FA challenge could not be completed.";
+        ms_state.error = ms_2fa_failed_error();
         ms_state.failed++;
         break;
       }
@@ -1254,8 +1513,15 @@ async function ms_run(config) {
             request_assets,
             item_data,
           ),
+          offer_robux,
+          request_robux,
         });
       } else {
+        let roblox_msg = ms_trade_error_message(result.data);
+        if (ms_is_skip_recipient_error(roblox_msg)) {
+          ms_state.skipped++;
+          continue;
+        }
         ms_state.failed++;
       }
       ms_state.remaining = Math.max(0, target_sends - ms_state.sent);

@@ -23,7 +23,7 @@ const chevron_svg =
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Prompt","enabledByDefault":true,"path":"counter-trade-prompt"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 
@@ -111,6 +111,16 @@ function normalize_profile_value_display_mode(value) {
   return String(value || "").toLowerCase() === "value" ? "value" : "rap";
 }
 
+function normalize_ownership_link_provider(value) {
+  return String(value || "").toLowerCase() === "routility"
+    ? "routility"
+    : "rolimons";
+}
+
+function normalize_counter_trade_choice_mode(value) {
+  return String(value || "").toLowerCase() === "buttons" ? "buttons" : "prompt";
+}
+
 const nte_roblox_tab_url_query_patterns = [
   "https://www.roblox.com/*",
   "https://roblox.com/*",
@@ -143,6 +153,12 @@ const duplicate_trade_warning_hours_key = "duplicate_trade_warning_hours";
 const duplicate_trade_warning_hours_default = 24;
 const profile_value_display_mode_key = "profile_value_display_mode";
 const profile_value_display_mode_default = "rap";
+const ownership_link_provider_key = "ownership_link_provider";
+const ownership_link_provider_default = "rolimons";
+const counter_trade_choices_option_name = "Counter Trade Choices";
+const legacy_counter_trade_prompt_option_name = "Counter Trade Prompt";
+const counter_trade_choice_mode_key = "counter_trade_choice_mode";
+const counter_trade_choice_mode_default = "prompt";
 const colorblind_mode_option_name = "Colorblind Mode";
 const legacy_colorblind_mode_option_name = "Colorblind Profit Mode";
 const post_tax_trade_values_option_name = "Post-Tax Trade Values";
@@ -487,6 +503,43 @@ async function ensure_colorblind_mode_settings(saved = null) {
   return snapshot;
 }
 
+async function ensure_counter_trade_choices_settings(saved = null) {
+  let snapshot =
+    saved ||
+    (await get_storage([
+      counter_trade_choices_option_name,
+      legacy_counter_trade_prompt_option_name,
+      counter_trade_choice_mode_key,
+      ownership_link_provider_key,
+    ]));
+
+  let updates = {};
+  if (
+    snapshot[counter_trade_choices_option_name] === undefined &&
+    snapshot[legacy_counter_trade_prompt_option_name] !== undefined
+  ) {
+    updates[counter_trade_choices_option_name] =
+      !!snapshot[legacy_counter_trade_prompt_option_name];
+  }
+  let mode = normalize_counter_trade_choice_mode(
+    snapshot[counter_trade_choice_mode_key],
+  );
+  if (snapshot[counter_trade_choice_mode_key] !== mode)
+    updates[counter_trade_choice_mode_key] = mode;
+  let provider = normalize_ownership_link_provider(
+    snapshot[ownership_link_provider_key],
+  );
+  if (snapshot[ownership_link_provider_key] !== provider)
+    updates[ownership_link_provider_key] = provider;
+
+  if (Object.keys(updates).length) {
+    await set_storage(updates);
+    snapshot = { ...snapshot, ...updates };
+  }
+
+  return snapshot;
+}
+
 function normalize_inbound_trade_notification_min_gain(value) {
   let parsed = Number(
     String(value ?? "")
@@ -578,11 +631,7 @@ function normalize_inbound_trade_notification_webhook_url(value) {
     let host = String(parsed.hostname || "").toLowerCase();
     let valid_host =
       host === "discord.com" ||
-      host === "www.discord.com" ||
-      host === "canary.discord.com" ||
-      host === "ptb.discord.com" ||
-      host === "discordapp.com" ||
-      host === "www.discordapp.com";
+      host === "www.discord.com";
     if (!valid_host) return "";
     if (parsed.protocol !== "https:") return "";
     if (!String(parsed.pathname || "").startsWith("/api/webhooks/")) return "";
@@ -1721,47 +1770,222 @@ function create_option_row(option, checked, extra = {}) {
     return row;
   }
 
+  if (option.name === "Add Item Ownership Buttons") {
+    row.classList.add("profile-value-option-row");
+    const controls = document.createElement("div");
+    controls.className = "profile-value-option-controls";
+    controls.append(
+      create_ownership_link_provider_toggle(extra.ownership_link_provider),
+      create_toggle(option, checked),
+    );
+    row.append(label_el, controls);
+    return row;
+  }
+
+  if (option.name === counter_trade_choices_option_name) {
+    row.classList.add("profile-value-option-row");
+    const controls = document.createElement("div");
+    controls.className = "profile-value-option-controls";
+    controls.append(
+      create_counter_trade_choice_mode_toggle(extra.counter_trade_choice_mode),
+      create_toggle(option, checked),
+    );
+    row.append(label_el, controls);
+    return row;
+  }
+
   row.append(label_el, create_toggle(option, checked));
   return row;
 }
 
 function create_profile_value_display_toggle(mode) {
-  let active_mode = normalize_profile_value_display_mode(mode);
-  const toggle = document.createElement("div");
-  toggle.className = "profile-value-mode-toggle";
-  toggle.setAttribute("role", "group");
-  toggle.setAttribute("aria-label", "Profile stat display");
+  return create_option_mode_menu({
+    aria_label: "Profile stat display",
+    active: normalize_profile_value_display_mode(mode),
+    choices: [
+      { value: "rap", label: "RAP" },
+      { value: "value", label: "Value" },
+    ],
+    on_change: async (value) => {
+      await set_option_value(profile_value_display_mode_key, value);
+      send_option_update("Values");
+    },
+  });
+}
 
-  function sync() {
-    toggle.querySelectorAll("button").forEach((button) => {
-      let active = button.dataset.mode === active_mode;
-      button.classList.toggle("is-active", active);
-      button.setAttribute("aria-pressed", active ? "true" : "false");
+function create_option_mode_menu({ aria_label, active, choices, on_change }) {
+  let active_mode = active;
+  let open = false;
+  const root = document.createElement("div");
+  root.className = "option-mode-menu";
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "option-mode-menu-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.setAttribute("aria-label", aria_label);
+
+  const trigger_label = document.createElement("span");
+  trigger_label.className = "option-mode-menu-label";
+
+  const trigger_chevron = document.createElement("span");
+  trigger_chevron.className = "option-mode-menu-chevron";
+  trigger_chevron.setAttribute("aria-hidden", "true");
+  trigger_chevron.innerHTML =
+    '<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2.2 3.6L5 6.4l2.8-2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  trigger.append(trigger_label, trigger_chevron);
+
+  const panel = document.createElement("div");
+  panel.className = "option-mode-menu-panel";
+  panel.setAttribute("role", "listbox");
+  panel.setAttribute("aria-label", aria_label);
+  panel.hidden = true;
+
+  function choice_label(value) {
+    return choices.find((choice) => choice.value === value)?.label || value;
+  }
+
+  function sync_trigger() {
+    trigger_label.textContent = choice_label(active_mode);
+    panel.querySelectorAll("button").forEach((button) => {
+      let selected = button.dataset.mode === active_mode;
+      button.classList.toggle("is-active", selected);
+      button.setAttribute("aria-selected", selected ? "true" : "false");
     });
   }
 
-  [
-    { value: "rap", label: "RAP" },
-    { value: "value", label: "Value" },
-  ].forEach((option) => {
+  function place_panel() {
+    let rect = trigger.getBoundingClientRect();
+    let gap = 6;
+    let panel_width = Math.max(panel.offsetWidth || 132, 132);
+    let left = Math.min(
+      Math.max(8, rect.right - panel_width),
+      window.innerWidth - panel_width - 8,
+    );
+    let top = rect.bottom + gap;
+    panel.style.left = `${Math.round(left)}px`;
+    panel.style.top = `${Math.round(top)}px`;
+    panel.style.minWidth = `${Math.max(Math.round(rect.width), 132)}px`;
+    // Flip up if the second option would be clipped by the popup bottom.
+    requestAnimationFrame(() => {
+      let panel_rect = panel.getBoundingClientRect();
+      if (panel_rect.bottom > window.innerHeight - 8) {
+        panel.style.top = `${Math.round(rect.top - panel_rect.height - gap)}px`;
+      }
+    });
+  }
+
+  function close_menu() {
+    if (!open) return;
+    open = false;
+    panel.hidden = true;
+    if (panel.parentElement === document.body) panel.remove();
+    root.classList.remove("is-open");
+    trigger.setAttribute("aria-expanded", "false");
+    document.removeEventListener("mousedown", on_doc_down, true);
+    document.removeEventListener("keydown", on_key_down, true);
+    window.removeEventListener("resize", place_panel, true);
+    window.removeEventListener("scroll", place_panel, true);
+  }
+
+  function open_menu() {
+    if (open) return;
+    document.querySelectorAll(".option-mode-menu.is-open").forEach((menu) => {
+      if (menu !== root) menu.classList.remove("is-open");
+    });
+    document
+      .querySelectorAll(".option-mode-menu-panel:not([hidden])")
+      .forEach((el) => {
+        if (el !== panel) {
+          el.hidden = true;
+          if (el.parentElement === document.body) el.remove();
+        }
+      });
+    open = true;
+    document.body.appendChild(panel);
+    panel.hidden = false;
+    root.classList.add("is-open");
+    trigger.setAttribute("aria-expanded", "true");
+    place_panel();
+    document.addEventListener("mousedown", on_doc_down, true);
+    document.addEventListener("keydown", on_key_down, true);
+    window.addEventListener("resize", place_panel, true);
+    window.addEventListener("scroll", place_panel, true);
+  }
+
+  function on_doc_down(event) {
+    if (!root.contains(event.target) && !panel.contains(event.target))
+      close_menu();
+  }
+
+  function on_key_down(event) {
+    if (event.key === "Escape") close_menu();
+  }
+
+  choices.forEach((choice) => {
     const button = document.createElement("button");
     button.type = "button";
-    button.dataset.mode = option.value;
-    button.textContent = option.label;
+    button.className = "option-mode-menu-item";
+    button.dataset.mode = choice.value;
+    button.setAttribute("role", "option");
+    button.textContent = choice.label;
     button.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (active_mode === option.value) return;
-      active_mode = option.value;
-      sync();
-      await set_option_value(profile_value_display_mode_key, active_mode);
-      send_option_update("Values");
+      let next = choice.value;
+      close_menu();
+      if (active_mode === next) return;
+      active_mode = next;
+      sync_trigger();
+      await on_change(active_mode);
     });
-    toggle.append(button);
+    panel.append(button);
   });
 
-  sync();
-  return toggle;
+  trigger.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (open) close_menu();
+    else open_menu();
+  });
+
+  sync_trigger();
+  root.append(trigger);
+  return root;
+}
+
+function create_ownership_link_provider_toggle(mode) {
+  return create_option_mode_menu({
+    aria_label: "Ownership link provider",
+    active: normalize_ownership_link_provider(mode),
+    choices: [
+      { value: "rolimons", label: "Rolimons" },
+      { value: "routility", label: "Routility" },
+    ],
+    on_change: async (value) => {
+      await set_option_value(ownership_link_provider_key, value);
+      send_option_update("Add Item Ownership Buttons");
+      send_option_update(ownership_link_provider_key);
+    },
+  });
+}
+
+function create_counter_trade_choice_mode_toggle(mode) {
+  return create_option_mode_menu({
+    aria_label: "Counter trade choice mode",
+    active: normalize_counter_trade_choice_mode(mode),
+    choices: [
+      { value: "prompt", label: "Prompt" },
+      { value: "buttons", label: "Button" },
+    ],
+    on_change: async (value) => {
+      await set_option_value(counter_trade_choice_mode_key, value);
+      send_option_update(counter_trade_choices_option_name);
+      send_option_update(counter_trade_choice_mode_key);
+    },
+  });
 }
 
 const trade_ads_verify_storage_key = "trade_ads_verify_ui";
@@ -2222,6 +2446,24 @@ function trade_ads_attach_picker(root, opts) {
     footer.innerHTML = html;
   }
 
+  function pick_hold_badge_el(item) {
+    let held = Math.max(0, Math.floor(Number(item?.onHoldCount) || 0));
+    if (!(held > 0) && item?.isOnHold !== true) return null;
+    if (!(held > 0)) held = 1;
+    let total = Math.max(held, Math.floor(Number(item?.copyCount) || 0));
+    let partial = total > held;
+    let badge = document.createElement("div");
+    badge.className = "ta-pick-hold-tag";
+    badge.setAttribute("aria-label", partial ? `${held} of ${total} on hold` : "On hold");
+    badge.title = partial ? `${held} of ${total} on hold` : "On hold";
+    badge.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+      (partial
+        ? `<span class="ta-pick-hold-count">x${held}</span>`
+        : "");
+    return badge;
+  }
+
   function pick_cell_el(item) {
     let id = item.assetId ?? item.id;
     if (!Number.isFinite(Number(id))) return null;
@@ -2232,6 +2474,8 @@ function trade_ads_attach_picker(root, opts) {
     let nm = item.name || `#${id}`;
     let ac = item.acronym ? String(item.acronym).trim() : "";
     cell.title = ac ? `${nm} (${ac})` : nm;
+    let thumb_wrap = document.createElement("div");
+    thumb_wrap.className = "ta-pick-thumb-wrap";
     let img = document.createElement("img");
     img.alt = nm;
     img.src = trade_ads_thumb_placeholder_src;
@@ -2240,6 +2484,15 @@ function trade_ads_attach_picker(root, opts) {
     let thumb_kind = item.thumbType || item.thumbKind || "";
     if (thumb_kind) img.dataset.thumbKind = thumb_kind;
     img.dataset.thumbPending = "1";
+    thumb_wrap.appendChild(img);
+    let hold_badge = pick_hold_badge_el(item);
+    if (hold_badge) thumb_wrap.appendChild(hold_badge);
+    let tradable = item.tradable !== false;
+    if (!tradable) {
+      cell.classList.add("is-on-hold");
+      cell.disabled = true;
+      cell.title = (ac ? `${nm} (${ac})` : nm) + " — on hold";
+    }
     let rv =
       item.valueLine != null
         ? Number(item.valueLine)
@@ -2255,11 +2508,13 @@ function trade_ads_attach_picker(root, opts) {
     meta.className = "ta-pick-cell-meta";
     meta.innerHTML = `<div class="ta-pick-metric"><span>Value</span><b>${rv != null ? format_number(rv) : "—"}</b></div>
       <div class="ta-pick-metric"><span>RAP</span><b>${rp != null ? format_number(rp) : "—"}</b></div>`;
-    cell.append(img, meta);
-    cell.addEventListener("click", () => {
-      onPick(Number(id), nm);
-      close();
-    });
+    cell.append(thumb_wrap, meta);
+    if (tradable) {
+      cell.addEventListener("click", () => {
+        onPick(Number(id), nm);
+        close();
+      });
+    }
     return cell;
   }
 
@@ -3666,7 +3921,13 @@ async function render_options() {
     });
   }
 
-  const option_names = [...get_option_names(), profile_value_display_mode_key];
+  const option_names = [
+    ...get_option_names(),
+    profile_value_display_mode_key,
+    ownership_link_provider_key,
+    counter_trade_choice_mode_key,
+    legacy_counter_trade_prompt_option_name,
+  ];
   let saved = await get_storage([
     ...option_names,
     legacy_colorblind_mode_option_name,
@@ -3683,6 +3944,7 @@ async function render_options() {
     trade_page_custom_themes_key,
   ]);
   saved = await ensure_colorblind_mode_settings(saved);
+  saved = await ensure_counter_trade_choices_settings(saved);
   const totp_snapshot = await new Promise((resolve) => {
     chrome.storage.local.get(
       [
@@ -3750,6 +4012,13 @@ async function render_options() {
     ) {
       value = saved[legacy_post_tax_trade_value_option_name];
     }
+    if (
+      item.name === counter_trade_choices_option_name &&
+      value === undefined &&
+      saved[legacy_counter_trade_prompt_option_name] !== undefined
+    ) {
+      value = saved[legacy_counter_trade_prompt_option_name];
+    }
     if (value === undefined) value = item.enabledByDefault;
 
     current_options_el.append(
@@ -3758,6 +4027,8 @@ async function render_options() {
         inbound_trade_min_gain: saved[inbound_trade_notification_min_gain_key],
         duplicate_trade_warning_hours: saved[duplicate_trade_warning_hours_key],
         profile_value_display_mode: saved[profile_value_display_mode_key],
+        ownership_link_provider: saved[ownership_link_provider_key],
+        counter_trade_choice_mode: saved[counter_trade_choice_mode_key],
       }),
     );
     section_option_count++;
@@ -4812,6 +5083,9 @@ function restore_defaults() {
       duplicate_trade_warning_hours_default;
     updates[profile_value_display_mode_key] =
       profile_value_display_mode_default;
+    updates[ownership_link_provider_key] = ownership_link_provider_default;
+    updates[counter_trade_choice_mode_key] = counter_trade_choice_mode_default;
+    updates[legacy_counter_trade_prompt_option_name] = true;
     updates[ROBLOX_TOTP_ENABLED_KEY] = false;
     updates[ROBLOX_TOTP_SECRET_KEY] = "";
     updates[popup_theme_storage_key] = popup_theme_default;
@@ -4843,6 +5117,9 @@ function get_settings_backup_keys() {
     inbound_trade_notification_webhook_discord_id_key,
     duplicate_trade_warning_hours_key,
     profile_value_display_mode_key,
+    ownership_link_provider_key,
+    counter_trade_choice_mode_key,
+    legacy_counter_trade_prompt_option_name,
     popup_theme_storage_key,
     trade_page_theme_enabled_key,
     trade_page_theme_key,
@@ -4871,6 +5148,8 @@ function get_settings_backup_defaults() {
   defaults[duplicate_trade_warning_hours_key] =
     duplicate_trade_warning_hours_default;
   defaults[profile_value_display_mode_key] = profile_value_display_mode_default;
+  defaults[ownership_link_provider_key] = ownership_link_provider_default;
+  defaults[counter_trade_choice_mode_key] = counter_trade_choice_mode_default;
   defaults[popup_theme_storage_key] = popup_theme_default;
   defaults[trade_page_theme_enabled_key] = false;
   defaults[trade_page_theme_key] = pack_trade_page_theme(trade_page_theme_default);
@@ -4904,6 +5183,11 @@ function normalize_imported_setting(key, value) {
     return normalize_duplicate_trade_warning_hours(value);
   if (key === profile_value_display_mode_key)
     return normalize_profile_value_display_mode(value);
+  if (key === ownership_link_provider_key)
+    return normalize_ownership_link_provider(value);
+  if (key === counter_trade_choice_mode_key)
+    return normalize_counter_trade_choice_mode(value);
+  if (key === legacy_counter_trade_prompt_option_name) return value === true;
   if (key === popup_theme_storage_key) return normalize_popup_theme(value);
   if (key === trade_page_theme_key) return pack_trade_page_theme(value);
   if (key === trade_page_custom_themes_key)
@@ -4983,6 +5267,21 @@ async function import_settings_backup(file) {
   )
     send_colorblind_mode_update();
   if (profile_value_display_mode_key in patch) send_option_update("Values");
+  if (
+    ownership_link_provider_key in patch ||
+    "Add Item Ownership Buttons" in patch
+  ) {
+    send_option_update("Add Item Ownership Buttons");
+    send_option_update(ownership_link_provider_key);
+  }
+  if (
+    counter_trade_choice_mode_key in patch ||
+    counter_trade_choices_option_name in patch ||
+    legacy_counter_trade_prompt_option_name in patch
+  ) {
+    send_option_update(counter_trade_choices_option_name);
+    send_option_update(counter_trade_choice_mode_key);
+  }
   set_settings_status("Settings imported.", "ok");
 }
 
@@ -5656,6 +5955,7 @@ const mass_send_rate_store_opened_key = "mass_send_rate_store_opened";
 let ms_poll_timer = null;
 let ms_inventory_session_items = null;
 let ms_inventory_session_promise = null;
+let ms_blocklist_io_flash = null;
 
 function ms_reset_inventory_session() {
   ms_inventory_session_items = null;
@@ -5690,11 +5990,17 @@ function ms_default_config() {
   return {
     offer_slots: [null, null, null, null],
     request_slots: [null, null, null, null],
+    offer_robux: 0,
+    request_robux: 0,
     presets: [null, null, null, null],
     preset_editor_index: 0,
     online_hours: 24,
     max_trades: 25,
     avoid_recent_days: 2,
+    max_owned_days: 0,
+    blocked_users: [],
+    config_open: false,
+    blocklist_open: false,
   };
 }
 
@@ -5707,6 +6013,12 @@ function ms_normalize_slots(slots) {
   });
 }
 
+function ms_clamp_robux(value) {
+  let n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(1_000_000_000, n);
+}
+
 function ms_normalize_preset(raw, index) {
   if (!raw || typeof raw !== "object") return null;
   let name = String(raw.name || `Preset ${index + 1}`).trim();
@@ -5714,9 +6026,12 @@ function ms_normalize_preset(raw, index) {
     name: name.slice(0, 28) || `Preset ${index + 1}`,
     offer_slots: ms_normalize_slots(raw.offer_slots),
     request_slots: ms_normalize_slots(raw.request_slots),
+    offer_robux: ms_clamp_robux(raw.offer_robux),
+    request_robux: ms_clamp_robux(raw.request_robux),
   };
-  let has_offer = p.offer_slots.some((x) => x != null);
-  let has_request = p.request_slots.some((x) => x != null);
+  let has_offer = p.offer_slots.some((x) => x != null) || p.offer_robux > 0;
+  let has_request =
+    p.request_slots.some((x) => x != null) || p.request_robux > 0;
   return has_offer || has_request ? p : null;
 }
 
@@ -5745,6 +6060,193 @@ function ms_clamp_avoid_days(value) {
   return Math.max(0, Math.min(365, n));
 }
 
+function ms_clamp_max_owned_days(value) {
+  let n = Math.floor(Number(value));
+  if (!Number.isFinite(n)) n = 0;
+  return Math.max(0, Math.min(3650, n));
+}
+
+function ms_normalize_blocked_users(raw) {
+  let out = [];
+  let seen = new Set();
+  for (let row of Array.isArray(raw) ? raw : []) {
+    let user_id = Number(row?.user_id) || 0;
+    if (!(user_id > 0) || seen.has(user_id)) continue;
+    seen.add(user_id);
+    out.push({
+      user_id,
+      name: String(row?.name || `User ${user_id}`).trim().slice(0, 40),
+    });
+  }
+  return out;
+}
+
+function ms_blocked_user_from_import_row(row) {
+  if (row == null) return null;
+  if (typeof row === "number" || (typeof row === "string" && /^\d+$/.test(row.trim()))) {
+    let user_id = Number(row);
+    if (!(user_id > 0)) return null;
+    return { user_id, name: `User ${user_id}` };
+  }
+  if (typeof row === "string") {
+    let name = row.trim().slice(0, 40);
+    if (!name) return null;
+    return { user_id: 0, name, pending_name: name };
+  }
+  if (typeof row !== "object") return null;
+  let user_id =
+    Number(row.user_id) ||
+    Number(row.userId) ||
+    Number(row.id) ||
+    Number(row.userid) ||
+    0;
+  let name = String(
+    row.name || row.username || row.userName || row.displayName || "",
+  )
+    .trim()
+    .slice(0, 40);
+  if (user_id > 0) {
+    return { user_id, name: name || `User ${user_id}` };
+  }
+  if (name) return { user_id: 0, name, pending_name: name };
+  return null;
+}
+
+function ms_extract_blocklist_import_rows(parsed) {
+  if (Array.isArray(parsed)) return parsed;
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("Invalid blocklist file.");
+  }
+  if (Array.isArray(parsed.users)) return parsed.users;
+  if (Array.isArray(parsed.blocked_users)) return parsed.blocked_users;
+  if (Array.isArray(parsed.blocklist)) return parsed.blocklist;
+  throw new Error("Invalid blocklist file.");
+}
+
+async function ms_resolve_blocklist_usernames(names) {
+  let unique = [];
+  let seen = new Set();
+  for (let name of names || []) {
+    let key = String(name || "")
+      .trim()
+      .toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(String(name).trim());
+  }
+  let map = new Map();
+  for (let i = 0; i < unique.length; i += 100) {
+    let batch = unique.slice(i, i + 100);
+    let res = await fetch("https://users.roblox.com/v1/usernames/users", {
+      method: "POST",
+      credentials: "omit",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        usernames: batch,
+        excludeBannedUsers: false,
+      }),
+    });
+    if (!res.ok) continue;
+    let data = await res.json().catch(() => null);
+    for (let row of Array.isArray(data?.data) ? data.data : []) {
+      let user_id = Number(row?.id) || 0;
+      let requested = String(row?.requestedUsername || row?.name || "")
+        .trim()
+        .toLowerCase();
+      if (!(user_id > 0) || !requested) continue;
+      map.set(requested, {
+        user_id,
+        name: String(row?.name || row?.requestedUsername || `User ${user_id}`)
+          .trim()
+          .slice(0, 40),
+      });
+    }
+  }
+  return map;
+}
+
+async function ms_parse_blocklist_import(parsed) {
+  let raw_rows = ms_extract_blocklist_import_rows(parsed);
+  let staged = [];
+  let pending_names = [];
+  for (let row of raw_rows) {
+    let item = ms_blocked_user_from_import_row(row);
+    if (!item) continue;
+    if (item.pending_name) {
+      pending_names.push(item.pending_name);
+      staged.push(item);
+      continue;
+    }
+    staged.push(item);
+  }
+  let resolved = pending_names.length
+    ? await ms_resolve_blocklist_usernames(pending_names)
+    : new Map();
+  let out = [];
+  let unresolved = 0;
+  for (let item of staged) {
+    if (item.pending_name) {
+      let hit = resolved.get(item.pending_name.toLowerCase());
+      if (!hit) {
+        unresolved += 1;
+        continue;
+      }
+      out.push(hit);
+      continue;
+    }
+    out.push({ user_id: item.user_id, name: item.name });
+  }
+  return {
+    users: ms_normalize_blocked_users(out),
+    unresolved,
+  };
+}
+
+function ms_merge_blocked_users(existing, incoming) {
+  let base = ms_normalize_blocked_users(existing);
+  let seen = new Set(base.map((row) => row.user_id));
+  let added = 0;
+  let skipped_dupes = 0;
+  for (let row of ms_normalize_blocked_users(incoming)) {
+    if (seen.has(row.user_id)) {
+      skipped_dupes += 1;
+      continue;
+    }
+    seen.add(row.user_id);
+    base.push(row);
+    added += 1;
+  }
+  return {
+    users: base,
+    added,
+    skipped_dupes,
+  };
+}
+
+function ms_export_blocklist_file(users) {
+  let payload = {
+    type: "extension-mass-send-blocklist",
+    version: 1,
+    exported_at: new Date().toISOString(),
+    users: ms_normalize_blocked_users(users),
+  };
+  let blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json",
+  });
+  let url = URL.createObjectURL(blob);
+  let date = new Date().toISOString().slice(0, 10);
+  let link = document.createElement("a");
+  link.href = url;
+  link.download = `never-send-blocklist-${date}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function ms_normalize_config(raw) {
   let base = ms_default_config();
   let cfg = raw && typeof raw === "object" ? raw : {};
@@ -5754,9 +6256,17 @@ function ms_normalize_config(raw) {
       : cfg.avoid_recent_days != null
         ? cfg.avoid_recent_days
         : base.avoid_recent_days;
+  let offer_robux = ms_clamp_robux(
+    cfg.offer_robux != null ? cfg.offer_robux : base.offer_robux,
+  );
+  let request_robux = ms_clamp_robux(
+    cfg.request_robux != null ? cfg.request_robux : base.request_robux,
+  );
   return {
     offer_slots: ms_normalize_slots(cfg.offer_slots),
     request_slots: ms_normalize_slots(cfg.request_slots),
+    offer_robux,
+    request_robux,
     presets: ms_normalize_presets(cfg.presets),
     preset_editor_index: Math.max(
       0,
@@ -5769,6 +6279,14 @@ function ms_normalize_config(raw) {
       cfg.max_trades != null ? cfg.max_trades : base.max_trades,
     ),
     avoid_recent_days: ms_clamp_avoid_days(avoid_days),
+    max_owned_days: ms_clamp_max_owned_days(
+      cfg.max_owned_days != null ? cfg.max_owned_days : base.max_owned_days,
+    ),
+    blocked_users: ms_normalize_blocked_users(
+      cfg.blocked_users != null ? cfg.blocked_users : base.blocked_users,
+    ),
+    config_open: cfg.config_open === true,
+    blocklist_open: cfg.blocklist_open === true,
   };
 }
 
@@ -5787,7 +6305,15 @@ function ms_preset_summary(preset) {
   if (!preset) return "Empty";
   let offer_count = preset.offer_slots.filter((x) => x != null).length;
   let request_count = preset.request_slots.filter((x) => x != null).length;
-  return `${offer_count} offer · ${request_count} want`;
+  let offer_rbx =
+    Number(preset.offer_robux) > 0
+      ? ` + ${format_number(preset.offer_robux)} R$`
+      : "";
+  let request_rbx =
+    Number(preset.request_robux) > 0
+      ? ` + ${format_number(preset.request_robux)} R$`
+      : "";
+  return `${offer_count}${offer_rbx} offer · ${request_count}${request_rbx} want`;
 }
 
 function ms_slot_html(side, i, id) {
@@ -5816,18 +6342,30 @@ function ms_sum_slot_metrics(slots, metrics) {
   return { value, count };
 }
 
-function ms_side_label_html(title, totals, extra_class) {
+function ms_side_label_html(title, totals, extra_class, robux_input) {
   let mod = extra_class ? ` ${extra_class}` : "";
-  if (!(totals?.count > 0)) {
-    return `<div class="ta-preview-label${mod}">${escape_html(title)}</div>`;
-  }
+  let value =
+    (Number(totals?.value) || 0) + (Number(totals?.robux) || 0);
+  let has_total = value > 0 || (totals?.count || 0) > 0;
   let roli_icon_url = escape_html(get_asset_url("assets/rolimons.png"));
-  return `<div class="ta-preview-label ta-preview-label-with-total${mod}">
+  let total_html = has_total
+    ? `<span class="ta-preview-label-total" title="Items + Robux">
+        <img class="ta-preview-label-roli" src="${roli_icon_url}" width="15" height="15" alt="" decoding="async" />
+        <span class="ta-preview-label-value">${escape_html(format_number(value))}</span>
+      </span>`
+    : "";
+  let robux_html = "";
+  if (robux_input?.id) {
+    let amount = ms_clamp_robux(robux_input.value);
+    let aria = escape_html(robux_input.aria || "Robux");
+    robux_html = `<label class="ms-robux-chip${amount > 0 ? " is-active" : ""}" title="${aria}">
+      <span class="ms-robux-chip-prefix" aria-hidden="true">R$</span>
+      <input type="number" id="${escape_html(robux_input.id)}" min="0" step="1" inputmode="numeric" value="${amount}" aria-label="${aria}" />
+    </label>`;
+  }
+  return `<div class="ta-preview-label ms-side-head${mod}">
     <span class="ta-preview-label-text">${escape_html(title)}</span>
-    <span class="ta-preview-label-total" title="Rolimons-side total">
-      <img class="ta-preview-label-roli" src="${roli_icon_url}" width="15" height="15" alt="" decoding="async" />
-      <span class="ta-preview-label-value">${escape_html(format_number(totals.value))}</span>
-    </span>
+    <span class="ms-side-head-right">${robux_html}${total_html}</span>
   </div>`;
 }
 
@@ -5883,6 +6421,26 @@ async function ms_fill_user_avatars(scope_el) {
   }
 }
 
+function ms_config_summary(cfg) {
+  let hours = ms_clamp_hours(cfg?.online_hours);
+  let sends = ms_clamp_max_trades(cfg?.max_trades);
+  let days = ms_clamp_avoid_days(cfg?.avoid_recent_days);
+  let owned = ms_clamp_max_owned_days(cfg?.max_owned_days);
+  let blocked = ms_normalize_blocked_users(cfg?.blocked_users).length;
+  let skip = days > 0 ? `skip ${days}d` : "skip off";
+  let parts = [`${hours}h`, `${sends} sends`, skip];
+  if (owned > 0) parts.push(`own ≤${owned}d`);
+  if (blocked > 0) parts.push(`${blocked} blocked`);
+  return parts.join(" · ");
+}
+
+function ms_field_help_html(aria, tip) {
+  return `<span class="ms-field-help" tabindex="0" role="button" aria-label="${escape_html(aria)}">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+    <span class="ms-field-tooltip" role="tooltip">${escape_html(tip)}</span>
+  </span>`;
+}
+
 function ms_progress_text(progress) {
   if (!progress) return "Idle";
   if (progress.running) {
@@ -5908,13 +6466,17 @@ function ms_progress_text(progress) {
 function ms_update_progress_ui(root, progress) {
   if (!root) return;
   let line = root.querySelector("#ms-progress-line");
-  let start_btn = root.querySelector("#ms-start");
-  let stop_btn = root.querySelector("#ms-stop");
+  let run_btn = root.querySelector("#ms-run");
   if (line) line.textContent = ms_progress_text(progress);
   let running = !!progress?.running;
-  if (start_btn) start_btn.disabled = running;
-  if (stop_btn) stop_btn.disabled = !running;
   root.classList.toggle("is-running", running);
+  if (run_btn) {
+    run_btn.disabled = false;
+    run_btn.classList.toggle("is-stop", running);
+    run_btn.setAttribute("aria-label", running ? "Stop" : "Start");
+    let label = run_btn.querySelector(".ms-action-label");
+    if (label) label.textContent = running ? "Stop" : "Start";
+  }
 }
 
 function ms_start_polling(root) {
@@ -5992,6 +6554,8 @@ async function render_mass_send_panel(root) {
   let slot_metrics = await ms_fetch_slot_metrics(cfg);
   let offer_totals = ms_sum_slot_metrics(cfg.offer_slots, slot_metrics);
   let request_totals = ms_sum_slot_metrics(cfg.request_slots, slot_metrics);
+  offer_totals.robux = ms_clamp_robux(cfg.offer_robux);
+  request_totals.robux = ms_clamp_robux(cfg.request_robux);
   root.dataset.msMounted = "1";
 
   let selected_preset = cfg.preset_editor_index;
@@ -6007,7 +6571,11 @@ async function render_mass_send_panel(root) {
     .join("");
 
   let rows = "";
-  rows += ms_side_label_html("You offer", offer_totals);
+  rows += ms_side_label_html("You offer", offer_totals, "", {
+    id: "ms-offer-robux",
+    value: offer_totals.robux,
+    aria: "Offer Robux",
+  });
   rows += `<div class="ta-slot-row">`;
   for (let i = 0; i < 4; i++) rows += ms_slot_html("offer", i, cfg.offer_slots[i]);
   rows += `</div>`;
@@ -6015,6 +6583,11 @@ async function render_mass_send_panel(root) {
     "You request",
     request_totals,
     "ta-preview-label-section-gap",
+    {
+      id: "ms-request-robux",
+      value: request_totals.robux,
+      aria: "Request Robux",
+    },
   );
   rows += `<div class="ta-slot-row">`;
   for (let i = 0; i < 4; i++)
@@ -6041,7 +6614,13 @@ async function render_mass_send_panel(root) {
           : `<span class="ms-recent-name">${escape_html(name)}</span>`;
         let offers = Array.isArray(row?.offer_items) ? row.offer_items : [];
         let requests = Array.isArray(row?.request_items) ? row.request_items : [];
-        let has_items = offers.length > 0 || requests.length > 0;
+        let offer_rbx = ms_clamp_robux(row?.offer_robux);
+        let request_rbx = ms_clamp_robux(row?.request_robux);
+        let has_items =
+          offers.length > 0 ||
+          requests.length > 0 ||
+          offer_rbx > 0 ||
+          request_rbx > 0;
         let expand_btn = has_items
           ? `<button type="button" class="ms-recent-expand" data-ms-recent-index="${index}" aria-expanded="false" aria-label="Show trade items"><span aria-hidden="true">›</span></button>`
           : "";
@@ -6055,19 +6634,25 @@ async function render_mass_send_panel(root) {
           let href = `https://www.rolimons.com/item/${aid}`;
           return `<a href="${escape_html_attr(href)}" data-open-new-tab="true" rel="noopener noreferrer" class="ta-recent-thumb-link" title="Open on Rolimons"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" class="ta-recent-thumb" /></a>`;
         }
-        function side_html(label, items) {
+        function side_html(label, items, robux) {
           let thumbs = items.map(thumb_tag).join("");
-          if (!thumbs) {
+          let rbx = ms_clamp_robux(robux);
+          if (!thumbs && !(rbx > 0)) {
             return `<div class="ta-recent-side"><span class="ta-recent-side-label">${label}</span><span class="ta-recent-no-items">—</span></div>`;
           }
-          let total = items.reduce((s, it) => s + (Number(it.value) || 0), 0);
+          let total =
+            items.reduce((s, it) => s + (Number(it.value) || 0), 0) + rbx;
           let total_str = total > 0 ? format_number(total) : "";
-          return `<div class="ta-recent-side"><span class="ta-recent-side-label">${label}</span><div class="ta-recent-thumbs">${thumbs}</div>${total_str ? `<span class="ta-recent-total">${total_str}</span>` : ""}</div>`;
+          let rbx_html =
+            rbx > 0
+              ? `<span class="ms-recent-robux">+${escape_html(format_number(rbx))} R$</span>`
+              : "";
+          return `<div class="ta-recent-side"><span class="ta-recent-side-label">${label}</span><div class="ta-recent-thumbs">${thumbs}${rbx_html}</div>${total_str ? `<span class="ta-recent-total">${total_str}</span>` : ""}</div>`;
         }
         let detail = has_items
           ? `<div class="ms-recent-detail" hidden>
-              ${side_html("Offered", offers)}
-              ${side_html("Requested", requests)}
+              ${side_html("Offered", offers, offer_rbx)}
+              ${side_html("Requested", requests, request_rbx)}
             </div>`
           : "";
         let meta = online_label
@@ -6115,36 +6700,122 @@ async function render_mass_send_panel(root) {
         </div>
       </div>
       <div class="ta-divider"></div>
-      <div class="ms-filters">
-        <label class="ta-field">
-          <span class="ms-field-label">
-            Online within (hours)
-            <span class="ms-field-help" tabindex="0" role="button" aria-label="About online within hours">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span class="ms-field-tooltip" role="tooltip">Only send to owners last seen online within this many hours (from Rolimons).</span>
-            </span>
+      <div class="ms-config${cfg.config_open ? " is-open" : ""}">
+        <button type="button" class="ms-config-toggle" id="ms-config-toggle" aria-expanded="${cfg.config_open ? "true" : "false"}" aria-controls="ms-config-body">
+          <span class="ms-config-toggle-copy">
+            <span class="ms-config-toggle-title">Config</span>
+            <span class="ms-config-toggle-summary" id="ms-config-summary">${escape_html(ms_config_summary(cfg))}</span>
           </span>
-          <input type="number" id="ms-online-hours" min="1" max="168" step="1" value="${cfg.online_hours}" />
-        </label>
-        <label class="ta-field">
-          <span class="ms-field-label">
-            Trades to send
-            <span class="ms-field-help" tabindex="0" role="button" aria-label="About trades to send">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              <span class="ms-field-tooltip" role="tooltip">How many successful sends to complete. Failed or privacy-blocked people are skipped and don’t count — it keeps going until this many succeed or no one is left.</span>
+          <svg class="ms-config-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </button>
+        <div class="ms-config-body" id="ms-config-body"${cfg.config_open ? "" : " hidden"}>
+          <label class="ms-config-row">
+            <span class="ms-config-row-label">
+              Online within
+              ${ms_field_help_html(
+                "About online within hours",
+                "Only send to owners last seen online within this many hours (from Rolimons).",
+              )}
             </span>
-          </span>
-          <input type="number" id="ms-max-trades" min="1" max="100" step="1" value="${cfg.max_trades}" />
-        </label>
+            <span class="ms-config-row-control">
+              <input type="number" id="ms-online-hours" min="1" max="168" step="1" value="${cfg.online_hours}" />
+              <span class="ms-config-suffix">hours</span>
+            </span>
+          </label>
+          <label class="ms-config-row">
+            <span class="ms-config-row-label">
+              Trades to send
+              ${ms_field_help_html(
+                "About trades to send",
+                "How many successful sends to complete. Failed or privacy-blocked people are skipped and don’t count — it keeps going until this many succeed or no one is left.",
+              )}
+            </span>
+            <span class="ms-config-row-control">
+              <input type="number" id="ms-max-trades" min="1" max="100" step="1" value="${cfg.max_trades}" />
+              <span class="ms-config-suffix">trades</span>
+            </span>
+          </label>
+          <label class="ms-config-row">
+            <span class="ms-config-row-label">
+              Skip recent
+              ${ms_field_help_html(
+                "About skip recent recipients",
+                "Don’t send again to people you already mass-sent to within this many days. Set 0 to turn off.",
+              )}
+            </span>
+            <span class="ms-config-row-control">
+              <input type="number" id="ms-avoid-days" min="0" max="365" step="1" value="${cfg.avoid_recent_days}" />
+              <span class="ms-config-suffix">days</span>
+            </span>
+          </label>
+          <label class="ms-config-row">
+            <span class="ms-config-row-label">
+              Max owned
+              ${ms_field_help_html(
+                "About max owned days",
+                "Skip people who have owned the requested item(s) longer than this many days (Rolimons Owned Since). 0 = off.",
+              )}
+            </span>
+            <span class="ms-config-row-control">
+              <input type="number" id="ms-max-owned-days" min="0" max="3650" step="1" value="${cfg.max_owned_days}" />
+              <span class="ms-config-suffix">days</span>
+            </span>
+          </label>
+          <div class="ms-blocklist${cfg.blocklist_open ? " is-open" : ""}">
+            <button type="button" class="ms-blocklist-toggle" id="ms-blocklist-toggle" aria-expanded="${cfg.blocklist_open ? "true" : "false"}" aria-controls="ms-blocklist-body">
+              <span class="ms-blocklist-toggle-copy">
+                <span class="ms-blocklist-title">Never send to</span>
+                <span class="ms-blocklist-sub">${
+                  cfg.blocked_users.length
+                    ? `${cfg.blocked_users.length} blocked`
+                    : "None blocked"
+                }</span>
+              </span>
+              <svg class="ms-blocklist-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </button>
+            <div class="ms-blocklist-body" id="ms-blocklist-body"${cfg.blocklist_open ? "" : " hidden"}>
+              <div class="ms-blocklist-add">
+                <input type="text" id="ms-block-input" placeholder="Username or user ID" autocomplete="off" spellcheck="false" />
+                <button type="button" class="ms-blocklist-add-btn" id="ms-block-add">Add</button>
+              </div>
+              <div class="ms-blocklist-io">
+                <button type="button" class="ms-blocklist-io-btn" id="ms-block-import" title="Import blocked users from a JSON file">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  <span>Import</span>
+                </button>
+                <button type="button" class="ms-blocklist-io-btn" id="ms-block-export" title="Export blocked users as a JSON file">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>Export</span>
+                </button>
+                <input type="file" id="ms-block-import-file" class="ms-blocklist-file" accept="application/json,.json" />
+              </div>
+              <div class="ms-blocklist-io-status" id="ms-block-io-status" hidden></div>
+              <div class="ms-blocklist-list" id="ms-block-list">${
+              cfg.blocked_users.length
+                ? cfg.blocked_users
+                    .map((user) => {
+                      let uid = Number(user.user_id) || 0;
+                      let name = escape_html(user.name || `User ${uid}`);
+                      return `<div class="ms-block-row" data-ms-block-id="${uid}">
+                        <img class="ms-block-avatar" src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-ms-avatar="${uid}" width="28" height="28" decoding="async" />
+                        <div class="ms-block-copy">
+                          <div class="ms-block-name">${name}</div>
+                          <div class="ms-block-id">${uid}</div>
+                        </div>
+                        <button type="button" class="ms-block-remove" data-ms-block-id="${uid}" aria-label="Remove ${name}">×</button>
+                      </div>`;
+                    })
+                    .join("")
+                : `<div class="ms-blocklist-empty">No blocked users</div>`
+            }</div>
+            </div>
+          </div>
+        </div>
       </div>
-      <label class="ms-avoid-row">
-        <span class="ms-avoid-text">Skip people sent to within</span>
-        <input type="number" id="ms-avoid-days" class="ms-avoid-days" min="0" max="365" step="1" value="${cfg.avoid_recent_days}" />
-        <span class="ms-avoid-text">days</span>
-      </label>
-      <div class="ms-run-row">
-        <button type="button" class="ta-btn ta-btn-primary" id="ms-start">Start</button>
-        <button type="button" class="ta-btn ta-btn-ghost" id="ms-stop" disabled>Stop</button>
+      <div class="ms-actions">
+        <button type="button" class="ms-action-run" id="ms-run">
+          <span class="ms-action-label">Start</span>
+        </button>
       </div>
       <div class="ta-status-line" id="ms-progress-line">${escape_html(ms_progress_text(progress))}</div>
     </div>
@@ -6228,6 +6899,8 @@ async function render_mass_send_panel(root) {
         name: `Preset ${cfg.preset_editor_index + 1}`,
         offer_slots: cfg.offer_slots,
         request_slots: cfg.request_slots,
+        offer_robux: cfg.offer_robux,
+        request_robux: cfg.request_robux,
       },
       cfg.preset_editor_index,
     );
@@ -6241,6 +6914,8 @@ async function render_mass_send_panel(root) {
       ...cfg,
       offer_slots: preset.offer_slots,
       request_slots: preset.request_slots,
+      offer_robux: preset.offer_robux,
+      request_robux: preset.request_robux,
     });
   });
 
@@ -6248,6 +6923,23 @@ async function render_mass_send_panel(root) {
     let presets = ms_normalize_presets(cfg.presets);
     presets[cfg.preset_editor_index] = null;
     await refresh({ ...cfg, presets });
+  });
+
+  root.querySelector("#ms-config-toggle")?.addEventListener("click", async () => {
+    let next_open = !cfg.config_open;
+    cfg = await ms_save_config({ ...cfg, config_open: next_open });
+    let wrap = root.querySelector(".ms-config");
+    let body = root.querySelector("#ms-config-body");
+    let toggle = root.querySelector("#ms-config-toggle");
+    if (wrap) wrap.classList.toggle("is-open", next_open);
+    if (body) {
+      if (next_open) body.removeAttribute("hidden");
+      else body.setAttribute("hidden", "");
+    }
+    if (toggle) toggle.setAttribute("aria-expanded", next_open ? "true" : "false");
+    if (next_open && typeof init_tap_tooltips === "function") {
+      init_tap_tooltips(root);
+    }
   });
 
   async function persist_filters() {
@@ -6258,18 +6950,82 @@ async function render_mass_send_panel(root) {
     let avoid_recent_days = ms_clamp_avoid_days(
       root.querySelector("#ms-avoid-days")?.value,
     );
+    let max_owned_days = ms_clamp_max_owned_days(
+      root.querySelector("#ms-max-owned-days")?.value,
+    );
+    let offer_robux = ms_clamp_robux(
+      root.querySelector("#ms-offer-robux")?.value,
+    );
+    let request_robux = ms_clamp_robux(
+      root.querySelector("#ms-request-robux")?.value,
+    );
     cfg = await ms_save_config({
       ...cfg,
       online_hours: hours,
       max_trades,
       avoid_recent_days,
+      max_owned_days,
+      offer_robux,
+      request_robux,
     });
     let hours_el = root.querySelector("#ms-online-hours");
     let max_el = root.querySelector("#ms-max-trades");
     let days_el = root.querySelector("#ms-avoid-days");
+    let owned_el = root.querySelector("#ms-max-owned-days");
+    let offer_rbx_el = root.querySelector("#ms-offer-robux");
+    let request_rbx_el = root.querySelector("#ms-request-robux");
+    let summary_el = root.querySelector("#ms-config-summary");
     if (hours_el) hours_el.value = String(cfg.online_hours);
     if (max_el) max_el.value = String(cfg.max_trades);
     if (days_el) days_el.value = String(cfg.avoid_recent_days);
+    if (owned_el) owned_el.value = String(cfg.max_owned_days);
+    if (offer_rbx_el) offer_rbx_el.value = String(cfg.offer_robux);
+    if (request_rbx_el) request_rbx_el.value = String(cfg.request_robux);
+    if (summary_el) summary_el.textContent = ms_config_summary(cfg);
+  }
+
+  async function persist_robux() {
+    let offer_robux = ms_clamp_robux(
+      root.querySelector("#ms-offer-robux")?.value,
+    );
+    let request_robux = ms_clamp_robux(
+      root.querySelector("#ms-request-robux")?.value,
+    );
+    await refresh({ ...cfg, offer_robux, request_robux });
+  }
+
+  async function ms_resolve_block_query(raw) {
+    let query = String(raw || "").trim();
+    if (!query) throw new Error("Enter a username or user ID.");
+    if (/^\d+$/.test(query)) {
+      let id = Number(query);
+      let res = await fetch(`https://users.roblox.com/v1/users/${id}`, {
+        credentials: "omit",
+      });
+      if (!res.ok) throw new Error("Could not find that user ID.");
+      let data = await res.json().catch(() => null);
+      let user_id = Number(data?.id) || id;
+      let name = String(data?.name || data?.displayName || `User ${user_id}`).trim();
+      return { user_id, name };
+    }
+    let res = await fetch("https://users.roblox.com/v1/usernames/users", {
+      method: "POST",
+      credentials: "omit",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({
+        usernames: [query],
+        excludeBannedUsers: false,
+      }),
+    });
+    if (!res.ok) throw new Error("Could not look up that username.");
+    let data = await res.json().catch(() => null);
+    let row = Array.isArray(data?.data) ? data.data[0] : null;
+    let user_id = Number(row?.id) || 0;
+    if (!(user_id > 0)) throw new Error("Could not find that username.");
+    return {
+      user_id,
+      name: String(row?.name || query).trim(),
+    };
   }
 
   root.querySelector("#ms-online-hours")?.addEventListener("change", () => {
@@ -6280,6 +7036,170 @@ async function render_mass_send_panel(root) {
   });
   root.querySelector("#ms-avoid-days")?.addEventListener("change", () => {
     void persist_filters();
+  });
+  root.querySelector("#ms-max-owned-days")?.addEventListener("change", () => {
+    void persist_filters();
+  });
+  root.querySelector("#ms-offer-robux")?.addEventListener("change", () => {
+    void persist_robux();
+  });
+  root.querySelector("#ms-request-robux")?.addEventListener("change", () => {
+    void persist_robux();
+  });
+
+  root.querySelector("#ms-blocklist-toggle")?.addEventListener("click", async () => {
+    let next_open = !cfg.blocklist_open;
+    cfg = await ms_save_config({ ...cfg, blocklist_open: next_open });
+    let wrap = root.querySelector(".ms-blocklist");
+    let body = root.querySelector("#ms-blocklist-body");
+    let toggle = root.querySelector("#ms-blocklist-toggle");
+    if (wrap) wrap.classList.toggle("is-open", next_open);
+    if (body) {
+      if (next_open) body.removeAttribute("hidden");
+      else body.setAttribute("hidden", "");
+    }
+    if (toggle) toggle.setAttribute("aria-expanded", next_open ? "true" : "false");
+    if (next_open) void ms_fill_user_avatars(root);
+  });
+
+  function set_blocklist_io_status(message, kind = "") {
+    let status = root.querySelector("#ms-block-io-status");
+    if (!status) return;
+    if (!message) {
+      status.textContent = "";
+      status.hidden = true;
+      status.classList.remove("is-ok", "is-error");
+      return;
+    }
+    status.hidden = false;
+    status.textContent = message;
+    status.classList.toggle("is-ok", kind === "ok");
+    status.classList.toggle("is-error", kind === "error");
+  }
+
+  if (ms_blocklist_io_flash) {
+    let flash = ms_blocklist_io_flash;
+    ms_blocklist_io_flash = null;
+    set_blocklist_io_status(flash.message, flash.kind);
+  }
+
+  root.querySelector("#ms-block-export")?.addEventListener("click", () => {
+    let users = ms_normalize_blocked_users(cfg.blocked_users);
+    ms_export_blocklist_file(users);
+    set_blocklist_io_status(
+      users.length
+        ? `Exported ${users.length} blocked user${users.length === 1 ? "" : "s"}.`
+        : "Exported empty blocklist.",
+      "ok",
+    );
+  });
+
+  root.querySelector("#ms-block-import")?.addEventListener("click", () => {
+    root.querySelector("#ms-block-import-file")?.click();
+  });
+
+  root.querySelector("#ms-block-import-file")?.addEventListener("change", async (ev) => {
+    let file_input = ev.target;
+    let file = file_input?.files?.[0];
+    if (file_input) file_input.value = "";
+    if (!file) return;
+    set_blocklist_io_status("Importing…");
+    try {
+      let parsed = JSON.parse(await file.text());
+      let imported = await ms_parse_blocklist_import(parsed);
+      if (!imported.users.length) {
+        throw new Error(
+          imported.unresolved
+            ? "Could not resolve any usernames in that file."
+            : "No blocked users found in that file.",
+        );
+      }
+      let merged = ms_merge_blocked_users(cfg.blocked_users, imported.users);
+      if (!merged.added && merged.skipped_dupes === 0) {
+        throw new Error("No blocked users found in that file.");
+      }
+      let parts = [];
+      if (merged.added) parts.push(`Added ${merged.added}`);
+      else if (merged.skipped_dupes) parts.push("No new users");
+      if (merged.skipped_dupes) {
+        parts.push(
+          `skipped ${merged.skipped_dupes} duplicate${merged.skipped_dupes === 1 ? "" : "s"}`,
+        );
+      }
+      if (imported.unresolved) {
+        parts.push(
+          `could not resolve ${imported.unresolved} name${imported.unresolved === 1 ? "" : "s"}`,
+        );
+      }
+      ms_blocklist_io_flash = {
+        message: parts.join(" · ") + ".",
+        kind: "ok",
+      };
+      await refresh({
+        ...cfg,
+        blocked_users: merged.users,
+        config_open: true,
+        blocklist_open: true,
+      });
+    } catch (err) {
+      let msg = err?.message || "Could not import that file.";
+      if (err instanceof SyntaxError) msg = "That file is not valid JSON.";
+      set_blocklist_io_status(msg, "error");
+    }
+  });
+
+  async function add_blocked_user() {
+    let input = root.querySelector("#ms-block-input");
+    let line = root.querySelector("#ms-progress-line");
+    let query = input?.value || "";
+    try {
+      let user = await ms_resolve_block_query(query);
+      let blocked = ms_normalize_blocked_users(cfg.blocked_users);
+      if (blocked.some((row) => row.user_id === user.user_id)) {
+        if (line) {
+          line.textContent = `${user.name} is already blocked.`;
+          line.classList.add("ta-err");
+        }
+        return;
+      }
+      blocked.push(user);
+      if (input) input.value = "";
+      await refresh({
+        ...cfg,
+        blocked_users: blocked,
+        config_open: true,
+        blocklist_open: true,
+      });
+    } catch (err) {
+      if (line) {
+        line.textContent = err?.message || "Could not add that user.";
+        line.classList.add("ta-err");
+      }
+    }
+  }
+
+  root.querySelector("#ms-block-add")?.addEventListener("click", () => {
+    void add_blocked_user();
+  });
+  root.querySelector("#ms-block-input")?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      void add_blocked_user();
+    }
+  });
+  root.querySelectorAll(".ms-block-remove").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      let id = Number(btn.dataset.msBlockId) || 0;
+      let blocked = ms_normalize_blocked_users(cfg.blocked_users).filter(
+        (row) => row.user_id !== id,
+      );
+      await refresh({
+        ...cfg,
+        blocked_users: blocked,
+        config_open: true,
+        blocklist_open: true,
+      });
+    });
   });
 
   root.querySelectorAll('.ta-slot[data-ms-side="offer"]').forEach((el) => {
@@ -6343,7 +7263,15 @@ async function render_mass_send_panel(root) {
     });
   });
 
-  root.querySelector("#ms-start")?.addEventListener("click", async () => {
+  root.querySelector("#ms-run")?.addEventListener("click", async () => {
+    let progress_now = await ms_send("ms_progress");
+    if (progress_now?.running) {
+      await ms_send("ms_stop");
+      let next = await ms_send("ms_progress");
+      ms_update_progress_ui(root, next);
+      return;
+    }
+
     await persist_filters();
     let offer_count = cfg.offer_slots.filter((x) => x != null).length;
     let request_count = cfg.request_slots.filter((x) => x != null).length;
@@ -6359,9 +7287,13 @@ async function render_mass_send_panel(root) {
       config: {
         offer_slots: cfg.offer_slots,
         request_slots: cfg.request_slots,
+        offer_robux: cfg.offer_robux,
+        request_robux: cfg.request_robux,
         online_hours: cfg.online_hours,
         max_trades: cfg.max_trades,
         avoid_recent_days: cfg.avoid_recent_days,
+        max_owned_days: cfg.max_owned_days,
+        blocked_users: cfg.blocked_users,
       },
     });
     if (start_res && start_res.ok === false) {
@@ -6377,12 +7309,6 @@ async function render_mass_send_panel(root) {
     let next = await ms_send("ms_progress");
     ms_update_progress_ui(root, next);
     ms_start_polling(root);
-  });
-
-  root.querySelector("#ms-stop")?.addEventListener("click", async () => {
-    await ms_send("ms_stop");
-    let next = await ms_send("ms_progress");
-    ms_update_progress_ui(root, next);
   });
 }
 

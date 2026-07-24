@@ -97,25 +97,46 @@
   }
 
   function resolve_item_id(item_data, roblox_id, name, options) {
-    let bundle_id = find_bundle_item_id(
-      item_data,
-      roblox_id,
-      name,
-      options?.acronym,
-    );
-    if (bundle_id) return bundle_id;
-
     let key = String(roblox_id ?? "").trim();
-    if (!options?.isBundle && key && item_data?.items?.[key]) return key;
+    // Exact IDs always win. Name matching used to prefer bundles first and
+    // could send "Zip it!" hat (asset) to the "Zip It!" dynamic-head bundle.
+    if (key) {
+      if (item_data?.bundleIds?.[key]) return key;
+      if (item_data?.items?.[key]) return key;
+    }
 
-    let normalized_name = normalize_item_name(name);
-    if (!normalized_name || !item_data?.items) return null;
+    if (options?.isBundle) {
+      let bundle_id = find_bundle_item_id(
+        item_data,
+        null,
+        name,
+        options?.acronym,
+      );
+      if (bundle_id) return bundle_id;
+    }
+
+    let labels = new Set();
+    for (let raw of [name, options?.acronym]) {
+      let normalized = normalize_item_name(raw);
+      if (normalized) labels.add(normalized);
+    }
+    if (!labels.size || !item_data?.items) return null;
+
+    let asset_hit = null;
+    let bundle_hit = null;
     for (let [id, row] of Object.entries(item_data.items)) {
       if (!is_item_row(row)) continue;
-      if (normalize_item_name(row[ROW_NAME]) === normalized_name) return id;
-      if (normalize_item_name(row[ROW_ACRONYM]) === normalized_name) return id;
+      let row_name = normalize_item_name(row[ROW_NAME]);
+      let row_acr = normalize_item_name(row[ROW_ACRONYM]);
+      if (!labels.has(row_name) && !labels.has(row_acr)) continue;
+      if (is_bundle_id(item_data, id)) {
+        if (!bundle_hit) bundle_hit = id;
+      } else if (!asset_hit) {
+        asset_hit = id;
+      }
     }
-    return null;
+    if (options?.isBundle) return bundle_hit || asset_hit;
+    return asset_hit || bundle_hit;
   }
 
   function normalize_item_name(name) {
@@ -162,11 +183,18 @@
     let normalized_name = normalize_item_name(name);
     if (!normalized_name) return null;
 
-    for (let row of Object.values(items)) {
+    let asset_row = null;
+    let bundle_row = null;
+    for (let [id, row] of Object.entries(items)) {
       if (!is_item_row(row)) continue;
-      if (normalize_item_name(row[ROW_NAME]) === normalized_name) return row;
+      if (normalize_item_name(row[ROW_NAME]) !== normalized_name) continue;
+      if (is_bundle_id(item_data, id)) {
+        if (!bundle_row) bundle_row = row;
+      } else if (!asset_row) {
+        asset_row = row;
+      }
     }
-    return null;
+    return is_bundle ? bundle_row || asset_row : asset_row || bundle_row;
   }
 
   function profile_url(id, item_data, options) {
@@ -180,6 +208,31 @@
 
   function normalize_rolimons_item_details_payload(payload) {
     if (!payload || typeof payload !== "object") return null;
+
+    // v3 split shape: assets + bundles (correct Roblox catalog IDs for bundles).
+    let assets = payload.assets;
+    let bundles = payload.bundles;
+    if (
+      (typeof assets === "object" && assets) ||
+      (typeof bundles === "object" && bundles)
+    ) {
+      let items = {};
+      merge_item_map(items, assets);
+      merge_item_map(items, bundles);
+      if (!Object.keys(items).length) return null;
+      return {
+        success: payload.success !== false,
+        item_count: Object.keys(items).length,
+        asset_count:
+          typeof assets === "object" && assets ? Object.keys(assets).length : 0,
+        bundle_count:
+          typeof bundles === "object" && bundles
+            ? Object.keys(bundles).length
+            : 0,
+        items,
+        bundleIds: build_bundle_ids(bundles),
+      };
+    }
 
     if (payload.items && typeof payload.items === "object") {
       let items = {};
@@ -197,32 +250,26 @@
       };
     }
 
-    let assets = payload.assets;
-    let bundles = payload.bundles;
-    if (
-      (typeof assets !== "object" || !assets) &&
-      (typeof bundles !== "object" || !bundles)
-    ) {
-      return null;
+    return null;
+  }
+
+  function resolve_roblox_catalog_target(item_data, id, face_map) {
+    let key = String(id ?? "").trim();
+    if (!key) return null;
+    let mapped = face_map?.[key];
+    if (mapped != null && mapped !== "") {
+      return { id: String(mapped), isBundle: true };
     }
-
-    let items = {};
-    merge_item_map(items, assets);
-    merge_item_map(items, bundles);
-    if (!Object.keys(items).length) return null;
-
-    return {
-      success: payload.success !== false,
-      item_count: Object.keys(items).length,
-      asset_count:
-        typeof assets === "object" && assets ? Object.keys(assets).length : 0,
-      bundle_count:
-        typeof bundles === "object" && bundles
-          ? Object.keys(bundles).length
-          : 0,
-      items,
-      bundleIds: build_bundle_ids(bundles),
-    };
+    if (is_bundle_id(item_data, key)) {
+      return { id: key, isBundle: true };
+    }
+    // Face-map values are always Roblox bundle IDs.
+    if (face_map) {
+      for (let bundle_id of Object.values(face_map)) {
+        if (String(bundle_id) === key) return { id: key, isBundle: true };
+      }
+    }
+    return { id: key, isBundle: false };
   }
 
   root.RolimonsItemDetails = {
@@ -242,6 +289,7 @@
     is_bundle_id,
     find_bundle_item_id,
     resolve_item_id,
+    resolve_roblox_catalog_target,
     profile_url,
   };
 })(typeof globalThis !== "undefined" ? globalThis : self);
