@@ -59,15 +59,54 @@
     let rolimons_name_cache;
     let routility_data;
 
+    // Callers read .items straight off this, and it is requested before the
+    // first fetch resolves, so never hand back undefined.
+    const empty_rolimons_data = { items: {} };
     function get_rolimons_data() {
-      return rolimons_data;
+      return rolimons_data || empty_rolimons_data;
     }
     function get_routility_data() {
       return routility_data;
     }
-    function get_usd(item_id) {
+    function get_usd(item_id, name) {
       let item = routility_data?.items?.[String(item_id)];
-      return item && typeof item.usd === "number" ? item.usd : 0;
+      if (item && typeof item.usd === "number") return item.usd;
+      function normalize_label(value) {
+        return String(value || "")
+          .toLowerCase()
+          .replace(/[#,()\-:'`"]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+      let labels = [];
+      let from_name = normalize_label(name);
+      if (from_name) labels.push(from_name);
+      let row = rolimons_data?.items?.[String(item_id)];
+      if (Array.isArray(row)) {
+        let row_name = normalize_label(row[0]);
+        let row_acr = normalize_label(row[1]);
+        if (row_name) labels.push(row_name);
+        if (row_acr) labels.push(row_acr);
+      }
+      if (!labels.length || !routility_data?.items) return 0;
+      if (!routility_data.__nte_by_name) {
+        let map = Object.create(null);
+        for (let entry of Object.values(routility_data.items)) {
+          if (!entry || typeof entry.usd !== "number" || !(entry.usd > 0))
+            continue;
+          for (let raw of [entry.name, entry.acr]) {
+            let key = normalize_label(raw);
+            if (!key || map[key] != null) continue;
+            map[key] = entry.usd;
+          }
+        }
+        routility_data.__nte_by_name = map;
+      }
+      for (let label of labels) {
+        if (routility_data.__nte_by_name[label] != null)
+          return routility_data.__nte_by_name[label];
+      }
+      return 0;
     }
     function get_url(path) {
       if (window.__NTE_ICONS && window.__NTE_ICONS[path]) {
@@ -3439,6 +3478,7 @@
         });
       }
       function get_entry_routility_usd(entry) {
+        let name = entry.name || entry.item_name || "";
         let direct = Number(
           routility_snapshot?.items?.[String(entry.id)]?.usd || 0,
         );
@@ -3448,9 +3488,9 @@
         );
         if (fallback > 0) return fallback;
         if (typeof utils.getUSD === "function") {
-          direct = Number(utils.getUSD(entry.id) || 0);
+          direct = Number(utils.getUSD(entry.id, name) || 0);
           if (direct > 0) return direct;
-          fallback = Number(utils.getUSD(entry.rolimons_id) || 0);
+          fallback = Number(utils.getUSD(entry.rolimons_id, name) || 0);
           if (fallback > 0) return fallback;
         }
         return 0;

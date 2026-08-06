@@ -162,7 +162,7 @@
     function trade_offer_has_bundle_item(side) {
       let offer_el = deps.get_offer_element(side);
       let cards = offer_el?.querySelectorAll(
-        ".item-card-container[data-collectibleiteminstanceid], .trade-request-item[data-collectibleiteminstanceid]",
+        ".item-card-container[data-collectibleiteminstanceid], .trade-request-item[data-collectibleiteminstanceid], .trade-request-item:not(.blank-item):not(.draggable-border), .item-card-container",
       );
       if (!cards?.length) return false;
       for (let card of cards) {

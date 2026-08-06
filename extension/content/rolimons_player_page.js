@@ -4,6 +4,7 @@
   const UAID_BTN_CLASS =
     "btn btn-light-blue border-primary btn-sm btn-very-sharp";
   let ran_for_user = "";
+  let player_fix_retry_timer = 0;
 
   function get_option(name) {
     return new Promise((resolve) => {
@@ -162,7 +163,14 @@
       type: "rolimons_player_tradable",
       user_id,
     });
-    return Array.isArray(res?.items) ? res.items : [];
+    let items = Array.isArray(res?.items) ? res.items : [];
+    return {
+      ok: !!res?.ok,
+      complete: !!res?.complete,
+      items,
+      error: res?.error || null,
+      status: res?.status || null,
+    };
   }
 
   async function fetch_face_map() {
@@ -204,9 +212,13 @@
             ? DEMAND_LABELS[Number(roli[5])]
             : null;
         let instances = Array.isArray(item.instances) ? item.instances : [];
+        if (!instances.length) instances = [item];
         let ciiid = String(
           instances[0]?.collectibleItemInstanceId || "",
         ).trim();
+        let held = instances.filter((inst) =>
+          !!(inst?.isOnHold ?? item?.isOnHold),
+        ).length;
         let name = String(
           (roli && roli[0]) || item.itemName || item.name || "Bundle",
         ).trim();
@@ -220,6 +232,7 @@
           serial: instances[0]?.serialNumber || null,
           ciiid,
           quantity: Math.max(1, instances.length || 1),
+          held,
           thumb: thumbs[bundle_id] || "",
         };
       })
@@ -259,7 +272,6 @@
   }
 
   function bundle_href(item) {
-    if (item.face_id) return `/item/${item.face_id}`;
     return `/bundle/${item.bundle_id}`;
   }
 
@@ -276,6 +288,33 @@
         ".item-hold-quantity, .modal, .item_quantity_tag, .quantity-label, .nte-rolimons-face-badge",
       )
       .forEach((el) => el.remove());
+  }
+
+  function apply_native_hold_tag(clone, held) {
+    held = Math.max(0, Math.floor(Number(held) || 0));
+    if (!(held > 0)) return;
+    let img_container = clone.querySelector(".item_card_img_container");
+    if (!img_container) return;
+    let container = clone.querySelector(".hold_item_tag_container");
+    if (!container) {
+      container = document.createElement("div");
+      container.className = "hold_item_tag_container";
+      img_container.prepend(container);
+    }
+    let title = held > 1 ? `${held} On Hold` : "On Hold";
+    let icon = document.createElement("div");
+    icon.className = "hold_item_tag_icon hold_tag_icon";
+    icon.setAttribute("data-toggle", "tooltip");
+    icon.setAttribute("title", "");
+    icon.setAttribute("data-original-title", title);
+    container.appendChild(icon);
+    try {
+      if (typeof window.$ === "function" && typeof window.$.fn?.tooltip === "function") {
+        window.$(icon).tooltip();
+      }
+    } catch {
+      // Rolimons tooltip init is optional.
+    }
   }
 
   function keep_rap_value_block(details) {
@@ -308,7 +347,7 @@
     since_wrap.innerHTML =
       `<div class="d-flex justify-content-between">` +
       `<div class="item_card_stat_header">Owner Since</div>` +
-      `<div><small class="inv_owner_since_time text-success text-truncate">Don't know</small></div>` +
+      `<div><small class="inv_owner_since_time text-success text-truncate">Unknown</small></div>` +
       `</div>`;
     details.appendChild(since_wrap);
 
@@ -361,6 +400,7 @@
     }
 
     clear_tag_containers(clone);
+    apply_native_hold_tag(clone, item.held);
 
     let details = clone.querySelector(".item_card_details_container");
     if (details) {
@@ -424,11 +464,29 @@
     let grid = document.querySelector("#mix_container");
     if (!grid) return;
 
-    let [tradable, face_map, roli_items] = await Promise.all([
+    let [tradable_res, face_map, roli_items] = await Promise.all([
       fetch_tradable(user_id),
       fetch_face_map(),
       fetch_item_data(),
     ]);
+    // Incomplete fetches (VPN 429s mid-pagination) must not mutate the page —
+    // that would strip owned items that never made it into the partial list.
+    if (!tradable_res?.complete) {
+      ran_for_user = "";
+      if (!player_fix_retry_timer) {
+        let wait_ms = tradable_res?.status === 429 ? 30000 : 15000;
+        player_fix_retry_timer = setTimeout(() => {
+          player_fix_retry_timer = 0;
+          run_for_player(user_id).catch(() => {});
+        }, wait_ms);
+      }
+      return;
+    }
+    if (player_fix_retry_timer) {
+      clearTimeout(player_fix_retry_timer);
+      player_fix_retry_timer = 0;
+    }
+    let tradable = tradable_res.items;
     let { face_to_bundle, bundle_to_face } = build_face_maps(face_map);
 
     let shown_ids = new Set();
@@ -536,8 +594,377 @@
     }
   }
 
+ function is_trade_calculator() {
+    return /\/tradecalculator\/?$/i.test(location.pathname || "");
+  }
+
+  const TRADE_CALC_BRIDGE_ID = "nte-roli-tc-bridge";
+
+  function inject_trade_calc_page_script() {
+    if (document.getElementById("nte-roli-tc-inventory-patch")) {
+      return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+      let script = document.createElement("script");
+      script.id = "nte-roli-tc-inventory-patch";
+      script.src = chrome.runtime.getURL(
+        "scripts/rolimons_trade_calc_inventory_patch.js",
+      );
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      (document.head || document.documentElement).appendChild(script);
+    });
+  }
+
+  function ensure_trade_calc_bridge() {
+    let el = document.getElementById(TRADE_CALC_BRIDGE_ID);
+    if (el) return el;
+    el = document.createElement("script");
+    el.id = TRADE_CALC_BRIDGE_ID;
+    el.type = "application/json";
+    el.textContent = "{}";
+    (document.documentElement || document.head).appendChild(el);
+    return el;
+  }
+
+  function call_trade_calc_page(payload, expect_type, timeout_ms = 2500) {
+    return new Promise((resolve) => {
+      let bridge = ensure_trade_calc_bridge();
+      let done = false;
+      let finish = (value) => {
+        if (done) return;
+        done = true;
+        obs.disconnect();
+        resolve(value);
+      };
+      let obs = new MutationObserver(() => {
+        let data = null;
+        try {
+          data = JSON.parse(bridge.textContent || "{}");
+        } catch {
+          return;
+        }
+        if (!data || data.to !== "content" || data.type !== expect_type) return;
+        finish(data);
+      });
+      obs.observe(bridge, {
+        characterData: true,
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["data-nte-res"],
+      });
+      bridge.textContent = JSON.stringify({ to: "page", ...payload });
+      bridge.setAttribute("data-nte-cmd", String(Date.now()));
+      setTimeout(() => finish(null), timeout_ms);
+    });
+  }
+
+  function query_trade_calc_state() {
+    return call_trade_calc_page({ type: "query" }, "state").then(
+      (data) => data?.state || null,
+    );
+  }
+
+  function apply_trade_calc_owned_ids(ids) {
+    return call_trade_calc_page({ type: "apply", ids }, "applied").then(
+      (data) => !!data?.ok,
+    );
+  }
+
+  async function fetch_authenticated_user_id() {
+    let res = await send_message({ type: "rolimons_player_auth_user" });
+    let id = String(res?.id || "").trim();
+    return /^\d+$/.test(id) ? id : "";
+  }
+
+  function owned_ids_from_tradable(tradable, face_to_bundle, bundle_to_face) {
+    let ids = new Set();
+    for (let item of tradable) {
+      let target = item?.itemTarget;
+      if (!target) continue;
+      let id = String(target.targetId || "").trim();
+      if (!/^\d+$/.test(id)) continue;
+      ids.add(id);
+      if (target.itemType === "Bundle") {
+        let face = bundle_to_face[id];
+        if (face) ids.add(String(face));
+      } else if (target.itemType === "Asset") {
+        let bundle = face_to_bundle[id];
+        if (bundle) ids.add(String(bundle));
+      }
+    }
+    return [...ids];
+  }
+
+  function hold_map_from_tradable(tradable, face_to_bundle, bundle_to_face) {
+    let map = Object.create(null);
+    function bump(id, held) {
+      id = String(id || "").trim();
+      if (!/^\d+$/.test(id)) return;
+      let row = map[id] || (map[id] = { count: 0, held: 0 });
+      row.count += 1;
+      if (held) row.held += 1;
+    }
+    for (let item of tradable) {
+      let target = item?.itemTarget || {};
+      let base_id = String(target.targetId || "").trim();
+      let item_type = String(target.itemType || "");
+      let instances =
+        Array.isArray(item?.instances) && item.instances.length
+          ? item.instances
+          : [item];
+      for (let inst of instances) {
+        let id = String(
+          inst?.itemTarget?.targetId || base_id || "",
+        ).trim();
+        let type = String(inst?.itemTarget?.itemType || item_type || "");
+        let held = !!(inst?.isOnHold ?? item?.isOnHold);
+        bump(id, held);
+        if (type === "Bundle") {
+          let face = bundle_to_face[id];
+          if (face) bump(face, held);
+        } else {
+          let bundle = face_to_bundle[id];
+          if (bundle) bump(bundle, held);
+        }
+      }
+    }
+    return map;
+  }
+
+  let trade_calc_hold_by_id = Object.create(null);
+  let trade_calc_hold_observer = null;
+  let trade_calc_hold_paint_timer = 0;
+  let trade_calc_hold_painting = false;
+
+  function ensure_trade_calc_hold_styles() {
+    if (document.getElementById("nte-tc-hold-style")) return;
+    let style = document.createElement("style");
+    style.id = "nte-tc-hold-style";
+    style.textContent = `
+.mix_item .nte-tc-hold-tag{
+  position:absolute;top:4px;left:4px;z-index:3;
+  display:inline-flex;align-items:center;gap:3px;
+  pointer-events:none;color:#f8fafc;line-height:1;
+}
+.mix_item .nte-tc-hold-tag svg{
+  width:18px;height:18px;display:block;flex:0 0 auto;
+  filter:drop-shadow(0 2px 8px rgba(0,0,0,.65));
+}
+.mix_item .nte-tc-hold-count{
+  font-size:9px;font-weight:800;letter-spacing:.02em;
+  text-shadow:0 2px 8px rgba(0,0,0,.65);
+}
+.mix_item.nte-tc-is-hold{opacity:.72}
+.mix_item.nte-tc-is-hold .item_thumbnail{filter:grayscale(.28)}
+`;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function trade_calc_card_asset_id(card) {
+    let onclick = card?.getAttribute?.("onclick") || "";
+    let m = onclick.match(/['"](\d+):(\d+)['"]/);
+    return m ? m[2] : "";
+  }
+
+  function build_trade_calc_hold_tag(held, count) {
+    held = Math.max(0, Math.floor(Number(held) || 0));
+    count = Math.max(held, Math.floor(Number(count) || 0));
+    if (!(held > 0)) return null;
+    let partial = count > held;
+    let title = partial ? `${held} of ${count} on hold` : "On hold";
+    let tag = document.createElement("div");
+    tag.className = "nte-tc-hold-tag";
+    tag.setAttribute("aria-label", title);
+    tag.title = title;
+    tag.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+      (partial ? `<span class="nte-tc-hold-count">x${held}</span>` : "");
+    return tag;
+  }
+
+  function clear_trade_calc_hold_badges() {
+    for (let tag of document.querySelectorAll(".nte-tc-hold-tag")) tag.remove();
+    for (let card of document.querySelectorAll(".mix_item.nte-tc-is-hold"))
+      card.classList.remove("nte-tc-is-hold");
+  }
+
+  function paint_trade_calc_hold_badges() {
+    ensure_trade_calc_hold_styles();
+    trade_calc_hold_painting = true;
+    try {
+      clear_trade_calc_hold_badges();
+      let ids = trade_calc_hold_by_id;
+      if (!ids || !Object.keys(ids).length) return;
+      for (let card of document.querySelectorAll(".mix_item")) {
+        let asset_id = trade_calc_card_asset_id(card);
+        let info = asset_id ? ids[asset_id] : null;
+        if (!info || !(info.held > 0)) continue;
+        let wrap = card.querySelector(".position-relative");
+        if (!wrap) continue;
+        let tag = build_trade_calc_hold_tag(info.held, info.count);
+        if (!tag) continue;
+        wrap.appendChild(tag);
+        if (info.held >= info.count) card.classList.add("nte-tc-is-hold");
+      }
+    } finally {
+      trade_calc_hold_painting = false;
+    }
+  }
+
+  function schedule_trade_calc_hold_paint() {
+    clearTimeout(trade_calc_hold_paint_timer);
+    trade_calc_hold_paint_timer = setTimeout(() => {
+      paint_trade_calc_hold_badges();
+    }, 80);
+  }
+
+  function set_trade_calc_hold_map(map) {
+    trade_calc_hold_by_id =
+      map && typeof map === "object" ? map : Object.create(null);
+    schedule_trade_calc_hold_paint();
+  }
+
+  function watch_trade_calc_hold_grid() {
+    if (trade_calc_hold_observer) return;
+    let root =
+      document.getElementById("inventory_grid") ||
+      document.querySelector(".inventory_grid, #page_content, .mix_container") ||
+      document.body;
+    if (!root) return;
+    trade_calc_hold_observer = new MutationObserver(() => {
+      if (trade_calc_hold_painting) return;
+      if (!Object.keys(trade_calc_hold_by_id).length) return;
+      schedule_trade_calc_hold_paint();
+    });
+    trade_calc_hold_observer.observe(root, {
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  let trade_calc_ran_for = "";
+  let trade_calc_inflight = false;
+  let trade_calc_retry_after = 0;
+
+  async function run_trade_calculator_fix(force = false) {
+    if (trade_calc_inflight) return;
+    if (!force && Date.now() < trade_calc_retry_after) return;
+    let state = await query_trade_calc_state();
+    if (!state?.ready) return;
+    let source = String(state.source || "all");
+    let hide = !!state.hide;
+    if (!hide || (source !== "mine" && source !== "other")) {
+      trade_calc_ran_for = "";
+      set_trade_calc_hold_map(null);
+      return;
+    }
+    let user_id = String(state.player_id || "").trim();
+    if (!/^\d+$/.test(user_id) && source === "mine") {
+      user_id = await fetch_authenticated_user_id();
+    }
+    if (!/^\d+$/.test(user_id)) return;
+    let token = `${source}:${user_id}:${state.asset_count}`;
+    if (!force && trade_calc_ran_for === token) {
+      schedule_trade_calc_hold_paint();
+      return;
+    }
+
+    trade_calc_inflight = true;
+    try {
+      let [tradable_res, face_map] = await Promise.all([
+        fetch_tradable(user_id),
+        fetch_face_map(),
+      ]);
+      // Never overwrite Rolimons inventory with a partial fetch. VPN users often
+      // hit 429 mid-pagination; applying that list drops missing items.
+      if (!tradable_res?.complete) {
+        let wait_ms = tradable_res?.status === 429 ? 30000 : 15000;
+        trade_calc_retry_after = Date.now() + wait_ms;
+        return;
+      }
+      trade_calc_retry_after = 0;
+      let tradable = tradable_res.items;
+      if (!tradable.length) return;
+      let { face_to_bundle, bundle_to_face } = build_face_maps(face_map);
+      let ids = owned_ids_from_tradable(
+        tradable,
+        face_to_bundle,
+        bundle_to_face,
+      );
+      if (!ids.length) return;
+      let hold_map = hold_map_from_tradable(
+        tradable,
+        face_to_bundle,
+        bundle_to_face,
+      );
+      set_trade_calc_hold_map(hold_map);
+      let ok = await apply_trade_calc_owned_ids(ids);
+      if (ok) {
+        let after = await query_trade_calc_state();
+        trade_calc_ran_for = `${source}:${user_id}:${after?.asset_count || ids.length}`;
+      }
+      schedule_trade_calc_hold_paint();
+      setTimeout(() => schedule_trade_calc_hold_paint(), 400);
+      setTimeout(() => schedule_trade_calc_hold_paint(), 1200);
+    } finally {
+      trade_calc_inflight = false;
+    }
+  }
+
+  function watch_trade_calculator() {
+    let select = document.getElementById("inventory-source-select");
+    let status = document.getElementById("inventory-filter-status-message");
+    let scan = document.getElementById("hide-player-items-scan");
+    let kick = () => {
+      trade_calc_ran_for = "";
+      setTimeout(() => {
+        run_trade_calculator_fix(true).catch(() => {});
+      }, 600);
+    };
+    if (select) select.addEventListener("change", kick);
+    if (scan) scan.addEventListener("click", kick);
+    if (status) {
+      let obs = new MutationObserver(kick);
+      obs.observe(status, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+    }
+    watch_trade_calc_hold_grid();
+    document
+      .querySelectorAll("#pagination_control_top, #pagination_control_bottom")
+      .forEach((el) => {
+        el.addEventListener("click", () => schedule_trade_calc_hold_paint());
+      });
+    setInterval(() => {
+      run_trade_calculator_fix(false).catch(() => {});
+    }, 1500);
+  }
+
+  async function boot_trade_calculator() {
+    if (!(await is_enabled())) return;
+    try {
+      await wait_for("#inventory-source-select", 20000);
+    } catch {
+      return;
+    }
+    ensure_trade_calc_bridge();
+    let injected = await inject_trade_calc_page_script();
+    if (!injected) return;
+    await sleep(400);
+    watch_trade_calculator();
+    await run_trade_calculator_fix(true);
+  }
+
   async function boot() {
     if (!(await is_enabled())) return;
+    if (is_trade_calculator()) {
+      await boot_trade_calculator();
+      return;
+    }
     let user_id = player_id_from_path();
     if (!user_id) return;
     await run_for_player(user_id);
@@ -556,6 +983,7 @@
     if (location.pathname === last_path) return;
     last_path = location.pathname;
     ran_for_user = "";
+    trade_calc_ran_for = "";
     boot().catch(() => {});
   }, 1000);
 })();

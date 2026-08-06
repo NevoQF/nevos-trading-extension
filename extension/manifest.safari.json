@@ -144,7 +144,23 @@
       ],
       "matches": [
         "https://www.rolimons.com/player/*",
-        "https://rolimons.com/player/*"
+        "https://rolimons.com/player/*",
+        "https://www.rolimons.com/tradecalculator",
+        "https://www.rolimons.com/tradecalculator*",
+        "https://rolimons.com/tradecalculator",
+        "https://rolimons.com/tradecalculator*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": [
+        "shared/browser_compat.js",
+        "shared/build_variant.js",
+        "content/rolimons_item_page.js"
+      ],
+      "matches": [
+        "https://www.rolimons.com/item/*",
+        "https://rolimons.com/item/*"
       ],
       "run_at": "document_idle"
     }
@@ -195,8 +211,20 @@
     "cookies"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.45",
+  "version": "3.10.46",
   "web_accessible_resources": [
+    {
+      "matches": [
+        "https://www.rolimons.com/*",
+        "https://rolimons.com/*"
+      ],
+      "resources": [
+        "scripts/rolimons_trade_calc_inventory_patch.js",
+        "assets/icons/logo.png",
+        "assets/icons/logo32.png",
+        "assets/icons/logo48.png"
+      ]
+    },
     {
       "matches": [
         "https://www.roblox.com/*"

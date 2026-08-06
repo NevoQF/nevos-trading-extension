@@ -9,6 +9,9 @@ const trade_ad_notif_load_more_batch = 60;
 const trade_ad_notif_catchup_limit = 1000;
 const trade_ad_notif_since_overlap_seconds = 300;
 const trade_ad_notif_max_catchup_pages = 10;
+const trade_ad_notif_page_gap_ms = 3200;
+const trade_ad_notif_want_ids_query_max = 80;
+const trade_ad_notif_feed_429_retries = 4;
 
 let trade_ad_notif_poll_timer = null;
 let trade_ad_notif_poll_in_flight = false;
@@ -163,7 +166,16 @@ async function trade_ad_notif_backfill_feed(state, max_batches = 30) {
   for (let i = 0; i < max_batches; i++) {
     if (!state.enabled || state.feedExhausted) break;
     state = await trade_ad_notif_load_more_once();
-    if (state.lastError) break;
+    if (state.lastError) {
+      // Soft rate-limit: keep progress, try again on the next poll cycle.
+      if (/429|rate limit|unavailable \(429\)/i.test(String(state.lastError))) {
+        state.lastError = "Trade ads feed is busy. Retrying soon…";
+      }
+      break;
+    }
+    if (i + 1 < max_batches && !state.feedExhausted) {
+      await new Promise((r) => setTimeout(r, trade_ad_notif_page_gap_ms));
+    }
   }
   if (state.enabled) {
     state.lastPollAt = Date.now();
@@ -726,7 +738,22 @@ function trade_ad_notif_want_ids_for_feed(owned_ids, disabled_want_items) {
     let key = String(id || "").trim();
     if (key && !disabled.has(key)) out.push(key);
   }
+  // Huge want_ids query strings make unique URLs and trip rate limits.
+  // Omit them and filter matches client-side instead.
+  if (out.length > trade_ad_notif_want_ids_query_max) return [];
   return out;
+}
+
+function trade_ad_notif_sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function trade_ad_notif_retry_after_ms(res, attempt) {
+  let header = Number(res?.headers?.get?.("Retry-After"));
+  if (Number.isFinite(header) && header > 0) {
+    return Math.min(60000, Math.max(1000, Math.ceil(header * 1000)));
+  }
+  return Math.min(30000, 1200 * Math.pow(2, Math.max(0, attempt)));
 }
 
 async function trade_ad_notif_fetch_feed(options) {
@@ -741,14 +768,34 @@ async function trade_ad_notif_fetch_feed(options) {
   if (want_ids.length) params.set("want_ids", want_ids.join(","));
 
   let url = `${trade_ad_notif_api_url}?${params.toString()}`;
-  let res = await fetch(url, {
-    headers:
-      typeof nte_api_headers === "function"
-        ? nte_api_headers()
-        : { Accept: "application/json", "X-NTE-Client": "nte-x7Km2Qp9Wv4s", "From-Extension": "1" },
-    cache: "no-store",
-  });
+  let headers =
+    typeof nte_api_headers === "function"
+      ? nte_api_headers()
+      : {
+          Accept: "application/json",
+          "X-NTE-Client": "nte-x7Km2Qp9Wv4s",
+          "From-Extension": "1",
+        };
+
+  let res = null;
+  for (let attempt = 0; attempt <= trade_ad_notif_feed_429_retries; attempt++) {
+    try {
+      res = await fetch(url, { headers, cache: "no-store" });
+    } catch {
+      res = null;
+    }
+    if (res && res.status !== 429 && res.status < 500) break;
+    if (attempt >= trade_ad_notif_feed_429_retries) break;
+    await trade_ad_notif_sleep(trade_ad_notif_retry_after_ms(res, attempt));
+  }
+
+  if (!res) {
+    throw new Error("Trade ads feed unavailable (network).");
+  }
   if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error("Trade ads feed is busy. Retrying soon…");
+    }
     throw new Error(`Trade ads feed unavailable (${res.status})`);
   }
   let body = await res.json();
@@ -808,6 +855,7 @@ async function trade_ad_notif_load_more_once() {
     state.feedAdsChecked = 0;
     offset = 0;
     if (Number(feed.offset) > 0) {
+      await trade_ad_notif_sleep(trade_ad_notif_page_gap_ms);
       feed = await trade_ad_notif_fetch_feed({
         since: 0,
         offset: 0,
@@ -952,6 +1000,9 @@ async function trade_ad_notif_poll_once(options) {
       if (!feed.hasMore || !ads.length) break;
       offset += ads.length;
       if (page === trade_ad_notif_max_catchup_pages - 1) caught_up = false;
+      if (page + 1 < trade_ad_notif_max_catchup_pages) {
+        await trade_ad_notif_sleep(trade_ad_notif_page_gap_ms);
+      }
     }
 
     if (!had_fresh) {

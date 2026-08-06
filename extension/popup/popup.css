@@ -3006,6 +3006,445 @@ body.theme-retro .ta-lede {
   box-shadow: inset 0 1px 0 #fff;
 }
 
+/* About panel — retro polish (classic Roblox 2008–2015) */
+body.theme-retro .about-hero {
+  margin: 0;
+  border: 1px solid #8a8a8a;
+  border-top-color: #fff;
+  border-left-color: #fff;
+  border-right-color: #6a6a6a;
+  border-bottom-color: #6a6a6a;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+  overflow: hidden;
+}
+body.theme-retro .about-hero-inner {
+  padding: 14px 12px 12px;
+  gap: 0;
+}
+body.theme-retro .about-hero-logo-wrap {
+  margin-bottom: 10px;
+}
+body.theme-retro .about-hero-logo-wrap::before {
+  display: none;
+}
+body.theme-retro .about-hero-logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 0;
+  border: 2px solid #fff;
+  outline: 1px solid #8a8a8a;
+  box-shadow: 1px 1px 0 #b0b0b0;
+}
+body.theme-retro .about-hero-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: bold;
+  letter-spacing: 0;
+  line-height: 1.25;
+  color: #222;
+  background: none;
+  -webkit-text-fill-color: #222;
+}
+body.theme-retro .about-hero-credits {
+  gap: 4px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border-radius: 0;
+  background: #f0f0f0;
+  border: 1px solid #b8b8b8;
+  box-shadow: inset 1px 1px 0 #fff;
+  backdrop-filter: none;
+}
+body.theme-retro .about-hero-credit-line {
+  font-size: 11px;
+  color: #444;
+}
+body.theme-retro .about-hero-credit-line a,
+body.theme-retro .about-hero-site {
+  color: #0055b3;
+  text-decoration: underline;
+  font-weight: bold;
+}
+body.theme-retro .about-hero-credit-line a:hover,
+body.theme-retro .about-hero-site:hover {
+  color: #c41e15;
+}
+body.theme-retro .about-hero-version {
+  margin-top: 8px;
+  padding: 3px 8px;
+  border-radius: 0;
+  font-size: 10px;
+  font-weight: bold;
+  color: #333;
+  background: #ececec;
+  border: 1px solid #a0a0a0;
+  box-shadow: inset 0 1px 0 #fff;
+}
+body.theme-retro .about-hero-version.is-update {
+  color: #5c3b00;
+  background: linear-gradient(180deg, #fff8d8 0%, #ffe9a7 100%);
+  border-color: #c9a227;
+}
+
+body.theme-retro .about-links {
+  margin-top: 8px;
+  gap: 4px;
+}
+body.theme-retro .discord-btn {
+  justify-content: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 6px 12px;
+  border-radius: 0;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0;
+  text-transform: none;
+  background: linear-gradient(180deg, #6679db 0%, #4858b8 100%);
+  border: 1px solid #2f3a85;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 1px 0 rgba(0, 0, 0, 0.12);
+}
+body.theme-retro .discord-btn:hover {
+  transform: none;
+  filter: none;
+  background: linear-gradient(180deg, #7888e6 0%, #5364c8 100%);
+}
+body.theme-retro .discord-btn:active {
+  background: linear-gradient(180deg, #3f4ea3 0%, #5a6acc 100%);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+body.theme-retro .about-group-link {
+  min-height: 0;
+  padding: 7px 8px;
+  border-radius: 0;
+  background: linear-gradient(180deg, #fafafa 0%, #e8e8e8 100%);
+  border: 1px solid #8a8a8a;
+  box-shadow: inset 0 1px 0 #fff;
+}
+body.theme-retro .about-group-link:hover {
+  background: linear-gradient(180deg, #fff 0%, #efefef 100%);
+  border-color: #666;
+  transform: none;
+}
+body.theme-retro .about-group-mark,
+body.theme-retro .about-group-mark-site {
+  width: 24px;
+  height: 24px;
+  border-radius: 0;
+  color: #444;
+  background: #fff;
+  border: 1px solid #8a8a8a;
+  box-shadow: inset 0 1px 0 #fff;
+}
+body.theme-retro .about-group-mark-site {
+  color: #0055b3;
+}
+body.theme-retro .about-group-copy strong {
+  font-size: 11px;
+  font-weight: bold;
+  color: #222;
+}
+body.theme-retro .about-group-copy span {
+  font-size: 10px;
+  color: #666;
+}
+body.theme-retro .about-group-arrow {
+  opacity: 0.7;
+  color: #666;
+}
+
+body.theme-retro .about-style-card {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 0;
+  background: #f4f4f4;
+  border: 1px solid #8a8a8a;
+  box-shadow: inset 0 1px 0 #fff;
+}
+body.theme-retro .about-style-copy {
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px dotted #b8b8b8;
+}
+body.theme-retro .about-style-copy strong {
+  display: block;
+  font-family: Tahoma, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #c41e15;
+}
+body.theme-retro .about-style-copy span {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  color: #666;
+}
+body.theme-retro .about-style-grid {
+  gap: 4px;
+}
+body.theme-retro .about-style-btn {
+  min-height: 0;
+  padding: 7px 10px 7px 26px;
+  border-radius: 0;
+  text-align: left;
+  background: linear-gradient(180deg, #fafafa 0%, #dcdcdc 100%);
+  border: 1px solid #8a8a8a;
+  box-shadow: inset 0 1px 0 #fff;
+}
+body.theme-retro .about-style-btn:hover {
+  transform: none;
+  background: linear-gradient(180deg, #fff 0%, #e8e8e8 100%);
+  border-color: #666;
+}
+body.theme-retro .about-style-btn.active {
+  background: #fff;
+  border-color: #c41e15;
+  color: #c41e15;
+  box-shadow:
+    inset 0 0 0 1px #fff,
+    inset 0 0 0 2px rgba(196, 30, 21, 0.18);
+}
+body.theme-retro .about-style-name {
+  font-size: 11px;
+  font-weight: bold;
+}
+body.theme-retro .about-style-note {
+  font-size: 10px;
+  font-weight: normal;
+  color: #666;
+}
+body.theme-retro .about-style-btn.active .about-style-note {
+  color: #a33;
+}
+
+body.theme-retro .about-review-root {
+  margin-top: 8px;
+}
+body.theme-retro .review-cta {
+  border-radius: 0;
+  padding: 10px;
+  background: linear-gradient(180deg, #fff8d8 0%, #ffe9a7 100%);
+  border: 1px solid #c9a227;
+  box-shadow: inset 0 1px 0 #fff;
+}
+body.theme-retro .review-cta-btn {
+  border-radius: 0;
+  background: linear-gradient(180deg, #fafafa 0%, #d8d8d8 100%);
+  border: 1px solid #8a8a8a;
+  color: #222;
+  font-family: Tahoma, sans-serif;
+  font-weight: bold;
+  box-shadow: inset 0 1px 0 #fff;
+}
+
+body.theme-retro .about-thanks {
+  margin-top: 8px;
+  padding: 0;
+  border-radius: 0;
+  background: #fff;
+  border: 1px solid #8a8a8a;
+  box-shadow: none;
+  overflow: hidden;
+}
+body.theme-retro .about-thanks::before {
+  display: none;
+}
+body.theme-retro .about-thanks-header {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 4px 8px;
+  margin: 0;
+  padding: 8px 10px;
+  background: linear-gradient(180deg, #f6f6f6 0%, #e4e4e4 100%);
+  border-bottom: 1px solid #b8b8b8;
+  box-shadow: inset 0 1px 0 #fff;
+}
+body.theme-retro .about-thanks-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 0;
+  background: #c41e15;
+  color: #fff;
+  border: 1px solid #7a120c;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+body.theme-retro .about-thanks-mark svg {
+  width: 11px;
+  height: 11px;
+}
+body.theme-retro .about-thanks-title {
+  flex: 1;
+  font-family: Tahoma, sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+  color: #222;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+body.theme-retro .about-thanks-lead {
+  flex: 1 1 100%;
+  padding-left: 26px;
+  max-width: none;
+  font-family: Tahoma, sans-serif;
+  font-size: 10px;
+  color: #666;
+}
+body.theme-retro .about-thanks-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+}
+body.theme-retro .about-thanks-card {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 7px 10px;
+  border: none;
+  border-bottom: 1px solid #e8e8e8;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+}
+body.theme-retro .about-thanks-card:nth-child(even) {
+  background: #f7f7f7;
+}
+body.theme-retro .about-thanks-card:last-child {
+  border-bottom: none;
+}
+body.theme-retro .about-thanks-card:hover {
+  background: #f5faff;
+  border-color: #e8e8e8;
+  transform: none;
+}
+body.theme-retro .about-thanks-name {
+  font-family: Tahoma, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  color: #0055b3;
+  text-decoration: none;
+}
+body.theme-retro .about-thanks-name[href]:hover {
+  color: #c41e15;
+  text-decoration: underline;
+}
+body.theme-retro .about-thanks-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: Tahoma, sans-serif;
+  font-size: 10px;
+  color: #666;
+  text-align: right;
+}
+body.theme-retro .about-thanks-hint {
+  color: #888;
+}
+body.theme-retro .about-thanks-tooltip {
+  font-family: Tahoma, sans-serif;
+  font-size: 10px;
+  color: #222;
+  background: #fffbe6;
+  border: 1px solid #c9a227;
+  border-radius: 0;
+  box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.12);
+}
+
+body.theme-retro .about-settings-card {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 0;
+  background: #fff;
+  border: 1px solid #8a8a8a;
+  box-shadow: inset 0 1px 0 #fff;
+}
+body.theme-retro .about-settings-copy strong {
+  font-family: Tahoma, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #c41e15;
+}
+body.theme-retro .about-settings-copy span {
+  margin-top: 2px;
+  font-size: 10px;
+  color: #666;
+}
+body.theme-retro .about-settings-actions {
+  gap: 4px;
+  margin-top: 8px;
+}
+body.theme-retro .about-settings-btn {
+  min-height: 28px;
+  padding: 5px 8px;
+  border-radius: 0;
+  border: 1px solid #8a8a8a;
+  background: linear-gradient(180deg, #fafafa 0%, #d8d8d8 100%);
+  color: #222;
+  font-family: Tahoma, sans-serif;
+  font-size: 11px;
+  font-weight: bold;
+  box-shadow: inset 0 1px 0 #fff;
+  transform: none;
+}
+body.theme-retro .about-settings-btn:hover {
+  border-color: #555;
+  background: linear-gradient(180deg, #fff 0%, #e6e6e6 100%);
+  transform: none;
+}
+body.theme-retro .about-settings-btn:active {
+  background: linear-gradient(180deg, #c8c8c8 0%, #e0e0e0 100%);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+body.theme-retro .about-settings-btn:disabled {
+  opacity: 0.55;
+  color: #666;
+}
+body.theme-retro .about-settings-status {
+  font-family: Tahoma, sans-serif;
+  font-size: 10px;
+  color: #555;
+}
+body.theme-retro .about-settings-status.is-ok {
+  color: #1f6c28;
+}
+body.theme-retro .about-settings-status.is-error {
+  color: #c41e15;
+}
+
+body.theme-retro .section-header::after {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #555;
+  font-size: 0;
+  line-height: 0;
+}
+body.theme-retro .section-header.collapsed::after {
+  content: "";
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid #555;
+  border-right: 0;
+}
+
 .section-values .section-icon {
   background: rgba(46, 204, 113, 0.12);
   color: #2ecc71;
@@ -7624,6 +8063,23 @@ body.is-tradeads-tab .popup {
   font-weight: 650;
   color: var(--text-muted);
   min-width: 3.4em;
+}
+
+.ms-trade-limit-hint {
+  margin: -2px 2px 6px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.ms-trade-limit-hint.is-low {
+  color: #d4a017;
+}
+
+.ms-trade-limit-hint.is-empty,
+.ms-trade-limit-hint.is-clamped {
+  color: #e35d6a;
 }
 
 .ms-side-head {

@@ -23,7 +23,7 @@ const chevron_svg =
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 
@@ -2566,6 +2566,21 @@ function trade_ads_attach_picker(root, opts) {
       load_msg.textContent = "Loading your items…";
       strip.appendChild(load_msg);
       set_footer(`<span class="ta-strip-hint">Loading…</span>`);
+      let set_load_text = (text) => {
+        let msg = String(text || "Loading your items…");
+        if (load_msg.isConnected) load_msg.textContent = msg;
+        set_footer(
+          `<span class="ta-strip-hint">${escape_html(msg)}</span>`,
+        );
+      };
+      let on_inv_status = (msg) => {
+        if (msg?.type !== "nte_inventory_load_status") return;
+        if (!load_msg.isConnected) return;
+        if (msg.text) set_load_text(msg.text);
+      };
+      try {
+        chrome.runtime.onMessage.addListener(on_inv_status);
+      } catch {}
       inventoryPromise
         .then((inv) => {
           live_inv = Array.isArray(inv) ? inv : [];
@@ -2589,6 +2604,11 @@ function trade_ads_attach_picker(root, opts) {
           strip.appendChild(em);
           set_footer("");
           if (typeof onInventoryError === "function") onInventoryError(msg);
+        })
+        .finally(() => {
+          try {
+            chrome.runtime.onMessage.removeListener(on_inv_status);
+          } catch {}
         });
     } else {
       void refresh_offer_display();
@@ -6042,16 +6062,35 @@ function ms_normalize_presets(input) {
   return out;
 }
 
+const ms_online_hours_max = 8760; // 1 year; 0 = filter off
+
 function ms_clamp_hours(value) {
   let n = Math.floor(Number(value));
   if (!Number.isFinite(n)) n = 24;
-  return Math.max(1, Math.min(168, n));
+  return Math.max(0, Math.min(ms_online_hours_max, n));
 }
 
-function ms_clamp_max_trades(value) {
+function ms_clamp_max_trades(value, cap) {
   let n = Math.floor(Number(value));
   if (!Number.isFinite(n)) n = 25;
-  return Math.max(1, Math.min(100, n));
+  let hard = 100;
+  let limit = Math.floor(Number(cap));
+  if (Number.isFinite(limit) && limit >= 0) hard = Math.min(hard, limit);
+  if (hard <= 0) return 0;
+  return Math.max(1, Math.min(hard, n));
+}
+
+function ms_trade_limit_hint_text(limit) {
+  let max = Math.max(1, Number(limit?.max) || 100);
+  if (!Number.isFinite(Number(limit?.remaining))) {
+    return "Trade limit unavailable";
+  }
+  let remaining = Math.max(0, Number(limit.remaining));
+  let count = Number.isFinite(Number(limit?.count))
+    ? Math.max(0, Number(limit.count))
+    : max - remaining;
+  if (remaining <= 0) return `0/${max} left today`;
+  return `${remaining} left today · ${count}/${max}`;
 }
 
 function ms_clamp_avoid_days(value) {
@@ -6427,8 +6466,9 @@ function ms_config_summary(cfg) {
   let days = ms_clamp_avoid_days(cfg?.avoid_recent_days);
   let owned = ms_clamp_max_owned_days(cfg?.max_owned_days);
   let blocked = ms_normalize_blocked_users(cfg?.blocked_users).length;
+  let online = hours > 0 ? `${hours}h` : "online off";
   let skip = days > 0 ? `skip ${days}d` : "skip off";
-  let parts = [`${hours}h`, `${sends} sends`, skip];
+  let parts = [online, `${sends} sends`, skip];
   if (owned > 0) parts.push(`own ≤${owned}d`);
   if (blocked > 0) parts.push(`${blocked} blocked`);
   return parts.join(" · ");
@@ -6550,6 +6590,27 @@ async function render_mass_send_panel(root) {
   let cfg = await ms_load_config();
   let progress = await ms_send("ms_progress");
   let recent = await ms_send("ms_recent");
+  let trade_limit = await ms_send("ms_trade_limit");
+  if (!trade_limit || typeof trade_limit !== "object") {
+    trade_limit = {
+      ok: false,
+      remaining: null,
+      max: 100,
+      count: null,
+      at_limit: false,
+    };
+  }
+  let trades_left = Number.isFinite(Number(trade_limit.remaining))
+    ? Math.max(0, Number(trade_limit.remaining))
+    : null;
+  let max_trades_cap =
+    trades_left != null && trades_left > 0 ? trades_left : 0;
+  if (max_trades_cap > 0 && cfg.max_trades > max_trades_cap) {
+    cfg = await ms_save_config({
+      ...cfg,
+      max_trades: ms_clamp_max_trades(cfg.max_trades, max_trades_cap),
+    });
+  }
   let recent_rows = Array.isArray(recent?.sends) ? recent.sends : [];
   let slot_metrics = await ms_fetch_slot_metrics(cfg);
   let offer_totals = ms_sum_slot_metrics(cfg.offer_slots, slot_metrics);
@@ -6557,6 +6618,7 @@ async function render_mass_send_panel(root) {
   offer_totals.robux = ms_clamp_robux(cfg.offer_robux);
   request_totals.robux = ms_clamp_robux(cfg.request_robux);
   root.dataset.msMounted = "1";
+  root._ms_trade_limit = trade_limit;
 
   let selected_preset = cfg.preset_editor_index;
   let filled_preset_count = cfg.presets.filter(Boolean).length;
@@ -6714,11 +6776,11 @@ async function render_mass_send_panel(root) {
               Online within
               ${ms_field_help_html(
                 "About online within hours",
-                "Only send to owners last seen online within this many hours (from Rolimons).",
+                "Only send to owners last seen online within this many hours (from Rolimons). Set 0 to turn off.",
               )}
             </span>
             <span class="ms-config-row-control">
-              <input type="number" id="ms-online-hours" min="1" max="168" step="1" value="${cfg.online_hours}" />
+              <input type="number" id="ms-online-hours" min="0" max="${ms_online_hours_max}" step="1" value="${cfg.online_hours}" />
               <span class="ms-config-suffix">hours</span>
             </span>
           </label>
@@ -6727,14 +6789,15 @@ async function render_mass_send_panel(root) {
               Trades to send
               ${ms_field_help_html(
                 "About trades to send",
-                "How many successful sends to complete. Failed or privacy-blocked people are skipped and don’t count — it keeps going until this many succeed or no one is left.",
+                "How many successful sends to complete. Failed or privacy-blocked people are skipped and don’t count — it keeps going until this many succeed or no one is left. Capped by Roblox’s 100 trades / 24 hours limit.",
               )}
             </span>
             <span class="ms-config-row-control">
-              <input type="number" id="ms-max-trades" min="1" max="100" step="1" value="${cfg.max_trades}" />
+              <input type="number" id="ms-max-trades" min="1" max="${trades_left != null && trades_left > 0 ? trades_left : 100}" step="1" value="${cfg.max_trades}" ${trades_left === 0 ? "disabled" : ""} />
               <span class="ms-config-suffix">trades</span>
             </span>
           </label>
+          <div class="ms-trade-limit-hint${trades_left === 0 ? " is-empty" : trades_left != null && trades_left <= 10 ? " is-low" : ""}" id="ms-trade-limit-hint">${escape_html(ms_trade_limit_hint_text(trade_limit))}</div>
           <label class="ms-config-row">
             <span class="ms-config-row-label">
               Skip recent
@@ -6942,11 +7005,41 @@ async function render_mass_send_panel(root) {
     }
   });
 
+  function ms_sync_trade_limit_ui(limit, opts = {}) {
+    let has_left = Number.isFinite(Number(limit?.remaining));
+    let left = has_left ? Math.max(0, Number(limit.remaining)) : null;
+    root._ms_trade_limit = limit || root._ms_trade_limit;
+    let max_el = root.querySelector("#ms-max-trades");
+    let hint = root.querySelector("#ms-trade-limit-hint");
+    if (max_el) {
+      max_el.max = String(left != null && left > 0 ? left : 100);
+      max_el.disabled = left === 0;
+      if (left != null && left > 0) {
+        let next = ms_clamp_max_trades(max_el.value, left);
+        if (String(next) !== String(max_el.value)) max_el.value = String(next);
+      }
+    }
+    if (hint) {
+      hint.textContent = ms_trade_limit_hint_text(limit);
+      hint.classList.toggle("is-empty", left === 0);
+      hint.classList.toggle("is-low", left != null && left > 0 && left <= 10);
+      hint.classList.toggle("is-clamped", !!opts.clamped);
+    }
+  }
+
   async function persist_filters() {
+    let limit = root._ms_trade_limit;
+    let left = Number.isFinite(Number(limit?.remaining))
+      ? Math.max(0, Number(limit.remaining))
+      : null;
     let hours = ms_clamp_hours(root.querySelector("#ms-online-hours")?.value);
-    let max_trades = ms_clamp_max_trades(
-      root.querySelector("#ms-max-trades")?.value,
-    );
+    let raw_max = root.querySelector("#ms-max-trades")?.value;
+    let max_trades =
+      left != null && left > 0
+        ? ms_clamp_max_trades(raw_max, left)
+        : ms_clamp_max_trades(raw_max);
+    let clamped =
+      left != null && left > 0 && Math.floor(Number(raw_max)) > left;
     let avoid_recent_days = ms_clamp_avoid_days(
       root.querySelector("#ms-avoid-days")?.value,
     );
@@ -6962,7 +7055,7 @@ async function render_mass_send_panel(root) {
     cfg = await ms_save_config({
       ...cfg,
       online_hours: hours,
-      max_trades,
+      max_trades: max_trades > 0 ? max_trades : cfg.max_trades,
       avoid_recent_days,
       max_owned_days,
       offer_robux,
@@ -6976,12 +7069,24 @@ async function render_mass_send_panel(root) {
     let request_rbx_el = root.querySelector("#ms-request-robux");
     let summary_el = root.querySelector("#ms-config-summary");
     if (hours_el) hours_el.value = String(cfg.online_hours);
-    if (max_el) max_el.value = String(cfg.max_trades);
+    if (max_el && cfg.max_trades > 0) max_el.value = String(cfg.max_trades);
     if (days_el) days_el.value = String(cfg.avoid_recent_days);
     if (owned_el) owned_el.value = String(cfg.max_owned_days);
     if (offer_rbx_el) offer_rbx_el.value = String(cfg.offer_robux);
     if (request_rbx_el) request_rbx_el.value = String(cfg.request_robux);
     if (summary_el) summary_el.textContent = ms_config_summary(cfg);
+    ms_sync_trade_limit_ui(limit, { clamped });
+    if (clamped) {
+      let hint = root.querySelector("#ms-trade-limit-hint");
+      if (hint) {
+        hint.textContent = `Capped to ${left} left today`;
+        setTimeout(() => {
+          if (root.querySelector("#ms-trade-limit-hint") === hint) {
+            ms_sync_trade_limit_ui(root._ms_trade_limit);
+          }
+        }, 1600);
+      }
+    }
   }
 
   async function persist_robux() {
@@ -7282,6 +7387,32 @@ async function render_mass_send_panel(root) {
         line.classList.add("ta-err");
       }
       return;
+    }
+    let fresh_limit = await ms_send("ms_trade_limit");
+    if (fresh_limit && Number.isFinite(Number(fresh_limit.remaining))) {
+      ms_sync_trade_limit_ui(fresh_limit);
+      let left = Math.max(0, Number(fresh_limit.remaining));
+      if (left <= 0) {
+        let line = root.querySelector("#ms-progress-line");
+        if (line) {
+          line.textContent = `Roblox 24h trade limit reached (0/${Number(fresh_limit.max) || 100} left).`;
+          line.classList.add("ta-err");
+        }
+        return;
+      }
+      if (cfg.max_trades > left) {
+        cfg = await ms_save_config({
+          ...cfg,
+          max_trades: ms_clamp_max_trades(cfg.max_trades, left),
+        });
+        let max_el = root.querySelector("#ms-max-trades");
+        if (max_el) max_el.value = String(cfg.max_trades);
+        let hint = root.querySelector("#ms-trade-limit-hint");
+        if (hint) {
+          hint.textContent = `Capped to ${left} left today`;
+          hint.classList.add("is-clamped");
+        }
+      }
     }
     let start_res = await ms_send("ms_start", {
       config: {

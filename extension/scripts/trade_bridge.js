@@ -274,6 +274,315 @@
 
     return null;
   }
+  // New trades UI: item cards no longer carry the collectible instance id as a
+  // DOM attribute, so read it off the React props and stamp it back on. Every
+  // reader downstream already keys off that attribute.
+  function read_react_trade_item(card) {
+    let key =
+      card && Object.keys(card).find((k) => k.startsWith("__reactFiber$"));
+    let fiber = key ? card[key] : null;
+    for (let i = 0; i < 12 && fiber; i++) {
+      let item = fiber.memoizedProps?.item;
+      if (item?.collectibleItemInstanceId) return item;
+      fiber = fiber.return;
+    }
+    return null;
+  }
+  function find_react_inventory_click_handler(panel) {
+    let card = panel?.querySelector?.(".item-card-container");
+    if (!card) return null;
+    let key = Object.keys(card).find((k) => k.startsWith("__reactFiber$"));
+    let fiber = key ? card[key] : null;
+    for (let i = 0; i < 28 && fiber; i++) {
+      let props = fiber.memoizedProps || {};
+      if (typeof props.onItemClick === "function") return props.onItemClick;
+      fiber = fiber.return;
+    }
+    return null;
+  }
+  function build_react_toggle_item(tradable_item, collectible_item_instance_id) {
+    if (!tradable_item && !collectible_item_instance_id) return null;
+    let instance_id =
+      tradable_item?.collectibleItemInstanceId ||
+      collectible_item_instance_id ||
+      null;
+    if (!instance_id) return null;
+    let item_type =
+      tradable_item?.itemTarget?.itemType ||
+      tradable_item?.itemType ||
+      "Asset";
+    let target_id = String(
+      tradable_item?.itemTarget?.targetId ||
+        tradable_item?.targetId ||
+        tradable_item?.assetId ||
+        tradable_item?.bundleId ||
+        "",
+    );
+    let item_name =
+      tradable_item?.itemName || tradable_item?.name || "Unknown";
+    return {
+      collectibleItemInstanceId: instance_id,
+      itemTarget: {
+        ...(tradable_item?.itemTarget || {}),
+        itemType: item_type,
+        targetId: target_id,
+      },
+      itemName: item_name,
+      serialNumber: tradable_item?.serialNumber ?? null,
+      originalPrice: tradable_item?.originalPrice ?? null,
+      recentAveragePrice:
+        parseInt(
+          tradable_item?.recentAveragePrice ?? tradable_item?.rap ?? 0,
+          10,
+        ) || 0,
+      assetStock: parseInt(tradable_item?.assetStock ?? 0, 10) || 0,
+      isOnHold: !!tradable_item?.isOnHold,
+      id: instance_id,
+      userId: parseInt(tradable_item?.userId ?? 0, 10) || 0,
+    };
+  }
+  function get_react_inventory_panel(side_index) {
+    return (
+      document.querySelectorAll(".trade-inventory-panel")[
+        Number(side_index) || 0
+      ] || null
+    );
+  }
+  function stamp_inventory_item_ids(panel) {
+    let root = panel || document;
+    for (let card of root.querySelectorAll(
+      ".trade-inventory-panel .item-card-container:not([data-collectibleiteminstanceid]), .inventory-panel-holder .item-card-container:not([data-collectibleiteminstanceid])",
+    )) {
+      let item = read_react_trade_item(card);
+      if (!item?.collectibleItemInstanceId) continue;
+      card.setAttribute(
+        "data-collectibleiteminstanceid",
+        item.collectibleItemInstanceId,
+      );
+      card.__nte_react_item = item;
+    }
+  }
+  function find_react_inventory_card(side_index, collectible_item_instance_id) {
+    let panel = get_react_inventory_panel(side_index);
+    if (!panel || !collectible_item_instance_id) return null;
+    stamp_inventory_item_ids(panel);
+    let wanted = normalize_instance_id(collectible_item_instance_id);
+    for (let card of panel.querySelectorAll(".item-card-container")) {
+      let attr = normalize_instance_id(
+        card.getAttribute("data-collectibleiteminstanceid"),
+      );
+      if (attr === wanted) return card;
+      let item = read_react_trade_item(card);
+      if (normalize_instance_id(item?.collectibleItemInstanceId) === wanted) {
+        card.setAttribute(
+          "data-collectibleiteminstanceid",
+          item.collectibleItemInstanceId,
+        );
+        card.__nte_react_item = item;
+        return card;
+      }
+    }
+    return null;
+  }
+  function toggle_react_inventory_item(
+    side_index,
+    collectible_item_instance_id,
+    tradable_item,
+  ) {
+    let panel = get_react_inventory_panel(side_index);
+    if (!panel) return false;
+    let handler = find_react_inventory_click_handler(panel);
+    if (!handler) return false;
+    let live_card = find_react_inventory_card(
+      side_index,
+      collectible_item_instance_id,
+    );
+    let item =
+      (live_card &&
+        (live_card.__nte_react_item || read_react_trade_item(live_card))) ||
+      build_react_toggle_item(tradable_item, collectible_item_instance_id);
+    if (!item?.collectibleItemInstanceId) return false;
+    handler(item);
+    return true;
+  }
+  function get_react_pager_button(panel, direction) {
+    let pager = panel?.querySelector(".trade-inventory-pager");
+    if (!pager) return null;
+    if ("next" === direction) {
+      return (
+        pager.querySelector('button[aria-label="Next"]:not([disabled])') ||
+        pager.querySelector(".btn-generic-right-sm:not([disabled])")
+      );
+    }
+    return (
+      pager.querySelector('button[aria-label="Back"]:not([disabled])') ||
+      pager.querySelector(".btn-generic-left-sm:not([disabled])")
+    );
+  }
+  function get_react_page_number(panel) {
+    let text =
+      panel?.querySelector(".trade-inventory-pager-label")?.textContent || "";
+    let match = text.match(/(\d+)/);
+    return match ? parseInt(match[1], 10) || 1 : 1;
+  }
+  function get_react_page_fingerprint(panel) {
+    stamp_inventory_item_ids(panel);
+    return [...panel.querySelectorAll(".item-card-container")]
+      .map(
+        (card) =>
+          card.getAttribute("data-collectibleiteminstanceid") ||
+          read_react_trade_item(card)?.collectibleItemInstanceId ||
+          "",
+      )
+      .join("|");
+  }
+  async function step_react_inventory_page(panel, direction, request_id = "") {
+    let button = get_react_pager_button(panel, direction);
+    if (!button) return false;
+    ensure_request_active(request_id);
+    let before = get_react_page_fingerprint(panel);
+    button.click();
+    let started = Date.now();
+    while (Date.now() - started < 2500) {
+      ensure_request_active(request_id);
+      await delay(50);
+      if (get_react_page_fingerprint(panel) !== before) return true;
+    }
+    return false;
+  }
+  async function select_react_inventory_item_by_instance_id(
+    side_index,
+    collectible_item_instance_id,
+    target_page,
+    request_id = "",
+  ) {
+    let panel = get_react_inventory_panel(side_index);
+    if (!panel) throw Error("Trade inventory controller not found");
+    if (!collectible_item_instance_id)
+      throw Error("Missing collectibleItemInstanceId");
+    ensure_request_active(request_id);
+
+    let try_click_visible = () => {
+      let card = find_react_inventory_card(
+        side_index,
+        collectible_item_instance_id,
+      );
+      if (!card) return false;
+      let handler = find_react_inventory_click_handler(panel);
+      let item = card.__nte_react_item || read_react_trade_item(card);
+      if (handler && item) {
+        handler(item);
+        return true;
+      }
+      let clickable =
+        card.querySelector('[role="button"]') ||
+        card.querySelector(".item-card-thumb-container") ||
+        card;
+      clickable.click();
+      return true;
+    };
+
+    send_progress(request_id, {
+      phase: "seeking",
+      current_page: get_react_page_number(panel),
+      target_page,
+    });
+    if (try_click_visible()) {
+      send_progress(request_id, {
+        phase: "clicking",
+        current_page: get_react_page_number(panel),
+        target_page,
+      });
+      return;
+    }
+
+    let current_page = get_react_page_number(panel);
+    if (
+      Number.isFinite(Number(target_page)) &&
+      Number.isFinite(Number(current_page))
+    ) {
+      let desired_page = Number(target_page);
+      let direction = current_page < desired_page ? "next" : "prev";
+      for (
+        let steps = Math.abs(desired_page - current_page);
+        steps > 0;
+        steps--
+      ) {
+        ensure_request_active(request_id);
+        if (!(await step_react_inventory_page(panel, direction, request_id)))
+          break;
+        send_progress(request_id, {
+          phase: "seeking",
+          current_page: get_react_page_number(panel),
+          target_page,
+        });
+        if (try_click_visible()) {
+          send_progress(request_id, {
+            phase: "clicking",
+            current_page: get_react_page_number(panel),
+            target_page,
+          });
+          return;
+        }
+      }
+    }
+
+    for (let direction of ["next", "prev"]) {
+      for (let i = 0; i < 8; i++) {
+        ensure_request_active(request_id);
+        if (!(await step_react_inventory_page(panel, direction, request_id)))
+          break;
+        send_progress(request_id, {
+          phase: "seeking",
+          current_page: get_react_page_number(panel),
+          target_page,
+        });
+        if (try_click_visible()) {
+          send_progress(request_id, {
+            phase: "clicking",
+            current_page: get_react_page_number(panel),
+            target_page,
+          });
+          return;
+        }
+      }
+    }
+
+    throw Error("Could not locate the searched trade item in Roblox inventory");
+  }
+  function stamp_trade_detail_item_ids() {
+    for (let card of document.querySelectorAll(
+      ".trade-list-detail-offer .item-card-container:not([data-collectibleiteminstanceid]), .trade-request-window-offer .item-card-container:not([data-collectibleiteminstanceid]), .trade-request-item:not([data-collectibleiteminstanceid])",
+    )) {
+      let item = read_react_trade_item(card);
+      if (!item?.collectibleItemInstanceId) continue;
+      card.setAttribute(
+        "data-collectibleiteminstanceid",
+        item.collectibleItemInstanceId,
+      );
+      card.__nte_react_item = item;
+    }
+    stamp_inventory_item_ids();
+  }
+  let trade_detail_stamp_queued = false;
+  function watch_trade_detail_items() {
+    if (!document.body) return;
+    stamp_trade_detail_item_ids();
+    new MutationObserver(() => {
+      if (trade_detail_stamp_queued) return;
+      trade_detail_stamp_queued = true;
+      requestAnimationFrame(() => {
+        trade_detail_stamp_queued = false;
+        stamp_trade_detail_item_ids();
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+  if (document.body) watch_trade_detail_items();
+  else
+    document.addEventListener("DOMContentLoaded", watch_trade_detail_items, {
+      once: true,
+    });
+
   function read_trade_detail_item_from_card(card) {
     let wanted_instance_id = normalize_instance_id(
       card?.getAttribute?.("data-collectibleiteminstanceid"),
@@ -285,7 +594,8 @@
       if (hit) return clone_trade_item_value(hit);
     }
 
-    return null;
+    let react_item = card.__nte_react_item || read_react_trade_item(card);
+    return react_item ? clone_trade_item_value(react_item) : null;
   }
   function get_trade_detail_items_snapshot() {
     let items = [];
@@ -698,13 +1008,89 @@
     return true;
   }
 
+  function get_react_inventory_filter_controls(side_index) {
+    let panel = get_react_inventory_panel(side_index);
+    let combo = panel?.querySelector(
+      '.inventory-type-dropdown button[role="combobox"]',
+    );
+    if (!panel || !combo) return null;
+    let key = Object.keys(combo).find((k) => k.startsWith("__reactFiber$"));
+    let fiber = key ? combo[key] : null;
+    let on_select = null;
+    let filter_value = null;
+    let select_value = null;
+    for (let i = 0; i < 45 && fiber; i++) {
+      let props = fiber.memoizedProps || {};
+      let type = fiber.type?.displayName || fiber.type?.name || "";
+      if (
+        !on_select &&
+        Array.isArray(props.options) &&
+        typeof props.onSelect === "function"
+      ) {
+        on_select = props.onSelect;
+        if (null != props.value) filter_value = props.value;
+      }
+      if (
+        "Select" === type &&
+        typeof props.onValueChange === "function" &&
+        null != props.value
+      ) {
+        select_value = props.value;
+      }
+      fiber = fiber.return;
+    }
+    if (!on_select) return null;
+    let value = null != filter_value ? filter_value : select_value;
+    if ("__all__" === value || null == value) value = "";
+    return { panel, on_select, value };
+  }
+
+  function is_react_inventory_busy(panel) {
+    if (!panel) return false;
+    return !!panel.querySelector(
+      '.spinner:not([hidden]), .spinner-default:not(.ng-hide), [aria-busy="true"], [class*="Spinner"]',
+    );
+  }
+
+  async function wait_for_react_inventory_reload(panel, timeout = 5000) {
+    let started = Date.now();
+    let saw_busy = false;
+    // Allow the reload request to start.
+    await delay(80);
+    while (Date.now() - started < timeout) {
+      let busy = is_react_inventory_busy(panel);
+      if (busy) saw_busy = true;
+      if (saw_busy && !busy) {
+        await delay(150);
+        if (!is_react_inventory_busy(panel)) return true;
+      }
+      await delay(60);
+    }
+    // Same-filter reloads often never show a spinner; give XHR time to finish.
+    await delay(350);
+    return true;
+  }
+
+  async function reload_react_inventory(side_index) {
+    let controls = get_react_inventory_filter_controls(side_index);
+    if (!controls?.on_select) return null;
+    // Re-select the current category. React's setFilter(same) still refetches
+    // tradableItems (unlike a no-op Select onValueChange).
+    controls.on_select(controls.value);
+    await wait_for_react_inventory_reload(controls.panel);
+    stamp_inventory_item_ids(controls.panel);
+    return { method: "react-filter", filter: controls.value || "All" };
+  }
+
   function is_inventory_busy(side_index) {
     let binding = get_inventory_filter_binding(side_index);
     let owner = binding?.owner;
     let scope = binding?.scope;
     if (owner?.loading === true || scope?.loading === true) return true;
-    let panel = binding?.panel;
+    let panel =
+      binding?.panel || get_react_inventory_panel(side_index) || null;
     if (!panel) return false;
+    if (is_react_inventory_busy(panel)) return true;
     return !!panel.querySelector(
       ".spinner.spinner-default:not(.ng-hide), .spinner:not(.ng-hide)",
     );
@@ -768,6 +1154,11 @@
     let owner = binding?.owner;
     let scope = binding?.scope;
 
+    if (!(owner && "function" == typeof owner.onFilterClick)) {
+      let react_reload = await reload_react_inventory(side_index);
+      if (react_reload) return react_reload;
+    }
+
     if (owner && "function" == typeof owner.onFilterClick) {
       let selected = owner.layout?.selectedFilter;
 
@@ -826,6 +1217,9 @@
       return { method: "dom" };
     }
 
+    let react_reload = await reload_react_inventory(side_index);
+    if (react_reload) return react_reload;
+
     throw Error("Could not reload trade inventory");
   }
 
@@ -852,7 +1246,15 @@
     request_id = "",
   ) {
     let binding = get_inventory_root(side_index);
-    if (!binding?.root) throw Error("Trade inventory controller not found");
+    if (!binding?.root) {
+      await select_react_inventory_item_by_instance_id(
+        side_index,
+        collectible_item_instance_id,
+        target_page,
+        request_id,
+      );
+      return;
+    }
     if (!collectible_item_instance_id) throw Error("Missing collectibleItemInstanceId");
     ensure_request_active(request_id);
 
@@ -960,6 +1362,137 @@
     throw Error("Could not locate the searched trade item in Roblox inventory");
   }
 
+  function find_trade_list_scope() {
+    if (!window.angular?.element) return null;
+
+    let nodes = [
+      document.querySelector(".trade-row-list"),
+      document.querySelector(".trades-header"),
+      document.querySelector("#trade-row-scroll-container"),
+      document.querySelector(".trades-header .trade-list-dropdown"),
+    ].filter(Boolean);
+
+    let seen = new Set();
+    let queue = [];
+
+    function push_scope(scope) {
+      if (!scope || seen.has(scope)) return;
+      seen.add(scope);
+      queue.push(scope);
+    }
+
+    for (let node of nodes) {
+      let element = window.angular.element(node);
+      push_scope(element.scope?.());
+      push_scope(element.isolateScope?.());
+    }
+
+    while (queue.length) {
+      let scope = queue.shift();
+      if (
+        typeof scope?.onTabClick === "function" ||
+        typeof scope?.loadTrades === "function" ||
+        typeof scope?.loadTradeList === "function" ||
+        typeof scope?.getTrades === "function" ||
+        typeof scope?.data?.tradesList?.load === "function"
+      ) {
+        return scope;
+      }
+      push_scope(scope?.$parent);
+    }
+
+    return null;
+  }
+
+  let TRADE_TAB_NAMES = ["Inbound", "Outbound", "Completed", "Inactive"];
+
+  function get_react_trade_tab() {
+    let tab = new URL(location.href).searchParams.get("tab") || "";
+    return (
+      TRADE_TAB_NAMES.find((name) => name.toLowerCase() === tab.toLowerCase()) ||
+      "Inbound"
+    );
+  }
+
+  // New trades UI: the list component memoises its tab-change handler, which
+  // resets the cursor and refetches page one regardless of whether the tab
+  // actually changed. Re-running it reloads just the trade rows.
+  function find_react_trade_list_reloader() {
+    let host = document.getElementById("trades-web-app");
+    let key =
+      host && Object.keys(host).find((k) => k.startsWith("__reactContainer$"));
+    if (!key) return null;
+    let seen = new Set();
+    let stack = [host[key]];
+    while (stack.length) {
+      let fiber = stack.pop();
+      if (!fiber || seen.has(fiber)) continue;
+      seen.add(fiber);
+      let hook = fiber.memoizedState;
+      for (let i = 0; i < 80 && hook; i++) {
+        let value = Array.isArray(hook.memoizedState)
+          ? hook.memoizedState[0]
+          : null;
+        if (
+          typeof value === "function" &&
+          value.length === 1 &&
+          /loadFirstPage/.test(String(value))
+        )
+          return value;
+        hook = hook.next;
+      }
+      if (fiber.child) stack.push(fiber.child);
+      if (fiber.sibling) stack.push(fiber.sibling);
+    }
+    return null;
+  }
+
+  async function reload_trade_list() {
+    let scope = find_trade_list_scope();
+    if (!scope) {
+      let reload = find_react_trade_list_reloader();
+      if (!reload) throw Error("Trade list controller not found");
+      reload(get_react_trade_tab());
+      return { reloaded: true };
+    }
+
+    await run_in_scope(scope, () => {
+      let tab = scope.layout?.selectedTab;
+      let trades_list = scope.data?.tradesList;
+
+      if (typeof scope.loadTrades === "function") {
+        scope.loadTrades(tab?.value || tab);
+        return;
+      }
+      if (typeof scope.loadTradeList === "function") {
+        scope.loadTradeList(tab?.value || tab);
+        return;
+      }
+      if (typeof scope.getTrades === "function") {
+        scope.getTrades(tab?.value || tab);
+        return;
+      }
+      if (typeof trades_list?.load === "function") {
+        trades_list.load();
+        return;
+      }
+      if (typeof scope.onTabClick === "function" && tab) {
+        // Same-tab clicks can no-op; clear then re-select to force a reload.
+        if (scope.layout) scope.layout.selectedTab = null;
+        if (Array.isArray(scope.data?.trades)) scope.data.trades = [];
+        if (trades_list) {
+          trades_list.loading = true;
+          trades_list.noResults = false;
+        }
+        scope.onTabClick(tab);
+        return;
+      }
+      throw Error("Trade list reload method not found");
+    });
+
+    return { reloaded: true };
+  }
+
   document.addEventListener("nruTradeBridgeAction", (event) => {
     let raw = event.detail;
     let detail = raw;
@@ -980,14 +1513,28 @@
             tradable_item?.collectibleItemInstanceId;
           let binding = get_inventory_root(side_index);
 
-          if (!binding?.root) {
-            return send_result(request_id, false, "Trade inventory controller not found");
-          }
           if (!collectible_item_instance_id) {
             return send_result(
               request_id,
               false,
               "Tradable item payload is missing collectibleItemInstanceId",
+            );
+          }
+
+          if (!binding?.root) {
+            if (
+              toggle_react_inventory_item(
+                side_index,
+                collectible_item_instance_id,
+                tradable_item,
+              )
+            ) {
+              return send_result(request_id, true);
+            }
+            return send_result(
+              request_id,
+              false,
+              "Trade inventory controller not found",
             );
           }
 
@@ -1045,6 +1592,11 @@
 
         if ("reloadInventory" === action) {
           let result = await reload_inventory(Number(detail.side_index) || 0);
+          return send_result(request_id, true, null, result);
+        }
+
+        if ("reloadTradeList" === action) {
+          let result = await reload_trade_list();
           return send_result(request_id, true, null, result);
         }
 

@@ -53,11 +53,18 @@
 
   function send_message(message, callback) {
     try {
-      let result = chrome.runtime.sendMessage(message);
+      let settled = false;
+      let finish = (value) => {
+        if (settled) return;
+        settled = true;
+        callback(value);
+      };
+      let result = chrome.runtime.sendMessage(message, (value) => {
+        if (chrome.runtime.lastError) finish(undefined);
+        else finish(value);
+      });
       if (result && typeof result.then === "function") {
-        result.then((value) => callback(value), () => callback(undefined));
-      } else {
-        callback(undefined);
+        result.then(finish, () => finish(undefined));
       }
     } catch {
       callback(undefined);
@@ -90,6 +97,7 @@
   function format_date(timestamp) {
     let time = Number(timestamp) || 0;
     if (!(time > 0)) return "Unknown time";
+    if (time < 10000000000) time *= 1000;
     try {
       return new Date(time).toLocaleString([], {
         month: "short",
@@ -103,7 +111,9 @@
   }
 
   function format_age(timestamp) {
-    let diff = Date.now() - (Number(timestamp) || 0);
+    let time = Number(timestamp) || 0;
+    if (time > 0 && time < 10000000000) time *= 1000;
+    let diff = Date.now() - time;
     if (!(diff >= 0)) return "";
     if (diff < 60000) return "just now";
     if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
@@ -113,9 +123,20 @@
 
   function profile_html(user_id, user_name) {
     let id = String(user_id || "").trim();
-    let label = esc(user_name || (id ? `User ${id}` : "Unknown"));
-    if (!/^\d+$/.test(id)) return label;
-    return `<a class="nte-history-link" href="https://www.rolimons.com/player/${id}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    let name = String(user_name || "").trim();
+    let label = esc(name || (/^\d+$/.test(id) ? `User ${id}` : id) || "Unknown");
+    if (/^\d+$/.test(id)) {
+      return `<a class="nte-history-link" href="https://www.rolimons.com/player/${id}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+    }
+    return name || id ? `<span class="nte-history-user-name">${label}</span>` : label;
+  }
+
+  function history_entry_name(entry, ...keys) {
+    for (let key of keys) {
+      let value = String(entry?.[key] || "").trim();
+      if (value && value !== "Unknown") return value;
+    }
+    return "";
   }
 
   function clean_name(name) {
@@ -409,11 +430,25 @@
     let offer = Array.isArray(trade?.offer) ? trade.offer : [];
     let request = Array.isArray(trade?.request) ? trade.request : [];
     if (!offer.length && !request.length) return '<div class="nte-history-trade-empty-card">Trade details are not recorded for this row.</div>';
+    let offerer_name = history_entry_name(
+      entry,
+      "offererName",
+      "offerer_name",
+      "ownerBeforeName",
+      "owner_before_name",
+    );
+    let requester_name = history_entry_name(
+      entry,
+      "requesterName",
+      "requester_name",
+      "ownerAfterName",
+      "owner_after_name",
+    );
     return `
       <div class="nte-history-trade-card">
-        ${render_history_trade_side("Offer", entry?.offererId, entry?.offererName, offer, Number(trade?.offerTotal || 0), asset_id)}
+        ${render_history_trade_side("Offer", entry?.offererId || entry?.offerer_id, offerer_name, offer, Number(trade?.offerTotal || 0), asset_id)}
         <div class="nte-history-trade-sep"><span class="nte-history-trade-sep-label">for</span></div>
-        ${render_history_trade_side("Request", entry?.requesterId, entry?.requesterName, request, Number(trade?.requestTotal || 0), asset_id)}
+        ${render_history_trade_side("Request", entry?.requesterId || entry?.requester_id, requester_name, request, Number(trade?.requestTotal || 0), asset_id)}
       </div>
     `;
   }
@@ -430,17 +465,34 @@
       else if (delta < 0) pills.push(`<span class="nte-history-pill is-down">Loss -${format_number(Math.abs(delta))}</span>`);
       else pills.push('<span class="nte-history-pill is-note">Even</span>');
     }
-    let copy_count = Math.max(0, Number(entry?.copyCount || 0));
+    let copy_count = Math.max(0, Number(entry?.copyCount || entry?.copy_count || 0));
     if (copy_count > 1) pills.push(`<span class="nte-history-pill is-note">${copy_count} copies</span>`);
-    let meta_bits = [`Trade #${esc(entry?.tradeId || "")}`];
+    let kind = history_entry_name(entry, "kind");
+    let meta_bits = [];
+    if (kind) meta_bits.push(esc(kind));
+    else if (entry?.tradeId) meta_bits.push(`Trade #${esc(entry.tradeId)}`);
     if (trade) meta_bits.push(`${format_number(focus_total)} -> ${format_number(other_total)}`);
     let has_trade = !!(entry?.tradeId || (trade && ((Array.isArray(trade.offer) && trade.offer.length) || (Array.isArray(trade.request) && trade.request.length))));
     let asset_id = String(context?.asset_id || "").trim();
+    let before_name = history_entry_name(
+      entry,
+      "ownerBeforeName",
+      "owner_before_name",
+      "offererName",
+      "offerer_name",
+    );
+    let after_name = history_entry_name(
+      entry,
+      "ownerAfterName",
+      "owner_after_name",
+      "requesterName",
+      "requester_name",
+    );
     return `
       <article class="nte-history-entry" data-history-index="${index}">
         <div class="nte-history-entry-top">
           <div class="nte-history-entry-main">
-            <div class="nte-history-entry-flow">${profile_html(entry?.ownerBeforeId, entry?.ownerBeforeName)}<span class="nte-history-arrow">&rarr;</span>${profile_html(entry?.ownerAfterId, entry?.ownerAfterName)}</div>
+            <div class="nte-history-entry-flow">${profile_html(entry?.ownerBeforeId || entry?.owner_before_id, before_name)}<span class="nte-history-arrow">&rarr;</span>${profile_html(entry?.ownerAfterId || entry?.owner_after_id, after_name)}</div>
             <div class="nte-history-entry-meta">${meta_bits.join(" • ")}</div>
             ${pills.length ? `<div class="nte-history-entry-pills">${pills.join("")}</div>` : ""}
             ${
@@ -466,7 +518,7 @@
       `History for ${context.item_name}`,
       trade_count
         ? `Showing ${Math.min(trade_count, item.history.length)} recent recorded trade${trade_count === 1 ? "" : "s"} across all copies of this item.`
-        : "No recorded trade history for this item in the local database yet.",
+        : "No recent trade history found for this item yet.",
       `
         <section class="nte-history-card">
           <div class="nte-history-card-head">
@@ -480,7 +532,7 @@
               <div class="nte-history-card-link"><a href="${attr_esc(rolimons_profile_href(item.assetId || context.asset_id, { isBundle: context.is_bundle === true || context.kind === "bundles" }))}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>
             </div>
           </div>
-          ${trade_count ? `<div class="nte-history-list">${item.history.map((entry, index) => render_history_entry(entry, index, context)).join("")}</div>` : '<div class="nte-history-empty">No recorded trade history for this item across all copies yet.</div>'}
+          ${trade_count ? `<div class="nte-history-list">${item.history.map((entry, index) => render_history_entry(entry, index, context)).join("")}</div>` : '<div class="nte-history-empty">No recent trade history found for this item yet.</div>'}
         </section>
       `,
     );

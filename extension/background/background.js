@@ -297,6 +297,82 @@ async function fetch_trade_api(url, init) {
   return run;
 }
 
+const NTE_INVENTORY_RATE_LIMIT_FALLBACK_MS = 15000;
+const NTE_INVENTORY_RATE_LIMIT_MAX_WAIT_MS = 120000;
+const NTE_INVENTORY_RATE_LIMIT_ATTEMPTS = 8;
+
+function nte_inventory_load_status(source, text, extra) {
+  try {
+    chrome.runtime.sendMessage(
+      {
+        type: "nte_inventory_load_status",
+        source: source || "",
+        text: String(text || ""),
+        ...(extra && typeof extra === "object" ? extra : {}),
+      },
+      () => {
+        void chrome.runtime.lastError;
+      },
+    );
+  } catch {}
+}
+
+function nte_inventory_rate_limit_wait_ms(response) {
+  let ms = get_trade_api_reset_delay_ms(response);
+  if (!Number.isFinite(ms) || ms <= 0) ms = NTE_INVENTORY_RATE_LIMIT_FALLBACK_MS;
+  return Math.min(
+    Math.max(ms, 1000),
+    NTE_INVENTORY_RATE_LIMIT_MAX_WAIT_MS,
+  );
+}
+
+async function nte_fetch_inventory_with_retries(url, init, options = {}) {
+  let source = String(options.source || "inventory");
+  let silent = options.silent === true;
+  let max_attempts = Math.max(
+    1,
+    Number(options.maxAttempts) || NTE_INVENTORY_RATE_LIMIT_ATTEMPTS,
+  );
+  let res = null;
+  for (let attempt = 0; attempt < max_attempts; attempt++) {
+    try {
+      res = await fetch(url, init);
+    } catch {
+      res = null;
+    }
+    if (!res) {
+      if (attempt >= max_attempts - 1) return null;
+      if (!silent) nte_inventory_load_status(source, "Network error. Retrying…");
+      await trade_api_delay(400 * (attempt + 1));
+      continue;
+    }
+    let retryable = res.status === 429 || (res.status >= 500 && res.status < 600);
+    if (!retryable) return res;
+    if (attempt >= max_attempts - 1) return res;
+    let wait_ms =
+      res.status === 429
+        ? nte_inventory_rate_limit_wait_ms(res)
+        : Math.min(1500 * (attempt + 1), 20000);
+    let until = Date.now() + wait_ms;
+    while (Date.now() < until) {
+      if (!silent) {
+        let left = Math.max(1, Math.ceil((until - Date.now()) / 1000));
+        let text =
+          res.status === 429
+            ? `Rate limited (429). Retrying in ${left}s…`
+            : `Server error (${res.status}). Retrying in ${left}s…`;
+        nte_inventory_load_status(source, text, {
+          status: res.status,
+          retryAfterMs: Math.max(0, until - Date.now()),
+        });
+      }
+      await trade_api_delay(Math.min(1000, Math.max(0, until - Date.now())));
+    }
+    if (!silent) nte_inventory_load_status(source, "Loading your items…");
+  }
+  return res;
+}
+
 async function fetch_trade_api_priority(url, init) {
   let response = await fetch(url, init);
   update_trade_api_rate_limit(response);
@@ -2840,7 +2916,8 @@ async function fetch_trade_history_api(query, limit = 6) {
     return { ok: true, items: [], generated_at: Date.now(), trades: {} };
 
   let safe_limit = Math.max(1, Math.min(20, Number(limit) || 6));
-  let cache_key = `${mode}:${normalized_values.join(",")}|${safe_limit}`;
+  let ciiid = mode === "asset" ? normalize_trade_history_ciiid(query?.ciiid || "") : "";
+  let cache_key = `${mode}:${normalized_values.join(",")}|${safe_limit}${ciiid ? `|ciiid:${ciiid}` : ""}`;
   let cached = get_trade_history_cached_value(
     trade_history_api_cache,
     cache_key,
@@ -2853,6 +2930,7 @@ async function fetch_trade_history_api(query, limit = 6) {
     normalized_values.join(","),
   );
   url.searchParams.set("limit", String(safe_limit));
+  if (ciiid) url.searchParams.set("ciiid", ciiid);
 
   let response = await fetch(url.toString(), {
     headers: nte_api_headers(),
@@ -2943,8 +3021,19 @@ async function evaluate_trade_analysis(message) {
     );
   }
   if (!response.ok || !payload?.ok) {
+    let api_error = String(payload?.error || "").trim();
+    if (
+      response.status === 502 ||
+      response.status === 503 ||
+      response.status === 504 ||
+      /unavailable|returned an error|returned \d+/i.test(api_error)
+    ) {
+      throw new Error(
+        "Trade analysis is down for a bit and will be back soon.",
+      );
+    }
     throw new Error(
-      payload?.error || `Trade analysis returned ${response.status}.`,
+      api_error || "Trade analysis is down for a bit and will be back soon.",
     );
   }
 
@@ -3018,11 +3107,13 @@ async function resolve_trade_history_users(user_ids) {
   return out;
 }
 
-function get_trade_history_display_name(user_map, user_id) {
-  let key = String(user_id || "");
+function get_trade_history_display_name(user_map, user_id, fallback_name = "") {
+  let named = String(fallback_name || "").trim();
+  if (named) return named;
+  let key = String(user_id || "").trim();
+  if (!key) return "";
   let user = user_map?.[key];
-  if (!key) return "Unknown";
-  return user?.name || user?.display_name || `User ${key}`;
+  return String(user?.name || user?.display_name || "").trim() || (/^\d+$/.test(key) ? `User ${key}` : key);
 }
 
 async function get_trade_history(message) {
@@ -3034,108 +3125,34 @@ async function get_trade_history(message) {
 
   if (scope === "asset") {
     items = merge_trade_history_items_by_asset(items);
-
-    let asset_ids = items.map((item) => item.assetId).filter(Boolean);
-    let payload = asset_ids.length
-      ? await fetch_trade_history_api(
-          { mode: "asset", asset_ids: asset_ids },
-          message?.limit || 6,
-        )
-      : { ok: true, items: [], trades: {} };
-    let by_asset = {};
-
-    for (let item of payload?.items || []) {
-      let asset_id = normalize_trade_history_asset_id(
-        item?.asset_id ?? item?.assetId,
-      );
-      if (!asset_id) continue;
-      by_asset[asset_id] = item;
-    }
-
-    let user_ids = [];
-    for (let item of payload?.items || []) {
-      for (let entry of item?.history || []) {
-        user_ids.push(
-          entry?.offerer_id,
-          entry?.requester_id,
-          entry?.owner_before_id,
-          entry?.owner_after_id,
-        );
-      }
-    }
-
-    let user_map = await resolve_trade_history_users(user_ids).catch(
-      () => ({}),
-    );
-    let trade_map = await resolve_trade_history_trade_map(
-      payload?.trades || {},
-    ).catch(() => ({}));
-
-    return {
-      success: true,
-      scope,
-      generatedAt: Number(payload?.generated_at) || Date.now(),
-      items: items.map((item) => {
-        let history_item = item.assetId ? by_asset[item.assetId] : null;
-        let history_rows = Array.isArray(history_item?.history)
-          ? history_item.history
-          : [];
-        return {
-          name: item.name,
-          thumb: item.thumb,
-          ciiid: item.ciiid,
-          uaid: item.uaid,
-          assetId: item.assetId,
-          tradeItemCount: Number(item.tradeItemCount || 1),
-          missingAssetId: !item.assetId,
-          tradeCount: Number(history_item?.trade_count || 0),
-          history: history_rows.map((entry) => ({
-            tradeId: Number(entry?.trade_id || 0),
-            timestamp: Number(entry?.timestamp || 0),
-            side: String(entry?.side || ""),
-            offererId: String(entry?.offerer_id || ""),
-            requesterId: String(entry?.requester_id || ""),
-            ownerBeforeId: String(entry?.owner_before_id || ""),
-            ownerAfterId: String(entry?.owner_after_id || ""),
-            copyCount: Math.max(1, Number(entry?.copy_count || 0)),
-            offererName: get_trade_history_display_name(
-              user_map,
-              entry?.offerer_id,
-            ),
-            requesterName: get_trade_history_display_name(
-              user_map,
-              entry?.requester_id,
-            ),
-            ownerBeforeName: get_trade_history_display_name(
-              user_map,
-              entry?.owner_before_id,
-            ),
-            ownerAfterName: get_trade_history_display_name(
-              user_map,
-              entry?.owner_after_id,
-            ),
-            trade: trade_map[String(entry?.trade_id || "")] || null,
-          })),
-        };
-      }),
-    };
+  } else {
+    items = await resolve_trade_history_items_uaids(items);
   }
 
-  items = await resolve_trade_history_items_uaids(items);
-
-  let uaids = items.map((item) => item.uaid).filter(Boolean);
-  let payload = uaids.length
+  // Recent item history now comes from Void itemtrades (asset-level).
+  let asset_ids = [
+    ...new Set(items.map((item) => item.assetId).filter(Boolean)),
+  ];
+  let ciiid = normalize_trade_history_ciiid(message?.ciiid || "");
+  if (scope === "uaid" && !ciiid) {
+    ciiid = [...new Set(items.map((item) => item.ciiid).filter(Boolean))]
+      .join(",")
+      .toLowerCase();
+  }
+  let payload = asset_ids.length
     ? await fetch_trade_history_api(
-        { mode: "uaid", uaids },
+        { mode: "asset", asset_ids, ciiid },
         message?.limit || 6,
       )
     : { ok: true, items: [], trades: {} };
-  let by_uaid = {};
+  let by_asset = {};
 
   for (let item of payload?.items || []) {
-    let uaid = normalize_trade_history_uaid(item?.uaid);
-    if (!uaid) continue;
-    by_uaid[uaid] = item;
+    let asset_id = normalize_trade_history_asset_id(
+      item?.asset_id ?? item?.assetId,
+    );
+    if (!asset_id) continue;
+    by_asset[asset_id] = item;
   }
 
   let user_ids = [];
@@ -3155,50 +3172,93 @@ async function get_trade_history(message) {
     payload?.trades || {},
   ).catch(() => ({}));
 
+  function map_history_rows(history_item) {
+    let history_rows = Array.isArray(history_item?.history)
+      ? history_item.history
+      : [];
+    return history_rows.map((entry) => {
+      let offerer_name = String(
+        entry?.offerer_name || entry?.offererName || "",
+      ).trim();
+      let requester_name = String(
+        entry?.requester_name || entry?.requesterName || "",
+      ).trim();
+      let owner_before_name = String(
+        entry?.owner_before_name || entry?.ownerBeforeName || "",
+      ).trim();
+      let owner_after_name = String(
+        entry?.owner_after_name || entry?.ownerAfterName || "",
+      ).trim();
+      let offerer_id = String(entry?.offerer_id || entry?.offererId || "").trim();
+      let requester_id = String(
+        entry?.requester_id || entry?.requesterId || "",
+      ).trim();
+      let owner_before_id = String(
+        entry?.owner_before_id || entry?.ownerBeforeId || "",
+      ).trim();
+      let owner_after_id = String(
+        entry?.owner_after_id || entry?.ownerAfterId || "",
+      ).trim();
+      let offerer_label = get_trade_history_display_name(
+        user_map,
+        offerer_id,
+        offerer_name,
+      );
+      let requester_label = get_trade_history_display_name(
+        user_map,
+        requester_id,
+        requester_name,
+      );
+      let owner_before_label = get_trade_history_display_name(
+        user_map,
+        owner_before_id,
+        owner_before_name || offerer_name,
+      );
+      let owner_after_label = get_trade_history_display_name(
+        user_map,
+        owner_after_id,
+        owner_after_name || requester_name,
+      );
+      return {
+        tradeId: Number(entry?.trade_id || 0),
+        timestamp: Number(entry?.timestamp || 0),
+        side: String(entry?.side || ""),
+        kind: String(entry?.kind || ""),
+        // Void only returns usernames (no Roblox ids). Keep numeric ids when
+        // present; otherwise stash the username so older UI still has a label.
+        offererId: offerer_id || offerer_label,
+        requesterId: requester_id || requester_label,
+        ownerBeforeId: owner_before_id || owner_before_label,
+        ownerAfterId: owner_after_id || owner_after_label,
+        copyCount: Math.max(1, Number(entry?.copy_count || 0)),
+        offererName: offerer_label || "Unknown",
+        requesterName: requester_label || "Unknown",
+        ownerBeforeName: owner_before_label || "Unknown",
+        ownerAfterName: owner_after_label || "Unknown",
+        trade: trade_map[String(entry?.trade_id || "")] || null,
+      };
+    });
+  }
+
   return {
     success: true,
     scope,
     generatedAt: Number(payload?.generated_at) || Date.now(),
+    source: String(payload?.source || ""),
     items: items.map((item) => {
-      let history_item = item.uaid ? by_uaid[item.uaid] : null;
-      let history_rows = Array.isArray(history_item?.history)
-        ? history_item.history
-        : [];
+      let history_item = item.assetId ? by_asset[item.assetId] : null;
       return {
         name: item.name,
         thumb: item.thumb,
         ciiid: item.ciiid,
         uaid: item.uaid,
-        assetId: String(history_item?.asset_id || item.assetId || ""),
-        missingUaid: !item.uaid,
-        known: !!history_item?.known,
+        assetId: item.assetId,
+        tradeItemCount: Number(item.tradeItemCount || 1),
+        missingAssetId: !item.assetId,
+        missingUaid: scope !== "asset" && !item.uaid,
+        known: scope !== "asset" ? !!item.uaid : undefined,
         tradeCount: Number(history_item?.trade_count || 0),
-        history: history_rows.map((entry) => ({
-          tradeId: Number(entry?.trade_id || 0),
-          timestamp: Number(entry?.timestamp || 0),
-          side: String(entry?.side || ""),
-          offererId: String(entry?.offerer_id || ""),
-          requesterId: String(entry?.requester_id || ""),
-          ownerBeforeId: String(entry?.owner_before_id || ""),
-          ownerAfterId: String(entry?.owner_after_id || ""),
-          offererName: get_trade_history_display_name(
-            user_map,
-            entry?.offerer_id,
-          ),
-          requesterName: get_trade_history_display_name(
-            user_map,
-            entry?.requester_id,
-          ),
-          ownerBeforeName: get_trade_history_display_name(
-            user_map,
-            entry?.owner_before_id,
-          ),
-          ownerAfterName: get_trade_history_display_name(
-            user_map,
-            entry?.owner_after_id,
-          ),
-          trade: trade_map[String(entry?.trade_id || "")] || null,
-        })),
+        history: map_history_rows(history_item),
       };
     }),
   };
@@ -3555,7 +3615,9 @@ async function fetch_roblox_friends_list() {
 
 async function fetch_rolimons_player_tradable(user_id) {
   let id = String(user_id || "").trim();
-  if (!/^\d+$/.test(id)) return [];
+  if (!/^\d+$/.test(id)) {
+    return { ok: false, complete: false, items: [], error: "invalid_user" };
+  }
   let items = [];
   let cursor = "";
   let limit = "100";
@@ -3567,30 +3629,81 @@ async function fetch_rolimons_player_tradable(user_id) {
     });
     if (cursor) params.set("cursor", cursor);
     let url = `https://trades.roblox.com/v2/users/${id}/tradableitems?${params.toString()}`;
-    let res = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        res = await fetch(url, { credentials: "include" });
-      } catch {
-        res = null;
-      }
-      if (res && res.status !== 429 && res.status < 500) break;
-      if (attempt < 2) await sleep_for(350 * (attempt + 1));
+    let res = await nte_fetch_inventory_with_retries(
+      url,
+      { credentials: "include" },
+      {
+        source: "rolimons_player_tradable",
+        silent: true,
+        maxAttempts: NTE_INVENTORY_RATE_LIMIT_ATTEMPTS,
+      },
+    );
+    if (!res) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "network",
+        page,
+      };
     }
-    if (!res) break;
-    if (res.status === 401 || res.status === 403) return items;
+    if (res.status === 401 || res.status === 403) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "auth",
+        status: res.status,
+      };
+    }
     if (res.status === 500 && limit === "100") {
       limit = "50";
+      page -= 1;
       continue;
     }
-    if (!res.ok) break;
+    if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "rate_limited",
+        status: res.status,
+        page,
+      };
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "http",
+        status: res.status,
+        page,
+      };
+    }
     let data = await res.json().catch(() => null);
-    if (!data) break;
+    if (!data) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "parse",
+        page,
+      };
+    }
     items = items.concat(Array.isArray(data.items) ? data.items : []);
     cursor = data.nextPageCursor || "";
-    if (!cursor) break;
+    if (!cursor) {
+      return { ok: true, complete: true, items };
+    }
   }
-  return items;
+  // Hit page safety cap with a cursor still pending — treat as incomplete.
+  return {
+    ok: false,
+    complete: false,
+    items,
+    error: "truncated",
+  };
 }
 
 let rolimons_player_face_map_cache = null;
@@ -4151,16 +4264,33 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
 
+  if (message?.type === "rolimons_player_auth_user") {
+    (async () => {
+      try {
+        let user = await get_authenticated_user_cached();
+        respond({ ok: true, id: user?.id ? String(user.id) : "" });
+      } catch {
+        respond({ ok: false, id: "" });
+      }
+    })();
+    return true;
+  }
+
   if (message?.type === "rolimons_player_tradable") {
     (async () => {
       try {
+        let result = await fetch_rolimons_player_tradable(message.user_id);
         respond({
-          ok: true,
-          items: await fetch_rolimons_player_tradable(message.user_id),
+          ok: !!result?.ok,
+          complete: !!result?.complete,
+          items: Array.isArray(result?.items) ? result.items : [],
+          error: result?.error || null,
+          status: result?.status || null,
         });
       } catch (error) {
         respond({
           ok: false,
+          complete: false,
           items: [],
           error: error?.message || String(error),
         });

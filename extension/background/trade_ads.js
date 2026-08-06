@@ -269,27 +269,17 @@ function trade_ads_clamp_requests(offer_ids, request_ids, item_data) {
   let cap = Math.max(0, Math.floor(offer_sum * 1.8));
   let ids = (request_ids || [])
     .map(Number)
-    .filter((n) => Number.isFinite(n) && n > 0);
+    .filter((n) => Number.isFinite(n) && n > 0)
+    .slice(0, 4);
   let sum = ids.reduce((s, id) => s + get_val(id), 0);
-  // Manual requests: never invent an "any" tag. Only keep what the user chose
-  // (trimmed to Rolimons' value cap). Random ads still pad with "any" themselves.
-  if (sum <= cap) return { ids: ids.slice(0, 4), tags: [] };
-
-  let by_asc = ids.slice().sort((a, b) => get_val(a) - get_val(b));
-  let kept = [];
-  let running = 0;
-  for (let id of by_asc) {
-    let v = get_val(id);
-    if (kept.length < 4 && running + v <= cap) {
-      kept.push(id);
-      running += v;
-    }
+  // Manual requests: never invent tags and never silently drop the user's picks.
+  // Rolimons rejects ads where request value is far above offer value (~1.8×).
+  if (sum > cap) {
+    throw new Error(
+      `Request value is too high for this offer (about ${sum.toLocaleString()} vs ${offer_sum.toLocaleString()} offer). Rolimons allows roughly 1.8× offer value — remove some request items or add more offer value.`,
+    );
   }
-  if (!kept.length && by_asc.length) {
-    kept = [by_asc[0]];
-    running = get_val(by_asc[0]);
-  }
-  return { ids: kept.slice(0, 4), tags: [] };
+  return { ids, tags: [] };
 }
 
 let trade_ads_legacy_item_cache_mem;
@@ -531,13 +521,28 @@ async function trade_ads_auto_verify(user_id) {
 async function trade_ads_fetch_inventory_collectibles(user_id) {
   let all = [];
   let cursor = "";
+  if (typeof nte_inventory_load_status === "function") {
+    nte_inventory_load_status("trade_ads", "Loading your items…");
+  }
   for (let page = 0; page < 40; page++) {
     let url = `https://inventory.roblox.com/v1/users/${user_id}/assets/collectibles?limit=100&sortOrder=Asc${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
-    let res = await fetch(url, { credentials: "include" });
+    let res =
+      typeof nte_fetch_inventory_with_retries === "function"
+        ? await nte_fetch_inventory_with_retries(
+            url,
+            { credentials: "include" },
+            { source: "trade_ads" },
+          )
+        : await fetch(url, { credentials: "include" });
+    if (!res) throw new Error("Could not load inventory.");
     if (!res.ok) {
       if (res.status === 403)
         throw new Error(
           "Inventory is private or unavailable. Open your Roblox privacy settings.",
+        );
+      if (res.status === 429)
+        throw new Error(
+          "Rate limited (429). Wait a bit, then open the picker again.",
         );
       throw new Error(`Inventory request failed (${res.status})`);
     }
@@ -1151,12 +1156,10 @@ async function trade_ads_build_post_body(
     }
     let clamped = trade_ads_clamp_requests(offer_ids, manual_ids, item_data);
     request_item_ids = clamped.ids;
-    let user_tags = Array.isArray(config.request_tags)
-      ? config.request_tags.filter(Boolean)
-      : [];
-    // Prefer tags the user explicitly placed in slots; never fall back to an
-    // auto-injected "any" from clamping.
-    request_tags = manual_tags.length > 0 ? manual_tags : user_tags;
+    // Tags only come from slots the user filled (tag:any, tag:robux, …).
+    // Never fall back to stale config.request_tags — that re-injected "any"
+    // onto manual ads and looked like it replaced request items.
+    request_tags = manual_tags;
   }
 
   let post_offer_ids = await trade_ads_resolve_legacy_trade_ad_ids(

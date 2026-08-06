@@ -85,16 +85,297 @@ function ms_normalize_asset_ids(slots) {
     .slice(0, 4);
 }
 
+const ms_online_hours_max = 8760; // 1 year; 0 = filter off
+
 function ms_clamp_hours(value) {
   let n = Math.floor(Number(value));
   if (!Number.isFinite(n)) n = 24;
-  return Math.max(1, Math.min(168, n));
+  return Math.max(0, Math.min(ms_online_hours_max, n));
 }
 
 function ms_clamp_max_trades(value) {
   let n = Math.floor(Number(value));
   if (!Number.isFinite(n)) n = 25;
   return Math.max(1, Math.min(100, n));
+}
+
+const ms_trade_daily_limit_max = 100;
+const ms_trade_daily_limit_window_ms = 24 * 60 * 60 * 1000;
+const ms_trade_daily_limit_api_max_pages = 15;
+const ms_trade_daily_limit_counter_key =
+  "nte_trade_daily_limit_counter_trade_ids";
+const ms_trade_daily_limit_sent_key = "nte_trade_daily_limit_sent_trade_ids";
+const ms_trade_daily_limit_snapshot_key = "nte_trade_daily_limit_snapshot";
+const ms_trade_daily_limit_snapshot_ttl_ms = 10 * 60 * 1000;
+const ms_trade_daily_limit_record_max_age_ms =
+  ms_trade_daily_limit_window_ms + 3600000;
+
+function ms_prune_trade_daily_limit_records(records, now = Date.now()) {
+  let out = {};
+  for (let [id, ts] of Object.entries(records || {})) {
+    let key = String(id || "").trim();
+    let n = Number(ts);
+    if (!key || !Number.isFinite(n) || now - n > ms_trade_daily_limit_record_max_age_ms)
+      continue;
+    out[key] = n;
+  }
+  return out;
+}
+
+function ms_parse_trade_created_ms(trade) {
+  let raw =
+    trade?.created ||
+    trade?.createdAt ||
+    trade?.createdDate ||
+    trade?.createdUtc ||
+    trade?.createdOn;
+  let parsed = raw ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function ms_trade_daily_limit_trade_id(trade) {
+  let id = trade?.id ?? trade?.tradeId;
+  return id != null && String(id).trim() ? String(id).trim() : "";
+}
+
+async function ms_load_trade_daily_limit_records() {
+  let raw =
+    typeof get_local_values === "function"
+      ? await get_local_values([
+          ms_trade_daily_limit_counter_key,
+          ms_trade_daily_limit_sent_key,
+        ])
+      : {};
+  return {
+    counter: ms_prune_trade_daily_limit_records(
+      raw?.[ms_trade_daily_limit_counter_key],
+    ),
+    sent: ms_prune_trade_daily_limit_records(
+      raw?.[ms_trade_daily_limit_sent_key],
+    ),
+  };
+}
+
+async function ms_record_trade_daily_limit_send(trade_id) {
+  let id = String(trade_id ?? "").trim();
+  if (!id || typeof get_local_value !== "function") return;
+  let records = ms_prune_trade_daily_limit_records(
+    (await get_local_value(ms_trade_daily_limit_sent_key)) || {},
+  );
+  if (records[id]) return;
+  records[id] = Date.now();
+  if (typeof set_local_value === "function") {
+    await set_local_value(ms_trade_daily_limit_sent_key, records);
+  }
+}
+
+async function ms_trade_api_fetch(url, init) {
+  if (typeof fetch_trade_api === "function") {
+    return fetch_trade_api(url, init);
+  }
+  return fetch(url, init);
+}
+
+async function ms_fetch_outbound_trades_for_daily_limit(cutoff) {
+  let trades = [];
+  let cursor = "";
+  for (let page = 0; page < ms_trade_daily_limit_api_max_pages; page++) {
+    let url =
+      "https://trades.roblox.com/v1/trades/outbound?limit=100&sortOrder=Desc";
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+    let resp = await ms_trade_api_fetch(url, { credentials: "include" });
+    if (!resp.ok) {
+      throw new Error(`Outbound trades returned ${resp.status}.`);
+    }
+    let json = await resp.json().catch(() => null);
+    let page_trades = Array.isArray(json?.data) ? json.data : [];
+    if (!page_trades.length) break;
+    let reached_cutoff = false;
+    for (let trade of page_trades) {
+      let created = ms_parse_trade_created_ms(trade);
+      if (Number.isFinite(created) && created < cutoff) {
+        reached_cutoff = true;
+        break;
+      }
+      trades.push(trade);
+    }
+    if (reached_cutoff || !json?.nextPageCursor) break;
+    cursor = json.nextPageCursor;
+  }
+  return trades;
+}
+
+async function ms_read_trade_daily_limit_snapshot() {
+  if (typeof get_local_value !== "function") return null;
+  let snap = await get_local_value(ms_trade_daily_limit_snapshot_key);
+  if (!snap || typeof snap !== "object") return null;
+  let fetched_at = Number(snap.fetched_at) || 0;
+  if (
+    !fetched_at ||
+    Date.now() - fetched_at > ms_trade_daily_limit_snapshot_ttl_ms
+  ) {
+    return null;
+  }
+  let max = Math.max(1, Number(snap.max) || ms_trade_daily_limit_max);
+  let count = Math.min(max, Math.max(0, Number(snap.count) || 0));
+  let remaining = Math.max(
+    0,
+    Number.isFinite(Number(snap.remaining))
+      ? Number(snap.remaining)
+      : max - count,
+  );
+  return {
+    ok: true,
+    count,
+    remaining,
+    max,
+    at_limit: remaining <= 0 || !!snap.at_limit,
+    reset_at: snap.reset_at ?? null,
+    source: "snapshot",
+  };
+}
+
+async function ms_write_trade_daily_limit_snapshot(state) {
+  if (typeof set_local_value !== "function" || !state) return;
+  try {
+    await set_local_value(ms_trade_daily_limit_snapshot_key, {
+      count: state.count,
+      remaining: state.remaining,
+      max: state.max,
+      at_limit: state.at_limit,
+      reset_at: state.reset_at ?? null,
+      fetched_at: Date.now(),
+    });
+  } catch {}
+}
+
+async function ms_ask_roblox_tab_trade_daily_limit() {
+  if (!chrome?.tabs?.query || !chrome?.tabs?.sendMessage) return null;
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({ url: ["*://*.roblox.com/*"] });
+  } catch {
+    return null;
+  }
+  for (let tab of tabs) {
+    if (tab?.id == null) continue;
+    try {
+      let res = await chrome.tabs.sendMessage(tab.id, {
+        type: "nte_get_trade_daily_limit",
+      });
+      if (!res || res.ok === false) continue;
+      let max = Math.max(1, Number(res.max) || ms_trade_daily_limit_max);
+      let count = Math.min(max, Math.max(0, Number(res.count) || 0));
+      let remaining = Math.max(
+        0,
+        Number.isFinite(Number(res.remaining))
+          ? Number(res.remaining)
+          : max - count,
+      );
+      let state = {
+        ok: true,
+        count,
+        remaining,
+        max,
+        at_limit: remaining <= 0 || !!res.at_limit,
+        reset_at: res.reset_at ?? null,
+        source: "tab",
+      };
+      await ms_write_trade_daily_limit_snapshot(state);
+      return state;
+    } catch {}
+  }
+  return null;
+}
+
+async function ms_compute_trade_daily_limit() {
+  let now = Date.now();
+  let cutoff = now - ms_trade_daily_limit_window_ms;
+  let { counter, sent } = await ms_load_trade_daily_limit_records();
+  let excluded = new Set(Object.keys(counter || {}));
+  let created_by_id = new Map();
+  let outbound = await ms_fetch_outbound_trades_for_daily_limit(cutoff);
+  for (let trade of outbound) {
+    let id = ms_trade_daily_limit_trade_id(trade);
+    if (!id || excluded.has(id)) continue;
+    let created = ms_parse_trade_created_ms(trade);
+    if (!Number.isFinite(created) || created < cutoff) continue;
+    let existing = created_by_id.get(id);
+    if (!existing || created < existing) created_by_id.set(id, created);
+  }
+  for (let [id, ts] of Object.entries(sent || {})) {
+    let key = String(id || "").trim();
+    let created = Number(ts);
+    if (
+      !key ||
+      !Number.isFinite(created) ||
+      created < cutoff ||
+      excluded.has(key) ||
+      created_by_id.has(key)
+    )
+      continue;
+    created_by_id.set(key, created);
+  }
+  let timestamps = [...created_by_id.values()].sort((a, b) => a - b);
+  let count = Math.min(ms_trade_daily_limit_max, timestamps.length);
+  let remaining = Math.max(0, ms_trade_daily_limit_max - count);
+  let at_limit = remaining <= 0;
+  let reset_at =
+    at_limit && timestamps.length
+      ? timestamps[0] + ms_trade_daily_limit_window_ms
+      : null;
+  return {
+    ok: true,
+    count,
+    remaining,
+    max: ms_trade_daily_limit_max,
+    at_limit,
+    reset_at,
+    source: "api",
+  };
+}
+
+async function ms_get_trade_daily_limit() {
+  let from_tab = await ms_ask_roblox_tab_trade_daily_limit();
+  if (from_tab) return from_tab;
+
+  let snapshot = await ms_read_trade_daily_limit_snapshot();
+  if (snapshot) return snapshot;
+
+  try {
+    let computed = await ms_compute_trade_daily_limit();
+    await ms_write_trade_daily_limit_snapshot(computed);
+    return computed;
+  } catch (err) {
+    let stale = null;
+    if (typeof get_local_value === "function") {
+      let snap = await get_local_value(ms_trade_daily_limit_snapshot_key);
+      if (snap && typeof snap === "object") {
+        let max = Math.max(1, Number(snap.max) || ms_trade_daily_limit_max);
+        let count = Math.min(max, Math.max(0, Number(snap.count) || 0));
+        let remaining = Math.max(0, max - count);
+        stale = {
+          ok: true,
+          count,
+          remaining,
+          max,
+          at_limit: remaining <= 0,
+          reset_at: snap.reset_at ?? null,
+          source: "stale_snapshot",
+        };
+      }
+    }
+    if (stale) return stale;
+    return {
+      ok: false,
+      count: 0,
+      remaining: ms_trade_daily_limit_max,
+      max: ms_trade_daily_limit_max,
+      at_limit: false,
+      reset_at: null,
+      error: err?.message || String(err),
+    };
+  }
 }
 
 function ms_tradable_target_id(item) {
@@ -224,6 +505,11 @@ async function ms_fetch_tradable_items(user_id, options = {}) {
   let cursor = "";
   // Roblox often breaks tradableItems pagination at higher limits.
   let limit = "25";
+  let status_source = options.statusSource || "ms";
+  let report_status = options.reportStatus === true;
+  if (report_status && typeof nte_inventory_load_status === "function") {
+    nte_inventory_load_status(status_source, "Loading your items…");
+  }
   for (let page = 0; page < max_pages; page++) {
     if (ms_abort) break;
     let params = new URLSearchParams({
@@ -235,19 +521,34 @@ async function ms_fetch_tradable_items(user_id, options = {}) {
     if (cursor) params.set("cursor", cursor);
     let url = `https://trades.roblox.com/v2/users/${id}/tradableitems?${params.toString()}`;
     let res = null;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (ms_abort) break;
-      try {
-        res = await fetch(url, { credentials: "include" });
-      } catch {
-        res = null;
+    if (typeof nte_fetch_inventory_with_retries === "function") {
+      res = await nte_fetch_inventory_with_retries(
+        url,
+        { credentials: "include" },
+        { source: status_source, silent: !report_status },
+      );
+    } else {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (ms_abort) break;
+        try {
+          res = await fetch(url, { credentials: "include" });
+        } catch {
+          res = null;
+        }
+        if (res && res.status !== 429 && res.status < 500) break;
+        if (attempt < 2) await ms_sleep(350 * (attempt + 1));
       }
-      if (res && res.status !== 429 && res.status < 500) break;
-      if (attempt < 2) await ms_sleep(350 * (attempt + 1));
     }
     if (!res || ms_abort) break;
     if (res.status === 401 || res.status === 403) return items;
-    if (!res.ok) break;
+    if (!res.ok) {
+      if (res.status === 429 && !items.length) {
+        throw new Error(
+          "Rate limited (429). Wait a bit, then open the picker again.",
+        );
+      }
+      break;
+    }
     let data = await res.json().catch(() => null);
     if (!data) break;
     let page_items = Array.isArray(data.items)
@@ -415,14 +716,18 @@ function ms_clamp_max_owned_days(value) {
 }
 
 function ms_filter_owners_by_hours(owners, hours, self_id) {
-  let max_age = ms_clamp_hours(hours) * 3600;
+  let hours_n = ms_clamp_hours(hours);
   let now = Math.floor(Date.now() / 1000);
+  let max_age = hours_n * 3600;
   let out = [];
   for (let row of owners || []) {
     let user_id = Number(row?.user_id) || 0;
     if (!(user_id > 0) || user_id === self_id) continue;
     let last_online = ms_parse_last_online(row?.last_online);
-    if (last_online == null || now - last_online > max_age) continue;
+    // 0 hours = filter off (still skip self / invalid ids).
+    if (hours_n > 0) {
+      if (last_online == null || now - last_online > max_age) continue;
+    }
     out.push({
       user_id,
       last_online,
@@ -582,7 +887,10 @@ async function ms_inventory_for_picker() {
   let self_id = Number(me?.id) || 0;
   if (!(self_id > 0)) throw new Error("Sign in to Roblox first.");
 
-  let raw = await ms_fetch_tradable_items(self_id);
+  let raw = await ms_fetch_tradable_items(self_id, {
+    reportStatus: true,
+    statusSource: "ms",
+  });
   let item_data =
     typeof get_cached_item_data === "function" ? await get_cached_item_data() : null;
   let enriched = [];
@@ -1355,6 +1663,14 @@ async function ms_run(config) {
     let request_assets = ms_normalize_asset_ids(config?.request_slots);
     let hours = ms_clamp_hours(config?.online_hours);
     let max_trades = ms_clamp_max_trades(config?.max_trades);
+    let limit = await ms_get_trade_daily_limit();
+    let remaining = Math.max(0, Number(limit?.remaining) || 0);
+    if (remaining <= 0) {
+      throw new Error(
+        `Roblox 24h trade limit reached (0/${ms_trade_daily_limit_max} left).`,
+      );
+    }
+    if (max_trades > remaining) max_trades = remaining;
     let offer_robux = ms_clamp_robux(config?.offer_robux);
     let request_robux = ms_clamp_robux(config?.request_robux);
     let max_owned_days = ms_clamp_max_owned_days(config?.max_owned_days);
@@ -1502,6 +1818,13 @@ async function ms_run(config) {
 
       if (result.resp.ok) {
         ms_state.sent++;
+        let trade_id =
+          result.data?.id ?? result.data?.tradeId ?? result.data?.trade_id;
+        if (trade_id != null) {
+          try {
+            await ms_record_trade_daily_limit_send(trade_id);
+          } catch {}
+        }
         let name = await ms_fetch_username(recipient_id);
         await ms_record_recent_send({
           user_id: recipient_id,
@@ -1585,6 +1908,24 @@ function mass_send_handle_message(message, respond) {
   if (message.type === "ms_progress") {
     respond({ ...ms_state });
     return false;
+  }
+  if (message.type === "ms_trade_limit") {
+    (async () => {
+      try {
+        respond(await ms_get_trade_daily_limit());
+      } catch (err) {
+        respond({
+          ok: false,
+          count: 0,
+          remaining: ms_trade_daily_limit_max,
+          max: ms_trade_daily_limit_max,
+          at_limit: false,
+          reset_at: null,
+          error: err?.message || String(err),
+        });
+      }
+    })();
+    return true;
   }
   if (message.type === "ms_stop") {
     ms_stop_now();
