@@ -348,18 +348,49 @@
       ] || null
     );
   }
+  function ownership_instance_id(item) {
+    let ciiid = String(item?.collectibleItemInstanceId || "").trim();
+    if (ciiid) return ciiid;
+    let uaid = Number(item?.userAssetId);
+    if (Number.isFinite(uaid) && uaid > 0) return String(uaid);
+    return "";
+  }
+
+  function stamp_ownership_badge(card, item) {
+    if (document.documentElement.dataset.nteOwnershipLinks === "0") return;
+    let instance_id = ownership_instance_id(item);
+    if (!instance_id || !(card instanceof Element)) return;
+    let badge =
+      card.querySelector?.(
+        ".limited-icon-container:not(.infocardbutton):not(.tooltip-pastnames):not(.hide-button)",
+      ) ||
+      card.querySelector?.(".icon-shop-limited")?.closest?.(
+        ".limited-icon-container, .limited-hover-target",
+      ) ||
+      card.querySelector?.(".icon-shop-limited") ||
+      null;
+    if (!(badge instanceof Element)) return;
+    // Stamp the badge only — never the React card root (avoids remount freezes).
+    if (badge.getAttribute("data-nte-uaid-instance-id") !== instance_id) {
+      badge.setAttribute("data-nte-uaid-instance-id", instance_id);
+    }
+    if (badge.getAttribute("data-nte-uaid-link") !== "1") {
+      badge.setAttribute("data-nte-uaid-link", "1");
+    }
+    badge.style.cursor = "pointer";
+  }
+
   function stamp_inventory_item_ids(panel) {
     let root = panel || document;
     for (let card of root.querySelectorAll(
-      ".trade-inventory-panel .item-card-container:not([data-collectibleiteminstanceid]), .inventory-panel-holder .item-card-container:not([data-collectibleiteminstanceid])",
+      ".trade-inventory-panel .item-card-container, .inventory-panel-holder .item-card-container",
     )) {
-      let item = read_react_trade_item(card);
+      let item = card.__nte_react_item || read_react_trade_item(card);
       if (!item?.collectibleItemInstanceId) continue;
-      card.setAttribute(
-        "data-collectibleiteminstanceid",
-        item.collectibleItemInstanceId,
-      );
+      // Keep instance id on a JS property only on the card. Writing data-*
+      // attrs onto React-owned cards caused remount/observer feedback freezes.
       card.__nte_react_item = item;
+      stamp_ownership_badge(card, item);
     }
   }
   function find_react_inventory_card(side_index, collectible_item_instance_id) {
@@ -368,17 +399,13 @@
     stamp_inventory_item_ids(panel);
     let wanted = normalize_instance_id(collectible_item_instance_id);
     for (let card of panel.querySelectorAll(".item-card-container")) {
+      let item = card.__nte_react_item || read_react_trade_item(card);
       let attr = normalize_instance_id(
-        card.getAttribute("data-collectibleiteminstanceid"),
+        card.getAttribute("data-collectibleiteminstanceid") ||
+          item?.collectibleItemInstanceId,
       );
-      if (attr === wanted) return card;
-      let item = read_react_trade_item(card);
-      if (normalize_instance_id(item?.collectibleItemInstanceId) === wanted) {
-        card.setAttribute(
-          "data-collectibleiteminstanceid",
-          item.collectibleItemInstanceId,
-        );
-        card.__nte_react_item = item;
+      if (attr === wanted) {
+        item && (card.__nte_react_item = item);
         return card;
       }
     }
@@ -552,30 +579,130 @@
   }
   function stamp_trade_detail_item_ids() {
     for (let card of document.querySelectorAll(
-      ".trade-list-detail-offer .item-card-container:not([data-collectibleiteminstanceid]), .trade-request-window-offer .item-card-container:not([data-collectibleiteminstanceid]), .trade-request-item:not([data-collectibleiteminstanceid])",
+      ".trade-list-detail-offer .item-card-container, .trade-request-window-offer .item-card-container, .trade-request-item",
     )) {
-      let item = read_react_trade_item(card);
+      let item = card.__nte_react_item || read_react_trade_item(card);
       if (!item?.collectibleItemInstanceId) continue;
-      card.setAttribute(
-        "data-collectibleiteminstanceid",
-        item.collectibleItemInstanceId,
-      );
       card.__nte_react_item = item;
+      stamp_ownership_badge(card, item);
     }
     stamp_inventory_item_ids();
   }
+
+  function ownership_link_url(instance_id) {
+    let raw = String(instance_id || "").trim();
+    if (!raw) return "";
+    let kind = /^\d+$/.test(raw) ? "uaid" : "ciiid";
+    let path = kind + "/" + encodeURIComponent(raw);
+    let provider = String(
+      document.documentElement.dataset.nteOwnershipProvider || "rolimons",
+    ).toLowerCase();
+    if (provider === "routility") return "https://routility.io/" + path;
+    return "https://www.rolimons.com/" + path;
+  }
+
+  function resolve_ownership_badge_hit(event) {
+    if (document.documentElement.dataset.nteOwnershipLinks === "0") return null;
+    let raw = event.target?.closest?.(
+      ".limited-icon-container, .limited-hover-target, .icon-shop-limited, [data-nte-uaid-link='1']",
+    );
+    if (!(raw instanceof Element)) return null;
+    if (
+      raw.classList.contains("hide-button") ||
+      raw.classList.contains("tooltip-pastnames") ||
+      raw.classList.contains("infocardbutton")
+    ) {
+      return null;
+    }
+    if (
+      !raw.closest?.(
+        ".trade-list-detail-offer, .trades-list-detail, .trade-inventory-panel, .trade-request-window, .trade-request-item, .inventory-panel-holder",
+      )
+    ) {
+      return null;
+    }
+    let badge = raw.classList.contains("icon-shop-limited")
+      ? raw.closest(".limited-icon-container, .limited-hover-target") || raw
+      : raw;
+    let card =
+      badge.closest(".item-card-container, .trade-request-item") || null;
+    let instance_id = String(
+      badge.getAttribute("data-nte-uaid-instance-id") || "",
+    ).trim();
+    if (!instance_id && card) {
+      let item = card.__nte_react_item || read_react_trade_item(card);
+      if (item) {
+        stamp_ownership_badge(card, item);
+        instance_id = ownership_instance_id(item);
+      }
+    }
+    let href = ownership_link_url(instance_id);
+    if (!href) return null;
+    return { badge, card, instance_id, href };
+  }
+
+  function bind_ownership_badge_clicks() {
+    if (document.documentElement.dataset.nteOwnershipClickBound === "1") return;
+    document.documentElement.dataset.nteOwnershipClickBound = "1";
+    // Must run in page world: content-script stopPropagation does not block
+    // React inventory onItemClick (isolated worlds).
+    let stop_select = (event) => {
+      if (!resolve_ownership_badge_hit(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+    };
+    let open_link = (event) => {
+      let hit = resolve_ownership_badge_hit(event);
+      if (!hit) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      window.open(hit.href, "_blank", "noopener,noreferrer");
+    };
+    document.addEventListener("pointerdown", stop_select, true);
+    document.addEventListener("mousedown", stop_select, true);
+    document.addEventListener("pointerup", stop_select, true);
+    document.addEventListener("mouseup", stop_select, true);
+    document.addEventListener("click", open_link, true);
+  }
+  bind_ownership_badge_clicks();
   let trade_detail_stamp_queued = false;
   function watch_trade_detail_items() {
-    if (!document.body) return;
+    let root =
+      document.querySelector(".trades-container") ||
+      document.querySelector(".trades-list-detail") ||
+      document.body;
+    if (!root) return;
     stamp_trade_detail_item_ids();
-    new MutationObserver(() => {
+    new MutationObserver((mutations) => {
       if (trade_detail_stamp_queued) return;
+      // Ignore our own overlay/value node churn.
+      let meaningful = false;
+      for (let mutation of mutations) {
+        for (let node of mutation.addedNodes || []) {
+          if (!(node instanceof Element)) continue;
+          if (
+            node.matches?.(
+              ".item-card-container,.trade-request-item,.trade-list-detail-offer,.trades-list-detail,.inventory-item,.limited-icon-container",
+            ) ||
+            node.querySelector?.(
+              ".item-card-container,.trade-request-item,.inventory-item,.limited-icon-container",
+            )
+          ) {
+            meaningful = true;
+            break;
+          }
+        }
+        if (meaningful) break;
+      }
+      if (!meaningful) return;
       trade_detail_stamp_queued = true;
       requestAnimationFrame(() => {
         trade_detail_stamp_queued = false;
         stamp_trade_detail_item_ids();
       });
-    }).observe(document.body, { childList: true, subtree: true });
+    }).observe(root, { childList: true, subtree: true });
   }
   if (document.body) watch_trade_detail_items();
   else
@@ -584,8 +711,10 @@
     });
 
   function read_trade_detail_item_from_card(card) {
+    let react_item = card.__nte_react_item || read_react_trade_item(card);
     let wanted_instance_id = normalize_instance_id(
-      card?.getAttribute?.("data-collectibleiteminstanceid"),
+      card?.getAttribute?.("data-collectibleiteminstanceid") ||
+        react_item?.collectibleItemInstanceId,
     );
     if (!wanted_instance_id) return null;
 
@@ -594,15 +723,18 @@
       if (hit) return clone_trade_item_value(hit);
     }
 
-    let react_item = card.__nte_react_item || read_react_trade_item(card);
     return react_item ? clone_trade_item_value(react_item) : null;
   }
   function get_trade_detail_items_snapshot() {
     let items = [];
     for (let offer of document.querySelectorAll(".trade-list-detail-offer")) {
       let header = offer.querySelector(".trade-list-detail-offer-header")?.textContent?.trim() || "";
-      for (let card of offer.querySelectorAll(".item-card-container[data-collectibleiteminstanceid]")) {
-        let instance_id = normalize_instance_id(card.getAttribute("data-collectibleiteminstanceid"));
+      for (let card of offer.querySelectorAll(".item-card-container")) {
+        let react_item = card.__nte_react_item || read_react_trade_item(card);
+        let instance_id = normalize_instance_id(
+          card.getAttribute("data-collectibleiteminstanceid") ||
+            react_item?.collectibleItemInstanceId,
+        );
         if (!instance_id) continue;
         let item = read_trade_detail_item_from_card(card);
         items.push({
@@ -1452,7 +1584,23 @@
     if (!scope) {
       let reload = find_react_trade_list_reloader();
       if (!reload) throw Error("Trade list controller not found");
-      reload(get_react_trade_tab());
+      try {
+        reload(get_react_trade_tab());
+      } catch (err) {
+        // React can throw NotFoundError(removeChild) if extension nodes were
+        // relocated under trade rows; fall back to a same-tab click.
+        let link =
+          document.querySelector(
+            ".trades-header .trade-list-dropdown [data-state='open'] ~ *, .trades-list-dropdown button[role='combobox'], .trade-list-dropdown button[role='combobox']",
+          ) || null;
+        let tab = get_react_trade_tab();
+        let option = [...document.querySelectorAll("[role='option'], [role='menuitem']")].find(
+          (el) => new RegExp(`^\\s*${tab}\\s*$`, "i").test(el.textContent || ""),
+        );
+        if (option) option.click();
+        else if (link) link.click();
+        else throw err;
+      }
       return { reloaded: true };
     }
 

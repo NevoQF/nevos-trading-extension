@@ -1,4 +1,11 @@
 (() => {
+  function nte_extension_alive() {
+    try {
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch {
+      return false;
+    }
+  }
   function nte_send_message(msg, callback) {
     let done = false;
     let finish = function (value) {
@@ -6,6 +13,7 @@
       done = true;
       callback(value);
     };
+    if (!nte_extension_alive()) return finish(undefined);
     try {
       let result = chrome.runtime.sendMessage(msg, function (response) {
         finish(response);
@@ -804,7 +812,6 @@
       if (cached !== undefined) return cached;
       if (username_id_pending[key]) return username_id_pending[key];
       return (username_id_pending[key] = (async () => {
-        set_username_id_cache(key, null, username_id_pending_ttl_ms);
         try {
           let t = await fetch("https://users.roblox.com/v1/usernames/users", {
             method: "POST",
@@ -1018,6 +1025,19 @@
       }
       function f(e) {
         if (!e) return null;
+        if (e.classList?.contains("trade-request-item")) return e;
+        // Keep overlays outside nested React <a.item-card-link> so clicks work.
+        if (e.classList?.contains("item-card-container")) {
+          let host = e.querySelector(":scope > .nte-thumb-overlay-host");
+          if (!host) {
+            host = document.createElement("div");
+            host.className = "nte-thumb-overlay-host";
+            host.setAttribute("data-nte-overlay-host", "1");
+            e.insertBefore(host, e.firstChild);
+          }
+          sync_trade_card_overlay_host(e, host);
+          return host;
+        }
         return (
           e.querySelector(".item-card-thumb-container") ||
           e.querySelector(".item-card-link") ||
@@ -1072,6 +1092,9 @@
           (r.style.verticalAlign = ""),
           (r.style.transition = "filter 0.2s ease"),
           (e.style.position = "absolute"),
+          (e.style.inset = "auto"),
+          (e.style.top = "auto"),
+          (e.style.left = "auto"),
           (e.style.bottom = "6px"),
           (e.style.right = "6px"),
           (e.style.zIndex = "5"),
@@ -1096,8 +1119,16 @@
           e.addEventListener("mouseleave", () => {
             (e.style.transform = "scale(1)"), (r.style.filter = "");
           }),
-          e.addEventListener("click", (e) => e.stopPropagation()),
-          e.addEventListener("mousedown", (e) => e.stopPropagation()),
+          e.addEventListener(
+            "pointerdown",
+            (ev) => ev.stopPropagation(),
+            true,
+          ),
+          e.addEventListener("click", (ev) => ev.stopPropagation(), true),
+          e.addEventListener("mousedown", (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+          }),
           t.appendChild(e);
       }
       function h() {
@@ -1121,16 +1152,22 @@
       }
       async function c() {
         for (let text_div of document.querySelectorAll(
-          ".item-card-price:not(.hasAssetLink), .item-value:not(.hasAssetLink)",
+          ".item-card-price, .item-value",
         )) {
+          let card = text_div.closest(
+            ".item-card-container, .trade-request-item",
+          );
+          // Remount if hasAssetLink was left behind after the link was removed.
+          if (card?.querySelector?.("a.nte-rolimons-thumb-link")) {
+            text_div.classList.add("hasAssetLink");
+            continue;
+          }
+          text_div.classList.remove("hasAssetLink");
           for (let old_link of text_div.querySelectorAll(
             "a.nte-rolimons-thumb-link",
           ))
             old_link.remove();
-          let card = text_div.closest(
-              ".item-card-container, .trade-request-item",
-            ),
-            item_id_raw = a.getItemIdFromElement(card),
+          let item_id_raw = a.getItemIdFromElement(card),
             item_name = a.getItemNameFromElement(card),
             card_bundle = is_roblox_bundle_card(card),
             is_trade_offer_item = !!card?.closest(
@@ -1188,28 +1225,34 @@
             link_el.dataset.nteNameLink = "1";
             (link_el.style.display = "inline-flex"),
               (link_el.style.alignItems = "center"),
+              (link_el.style.justifyContent = "center"),
+              (link_el.style.flex = "0 0 16px"),
+              (link_el.style.width = "16px"),
+              (link_el.style.height = "16px"),
               (link_el.style.verticalAlign = "middle"),
-              (link_el.style.marginLeft = "6px"),
+              (link_el.style.marginLeft = "0"),
               (link_el.style.paddingLeft = "0"),
-              (link_el.style.transform = "translateY(1px)"),
+              (link_el.style.transform = "none"),
               (link_el.style.transition =
                 "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)"),
-              (icon_span.style.display = "inline-block"),
-              (icon_span.style.verticalAlign = "middle"),
+              (icon_span.className = "nte-offer-name-link-icon"),
+              (icon_span.style.display = "block"),
+              (icon_span.style.backgroundPosition = "center"),
+              (icon_span.style.backgroundRepeat = "no-repeat"),
+              (icon_span.style.backgroundSize = "16px 16px"),
               (icon_span.style.width = "16px"),
               (icon_span.style.height = "16px"),
               (icon_span.style.pointerEvents = "auto"),
               (icon_span.style.transition = "filter 0.2s ease"),
               link_el.addEventListener("mouseenter", () => {
-                link_el.style.transform = "translateY(1px) scale(1.1)";
+                link_el.style.transform = "scale(1.1)";
                 icon_span.style.filter = "brightness(1.18)";
               }),
               link_el.addEventListener("mouseleave", () => {
-                link_el.style.transform = "translateY(1px)";
+                link_el.style.transform = "none";
                 icon_span.style.filter = "";
               }),
-              name_anchor.insertAdjacentElement("afterend", link_el),
-              (name_el.style.overflow = "visible");
+              name_anchor.insertAdjacentElement("afterend", link_el);
           } else if (thumb_wrap && !is_trade_offer_item) {
             p(link_el, thumb_wrap);
           } else if (text_div) {
@@ -1387,11 +1430,42 @@
           i(),
           e.appendChild(r);
       }
+      function find_trade_header_paired_name() {
+        return (
+          document.querySelector(
+            ".trade-request-window .trades-header-nowrap .paired-name",
+          ) ||
+          document.querySelector(".trade-request-window h1 .paired-name") ||
+          document.querySelector(".trade-request-window .paired-name") ||
+          [...document.getElementsByClassName("trades-header-nowrap")]
+            .at(-1)
+            ?.querySelector(".paired-name") ||
+          null
+        );
+      }
+      function partner_id_from_href(href) {
+        return parseInt((String(href || "").match(/\/users\/(\d+)/) || [])[1], 10) || null;
+      }
+      function ensure_header_roli_style() {
+        if (document.getElementById("nte-header-roli-style")) return;
+        let s = document.createElement("style");
+        s.id = "nte-header-roli-style";
+        s.textContent = `
+.nte-header-with-roli{display:flex!important;align-items:center!important;min-width:0!important;max-width:100%!important;flex-wrap:nowrap!important}
+.nte-header-with-roli>.paired-name{min-width:0!important;flex:0 1 auto!important;max-width:calc(100% - 32px)!important;width:auto!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+.nte-header-with-roli>.nte-profile-rolimons-link{flex:0 0 28px!important;width:28px!important;height:28px!important;margin-left:4px!important;padding:0!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;transform:none!important;position:relative!important}
+.nte-header-with-roli>.nte-profile-rolimons-link .user-profile-link{position:static!important;width:28px!important;height:28px!important}
+`;
+        (document.head || document.documentElement).appendChild(s);
+      }
       async function o() {
-        await n.waitForElm(".trades-header-nowrap");
-        let t = [...document.getElementsByClassName("trades-header-nowrap")]
-          .at(-1)
-          ?.querySelector(".paired-name");
+        let t = find_trade_header_paired_name();
+        if (!t) {
+          await n.waitForElm(
+            ".trade-request-window .paired-name, .trades-header-nowrap .paired-name",
+          );
+          t = find_trade_header_paired_name();
+        }
         if (!t) return;
         let container = t.parentElement || t;
         let e =
@@ -1400,14 +1474,13 @@
                 [])[1],
               10,
             ) ||
-            parseInt(
-              (String(t.getAttribute("href") || t.href || "").match(
-                /\/users\/(\d+)\//,
-              ) || [])[1],
-              10,
+            partner_id_from_href(t.getAttribute("href") || t.href) ||
+            partner_id_from_href(
+              t.closest("a[href*='/users/']")?.getAttribute("href"),
             ) ||
             null,
           existing =
+            container.querySelector(":scope > .nte-profile-rolimons-link") ||
             container.querySelector(".user-profile-link")?.parentElement,
           username = "";
         if (!e) {
@@ -1417,28 +1490,25 @@
             t.children?.[2]?.innerText?.trim() ||
             "";
           if (!username) return;
-          if (existing?.getAttribute("data-nte-profile-name") === username)
-            return;
           e = await n.fetchIDFromName(username);
         }
         if (!e) return;
         let href = `https://www.rolimons.com/player/${e}`;
-        if (existing?.href === href || existing?.getAttribute("href") === href)
+        if (existing?.href === href || existing?.getAttribute("href") === href) {
+          ensure_header_roli_style();
+          container.classList.add("nte-header-with-roli");
           return;
-        let r = t.innerText.length;
-        container.style.position = "relative";
+        }
+        ensure_header_roli_style();
+        container.classList.add("nte-header-with-roli");
         let a = document.createElement("a");
         username && a.setAttribute("data-nte-profile-name", username),
           (a.className = "nte-profile-rolimons-link"),
           (a.href = href),
           (a.target = "_blank"),
-          (a.style.display = "inline-block"),
-          r > 35 &&
-            ((a.style.display = "block"), (a.style.marginBottom = "5px")),
-          (a.style.paddingLeft = "4px"),
+          (a.style.display = "inline-flex"),
           (a.style.width = "28px"),
-          (a.style.height = "28px"),
-          (a.style.transform = "translateY(3px)");
+          (a.style.height = "28px");
         let o = document.createElement("span"),
           l =
             "dark" === n.getColorMode()
@@ -1447,8 +1517,6 @@
         (o.style.backgroundImage = `url(${JSON.stringify(n.getURL(`assets/${l}`))})`),
           (o.className = "icon icon-link user-profile-link"),
           (o.style.display = "inline-block"),
-          (o.style.position = "absolute"),
-          (o.style.verticalAlign = "bottom"),
           (o.style.backgroundSize = "cover"),
           (o.style.width = "28px"),
           (o.style.height = "28px"),
@@ -1466,14 +1534,23 @@
           t.insertAdjacentElement("afterend", a);
       }
       function i() {
-        document.querySelector(".user-profile-link")?.parentElement.remove();
+        document
+          .querySelector(
+            ".trade-request-window .nte-profile-rolimons-link, .trades-header-nowrap .nte-profile-rolimons-link",
+          )
+          ?.remove();
       }
       var l = async function () {
         if (!(await n.getOption("Add User Profile Links"))) return i();
-        ("details" === n.getPageType() ||
-          "sendOrCounter" === n.getPageType()) &&
-          o(),
-          "userProfile" === n.getPageType() && a();
+        let pt = n.getPageType();
+        if (
+          "details" === pt ||
+          "sendOrCounter" === pt ||
+          document.querySelector(".trade-request-window") ||
+          /\/trades\/\d+\/counter/i.test(location.pathname)
+        )
+          o();
+        "userProfile" === pt && a();
       };
     }),
     d("fgypU", function (e, t) {
@@ -1541,17 +1618,35 @@
             (e.style.position = "relative"), i(e);
           }
           let c = r.getElementsByClassName("flagBox")[0];
+          f = c.parentElement;
+          let g = null != l ? n.getRolimonsData().items[l] : null,
+            want_rare = !!(e && g && 1 === g[9]),
+            want_projected = !!(t && g && 1 === g[7]),
+            has_rare = !!c.querySelector(".rare-flag"),
+            has_projected = !!c.querySelector(".projected-flag"),
+            projected_el = c.querySelector(".projected-flag"),
+            tip_ok =
+              !want_projected ||
+              !!projected_el?.classList?.contains("nte-flag-tip");
+          // Skip remount when already correct — Bootstrap tooltips used to
+          // inject .tooltip nodes on hover, which retriggered refresh and
+          // rebuild (icon flicker loop).
+          if (
+            has_rare === want_rare &&
+            has_projected === want_projected &&
+            tip_ok
+          ) {
+            s(f, c);
+            return;
+          }
           n.destroyTooltips(c);
           c.replaceChildren();
-          f = c.parentElement;
-          let g = null != l ? n.getRolimonsData().items[l] : null;
-          if (g)
-            for (let hlist of (e && 1 === g[9] && d(c, "rare"),
-            t && 1 === g[7] && d(c, "projected"),
-            document.getElementsByClassName("hlist")))
-              (hlist.style.getPropertyValue("overflow") === "visible" &&
-                hlist.style.getPropertyPriority("overflow") === "important") ||
-                hlist.style.setProperty("overflow", "visible", "important");
+          if (want_rare) d(c, "rare");
+          if (want_projected) d(c, "projected");
+          for (let hlist of document.getElementsByClassName("hlist"))
+            (hlist.style.getPropertyValue("overflow") === "visible" &&
+              hlist.style.getPropertyPriority("overflow") === "important") ||
+              hlist.style.setProperty("overflow", "visible", "important");
           s(f, c);
         }
         if ("details" === n.getPageType()) {
@@ -1582,19 +1677,36 @@
         rare: n.getURL("assets/rare.png"),
         projected: n.getURL("assets/projected.png"),
       };
+      function ensure_projected_flag_tip_styles() {
+        if (document.getElementById("nte-projected-flag-tip-style")) return;
+        let style = document.createElement("style");
+        style.id = "nte-projected-flag-tip-style";
+        style.textContent = `
+          .projected-flag.nte-flag-tip{position:relative;pointer-events:auto;cursor:help}
+          .projected-flag.nte-flag-tip .nte-flag-tip-text{
+            position:absolute;bottom:calc(100% + 4px);left:50%;transform:translateX(-50%);
+            width:max-content;max-width:180px;padding:5px 7px;border-radius:6px;
+            font-size:11px;font-weight:600;line-height:1.3;text-align:center;
+            color:#f3f4f6;background:#1f2937;border:1px solid rgba(255,255,255,.14);
+            box-shadow:0 6px 18px rgba(0,0,0,.35);opacity:0;visibility:hidden;
+            pointer-events:none;z-index:50;white-space:nowrap
+          }
+          .projected-flag.nte-flag-tip:hover .nte-flag-tip-text{opacity:1;visibility:visible}
+        `;
+        document.head.appendChild(style);
+      }
       async function i(e) {
         var t = document.createElement("div");
-        let r =
-          void 0 === document.getElementsByClassName("ropro-icon")[0]
-            ? "left"
-            : "right";
+        // STRICT corners: sales top-left, projected/rare flags top-right.
+        let r = "right";
         (t.style.display = "flex"),
           (t.style.alignItems = "center"),
           (t.style.gap = "2px"),
           (t.style.position = "absolute"),
           (t.style.pointerEvents = "none"),
           (t.style.top = "2px"),
-          "left" === r ? (t.style.left = "2px") : (t.style.right = "2px"),
+          (t.style.left = "auto"),
+          (t.style.right = "2px"),
           (t.style.zIndex = "8"),
           (t.dataset.nteSide = r),
           (t.className = "flagBox"),
@@ -1611,38 +1723,41 @@
           (a.style.width = "27px"),
           (a.style.display = "block"),
           (a.style.padding = "0px"),
-          r.appendChild(a),
-          e.appendChild(r);
+          r.appendChild(a);
+        if ("projected" === t) {
+          // CSS tip only — Bootstrap tooltips mutate DOM and flicker the icon.
+          ensure_projected_flag_tip_styles();
+          r.classList.add("nte-flag-tip");
+          r.style.pointerEvents = "auto";
+          r.style.cursor = "help";
+          let tip = document.createElement("span");
+          tip.className = "nte-flag-tip-text";
+          tip.textContent = "This item is projected.";
+          tip.setAttribute("role", "tooltip");
+          r.appendChild(tip);
+        }
+        e.appendChild(r);
       }
       var c = a;
     });
   var c = s("eFyFE"),
     u = s("92Pqq");
   function clear_uaid_link_targets() {
+    // Legacy overlay button — never remount; strip leftovers.
     for (let e of document.querySelectorAll(".nte-uaid-thumb-link")) e.remove();
-    for (let e of document.querySelectorAll('[data-nte-uaid-link="1"]'))
-      if (!e.classList?.contains("nte-uaid-thumb-link"))
-        (e.onclick = null),
-          (e.onmousedown = null),
-          (e.style.cursor = "auto"),
-          e.removeAttribute("data-toggle"),
-          e.removeAttribute("data-original-title"),
-          e.removeAttribute("title"),
-          e.removeAttribute("data-nte-uaid-link"),
-          e.removeAttribute("data-nte-uaid-instance-id");
-  }
-  function get_uaid_link_host(e, t = null) {
-    if (!(e instanceof Element)) return null;
-    return (
-      t?.closest?.(
-        ".item-card-thumb-container,.item-card-link,.thumbnail-2d-container,thumbnail-2d,.trade-request-item",
-      ) ||
-      e.querySelector(".item-card-thumb-container") ||
-      e.querySelector(".item-card-link") ||
-      e.querySelector(".thumbnail-2d-container") ||
-      e.querySelector("thumbnail-2d") ||
-      e
-    );
+    for (let e of document.querySelectorAll('[data-nte-uaid-link="1"]')) {
+      c.destroyTooltips(e);
+      e.style.removeProperty("cursor");
+      e.removeAttribute("data-nte-uaid-link");
+      e.removeAttribute("data-nte-uaid-instance-id");
+      e.removeAttribute("data-nte-ownership-bound");
+      e.removeAttribute("aria-label");
+      e.removeAttribute("role");
+      if ("0" === e.getAttribute("tabindex")) e.removeAttribute("tabindex");
+      e.removeAttribute("data-toggle");
+      e.removeAttribute("data-original-title");
+      e.removeAttribute("title");
+    }
   }
   const ownership_link_provider_key = "ownership_link_provider";
   let ownership_link_provider_cache = "rolimons";
@@ -1652,10 +1767,13 @@
       : "rolimons";
   }
   function ownership_link_url(instance_id) {
-    let id = encodeURIComponent(String(instance_id));
+    let raw = String(instance_id || "").trim();
+    if (!raw) return "";
+    let kind = /^\d+$/.test(raw) ? "uaid" : "ciiid";
+    let path = `${kind}/${encodeURIComponent(raw)}`;
     return ownership_link_provider_cache === "routility"
-      ? `https://routility.io/ciiid/${id}`
-      : `https://www.rolimons.com/ciiid/${id}`;
+      ? `https://routility.io/${path}`
+      : `https://www.rolimons.com/${path}`;
   }
   function ownership_link_label() {
     return "Open this copy's ownership page";
@@ -1666,69 +1784,165 @@
     );
     return ownership_link_provider_cache;
   }
-  function sync_uaid_link_overlay(e, t, r) {
-    if (!(e instanceof Element) || !(t instanceof Element) || !r) return null;
-    let n =
-      [...(e.children || [])].find((e) =>
-        e.classList?.contains("nte-uaid-thumb-link"),
-      ) || null;
-    n instanceof HTMLAnchorElement ||
-      ((n = document.createElement("a")),
-      (n.className = "nte-uaid-thumb-link"),
-      (n.target = "_blank"),
-      (n.rel = "noopener noreferrer"),
-      (n.style.position = "absolute"),
-      (n.style.display = "block"),
-      (n.style.background = "transparent"),
-      (n.style.border = "none"),
-      (n.style.boxShadow = "none"),
-      (n.style.padding = "0"),
-      (n.style.margin = "0"),
-      (n.style.borderRadius = "999px"),
-      (n.style.cursor = "pointer"),
-      (n.style.pointerEvents = "auto"),
-      (n.style.textDecoration = "none"),
-      (n.style.outline = "none"),
-      (n.style.appearance = "none"),
-      (n.style.webkitAppearance = "none"),
-      (n.style.zIndex = "10"),
-      (n.tabIndex = -1),
-      n.addEventListener("mousedown", (e) => {
-        e.stopPropagation();
-      }),
-      n.addEventListener("click", (e) => {
-        e.stopPropagation();
-      }),
-      e.appendChild(n));
-    "static" === getComputedStyle(e).position &&
-      (e.style.position = "relative");
-    let a = e.getBoundingClientRect(),
-      o = t.getBoundingClientRect(),
-      i = Math.max(Math.round(o.width || t.offsetWidth || 0), 16),
-      l = Math.max(Math.round(o.height || t.offsetHeight || 0), 16),
-      d = Math.round(o.left - a.left),
-      s = Math.round(o.top - a.top);
-    let label = ownership_link_label();
+  function parse_positive_uaid(value) {
+    let n = parseInt(value ?? 0, 10);
+    return Number.isFinite(n) && n > 0 ? String(n) : "";
+  }
+  function resolve_ownership_id_from_selected_trade(card) {
+    if (!(card instanceof Element)) return null;
+    let selected = document.querySelector(".trade-row-list .trade-row.selected");
+    let trade_id =
+      (typeof get_selected_trade_id_sync === "function" &&
+        get_selected_trade_id_sync(selected)) ||
+      "";
+    let trade =
+      (trade_id &&
+        (typeof get_trade_row_raw_cache_entry === "function"
+          ? get_trade_row_raw_cache_entry(trade_id)
+          : null)) ||
+      (trade_id && row_trade_raw_cache?.[String(trade_id)]) ||
+      null;
+    if (!trade || "object" != typeof trade) return null;
+    let want_name = (
+      card.querySelector(".item-card-name, .item-name, .text-overflow")
+        ?.textContent || ""
+    )
+      .trim()
+      .toLowerCase();
+    let want_asset =
+      card
+        .querySelector("thumbnail-2d, .thumbnail-2d-container")
+        ?.getAttribute("thumbnail-target-id") ||
+      card.querySelector('a[href*="/catalog/"], a[href*="/bundles/"]')?.href?.match(
+        /\/(?:catalog|bundles)\/(\d+)/,
+      )?.[1] ||
+      "";
+    let items = [];
+    if (Array.isArray(trade.offers)) {
+      for (let offer of trade.offers) {
+        if (Array.isArray(offer?.userAssets)) items.push(...offer.userAssets);
+        if (Array.isArray(offer?.items)) items.push(...offer.items);
+      }
+    }
+    for (let side of [trade.participantAOffer, trade.participantBOffer]) {
+      if (Array.isArray(side?.items)) items.push(...side.items);
+      if (Array.isArray(side?.userAssets)) items.push(...side.userAssets);
+    }
+    for (let item of items) {
+      let ciiid =
+        item?.collectibleItemInstanceId ||
+        item?.collectibleItemInstance?.collectibleItemInstanceId ||
+        "";
+      let uaid = parse_positive_uaid(
+        item?.userAssetId || item?.userAsset?.userAssetId || item?.id,
+      );
+      let asset = String(
+        item?.assetId ||
+          item?.itemTarget?.targetId ||
+          item?.targetId ||
+          item?.id ||
+          "",
+      );
+      let name = String(item?.name || item?.itemName || "")
+        .trim()
+        .toLowerCase();
+      if (want_asset && asset && want_asset === asset)
+        return uaid || ciiid || null;
+      if (want_name && name && want_name === name) return uaid || ciiid || null;
+    }
+    return null;
+  }
+  function read_card_react_trade_item(card) {
+    if (!(card instanceof Element)) return null;
+    if (card.__nte_react_item?.collectibleItemInstanceId)
+      return card.__nte_react_item;
+    try {
+      let key = Object.keys(card).find((k) => k.startsWith("__reactFiber$"));
+      let fiber = key ? card[key] : null;
+      for (let i = 0; i < 12 && fiber; i++) {
+        let item = fiber.memoizedProps?.item;
+        if (item?.collectibleItemInstanceId) {
+          card.__nte_react_item = item;
+          return item;
+        }
+        fiber = fiber.return;
+      }
+    } catch {}
+    return null;
+  }
+  function get_ownership_instance_id(card) {
+    if (!(card instanceof Element)) return null;
+    let react = read_card_react_trade_item(card) || card.__nte_react_item || null;
+    let cached =
+      "function" == typeof get_cached_search_item_from_el
+        ? get_cached_search_item_from_el(card)
+        : null;
+    let ciiid =
+      card.getAttribute("data-collectibleiteminstanceid") ||
+      react?.collectibleItemInstanceId ||
+      find_collectible_item_instance_id(card) ||
+      "";
+    if (ciiid) return String(ciiid);
+    let uaid =
+      parse_positive_uaid(react?.userAssetId) ||
+      parse_positive_uaid(react?.userAsset?.userAssetId) ||
+      parse_positive_uaid(react?.userAsset?.id) ||
+      parse_positive_uaid(card.getAttribute("data-userassetid")) ||
+      parse_positive_uaid(cached?.userAssetId) ||
+      parse_positive_uaid(cached?.userAsset?.userAssetId);
+    if (uaid) return uaid;
+    return resolve_ownership_id_from_selected_trade(card) || null;
+  }
+
+  function sync_ownership_bridge_flags() {
+    let root = document.documentElement;
+    root.dataset.nteOwnershipProvider = ownership_link_provider_cache;
+    root.dataset.nteOwnershipLinks = "1";
+  }
+  function open_ownership_link(instance_id, event) {
+    let href = ownership_link_url(instance_id);
+    if (!href) return false;
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+    window.open(href, "_blank", "noopener,noreferrer");
+    return true;
+  }
+  function get_ownership_badge(card) {
+    if (!(card instanceof Element)) return null;
     return (
-      Number.isFinite(d) || (d = 0),
-      Number.isFinite(s) || (s = 0),
-      (n.href = ownership_link_url(r)),
-      n.setAttribute("aria-label", label),
-      n.setAttribute("data-nte-uaid-link", "1"),
-      n.setAttribute("data-nte-uaid-instance-id", String(r)),
-      (n.style.left = `${Math.max(0, d)}px`),
-      (n.style.top = `${Math.max(0, s)}px`),
-      (n.style.width = `${i}px`),
-      (n.style.height = `${l}px`),
-      c.addTooltip(n, label),
-      n
+      card.querySelector(
+        ".limited-icon-container:not(.infocardbutton):not(.tooltip-pastnames):not(.hide-button)",
+      ) ||
+      card.querySelector(".limited-hover-target") ||
+      card.querySelector(".icon-shop-limited")?.closest?.(
+        ".limited-icon-container:not(.hide-button), .limited-hover-target",
+      ) ||
+      card.querySelector(".icon-shop-limited") ||
+      null
     );
   }
-  function get_uaid_link_target(e) {
-    if (!(e instanceof Element)) return null;
-    return e.querySelector(
-      ".limited-icon-container:not(.infocardbutton):not(.tooltip-pastnames)",
-    );
+  function sync_ownership_badge(card, instance_id) {
+    if (!(card instanceof Element) || !instance_id) return null;
+    let badge = get_ownership_badge(card);
+    if (!(badge instanceof Element)) return null;
+    badge.style.cursor = "pointer";
+    badge.setAttribute("data-nte-uaid-link", "1");
+    badge.setAttribute("data-nte-uaid-instance-id", String(instance_id));
+    badge.setAttribute("data-nte-ownership-bound", "1");
+    badge.setAttribute("role", "link");
+    badge.setAttribute("tabindex", "0");
+    let label = ownership_link_label();
+    badge.setAttribute("aria-label", label);
+    c.addTooltip(badge, label);
+    return badge;
+  }
+  let ownership_badge_click_bound = !1;
+  function bind_ownership_badge_clicks() {
+    if (ownership_badge_click_bound) return;
+    ownership_badge_click_bound = !0;
+    // Opening + blocking React select happens in trade_bridge (page world).
+    // Content-script stopPropagation cannot cancel page listeners.
   }
   let uaid_link_refresh_timer = 0;
   let uaid_link_refresh_retry_timer = 0;
@@ -1748,13 +1962,22 @@
   }
   let trade_detail_uaid_observer_started = !1;
   async function bind_trade_detail_uaid_refresh() {
-    if (trade_detail_uaid_observer_started || "details" !== c.getPageType())
-      return;
+    if (trade_detail_uaid_observer_started) return;
+    let page_type = c.getPageType();
+    if ("details" !== page_type && "sendOrCounter" !== page_type) return;
     trade_detail_uaid_observer_started = !0;
-    if (!document.querySelector(".trades-list-detail")) return;
-    let detail_root = await c
-      .waitForElm(".trades-list-detail")
-      .catch(() => null);
+    let detail_root =
+      document.querySelector(".trades-list-detail") ||
+      document.querySelector(".trade-request-window") ||
+      document.querySelector(".trades-container") ||
+      document.body;
+    if (!(detail_root instanceof Element)) {
+      detail_root = await c
+        .waitForElm(
+          ".trades-list-detail, .trade-request-window, .trades-container",
+        )
+        .catch(() => null);
+    }
     if (!(detail_root instanceof Element)) return;
     let queue = () => schedule_uaid_link_refresh(80, !0);
     new MutationObserver((records) => {
@@ -1763,7 +1986,7 @@
           let node = record.target;
           if (
             node?.matches?.(
-              ".trade-list-detail-offer,.item-card-container,.item-card-price,.limited-icon-container,[data-collectibleiteminstanceid],thumbnail-2d",
+              ".trade-list-detail-offer,.item-card-container,.item-card-price,.limited-icon-container,[data-collectibleiteminstanceid],[data-nte-uaid-instance-id],thumbnail-2d",
             )
           ) {
             queue();
@@ -1780,38 +2003,63 @@
       childList: !0,
       subtree: !0,
       attributes: !0,
-      attributeFilter: ["class", "data-collectibleiteminstanceid"],
+      attributeFilter: [
+        "class",
+        "data-collectibleiteminstanceid",
+        "data-nte-uaid-instance-id",
+      ],
     });
     queue();
   }
   async function m() {
     if (!(await c.getOption("Add Item Ownership Buttons")))
       return (function () {
+        document.documentElement.dataset.nteOwnershipLinks = "0";
         clear_uaid_link_targets();
         for (let item_card of document.querySelectorAll(".item-cards"))
           item_card.style.setProperty("overflow", "hidden");
       })();
     await refresh_ownership_link_provider();
+    sync_ownership_bridge_flags();
+    bind_ownership_badge_clicks();
+    // Strip any leftover overlay UAID buttons before marking limited badges.
+    for (let e of document.querySelectorAll(".nte-uaid-thumb-link")) e.remove();
     let e = new Set(),
       t = !1;
-    for (let text_div of document.querySelectorAll(
-      ".trade-list-detail-offer .item-card-price, .trade-inventory-panel .item-card-price, .trade-request-item",
-    )) {
-      let card =
-        text_div.closest?.(".item-card-container, .trade-request-item") ||
-        text_div;
+    let cards = document.querySelectorAll(
+      [
+        ".trade-list-detail-offer .item-card-container",
+        ".trade-list-detail-offer .trade-request-item",
+        ".trades-list-detail .item-card-container",
+        ".trade-inventory-panel .item-card-container",
+        ".trade-request-window .item-card-container",
+        ".trade-request-window .trade-request-item:not(.blank-item):not(.draggable-border)",
+        ".trade-request-item:not(.blank-item):not(.draggable-border)",
+      ].join(", "),
+    );
+    for (let card of cards) {
+      let badge = get_ownership_badge(card);
       let r =
-        card?.getAttribute?.("data-collectibleiteminstanceid") ||
-        find_collectible_item_instance_id(card);
+        (badge instanceof Element &&
+          badge.getAttribute("data-nte-uaid-instance-id")) ||
+        get_ownership_instance_id(card);
       if (!r) continue;
-      let n = get_uaid_link_target(card);
-      if (!(n instanceof Element)) continue;
-      let a = get_uaid_link_host(card, n),
-        o = sync_uaid_link_overlay(a, n, r);
+      let o = sync_ownership_badge(card, r);
       o && (e.add(o), (t = !0));
     }
-    for (let r of document.querySelectorAll(".nte-uaid-thumb-link"))
-      e.has(r) || r.remove();
+    for (let el of document.querySelectorAll('[data-nte-uaid-link="1"]')) {
+      if (e.has(el)) continue;
+      c.destroyTooltips(el);
+      el.style.removeProperty("cursor");
+      el.removeAttribute("data-nte-uaid-link");
+      el.removeAttribute("data-nte-uaid-instance-id");
+      el.removeAttribute("aria-label");
+      el.removeAttribute("role");
+      if ("0" === el.getAttribute("tabindex")) el.removeAttribute("tabindex");
+      el.removeAttribute("data-toggle");
+      el.removeAttribute("data-original-title");
+      el.removeAttribute("title");
+    }
     t &&
       (clearTimeout(uaid_tooltip_init_timer),
       (uaid_tooltip_init_timer = setTimeout(() => {
@@ -1836,6 +2084,62 @@
       if (divider.dataset.nteTradeWinLossDetailPositioned === "1") {
         divider.style.removeProperty("position");
         delete divider.dataset.nteTradeWinLossDetailPositioned;
+      }
+    }
+    sync_trade_detail_usd_action_spacing(false);
+  }
+  function sync_trade_detail_usd_action_spacing(show_usd) {
+    let buttons = document.querySelector(
+      ".trades-list-detail .trade-buttons, .trade-list-detail .trade-buttons",
+    );
+    if (buttons instanceof Element) {
+      if (show_usd) buttons.style.marginTop = "10px";
+      else buttons.style.removeProperty("margin-top");
+    }
+    for (let amount of document.querySelectorAll(
+      ".trade-list-detail-offer .robux-line-amount, .trades-list-detail .robux-line-amount",
+    )) {
+      if (!(amount instanceof Element)) continue;
+      if (show_usd) amount.style.marginTop = "4px";
+      else amount.style.removeProperty("margin-top");
+    }
+    sync_trade_offer_total_usd_clearance();
+  }
+  function clear_offer_total_usd_clearance(wrap) {
+    if (!(wrap instanceof Element)) return;
+    wrap.style.removeProperty("margin-top");
+    wrap.style.removeProperty("padding-top");
+    wrap.removeAttribute("data-nte-usd-total-clearance");
+  }
+  function sync_trade_offer_total_usd_clearance() {
+    for (let offer of document.querySelectorAll(".trade-list-detail-offer")) {
+      let total_line = find_trade_offer_total_line(offer);
+      if (!(total_line instanceof Element)) continue;
+      let wrap =
+        total_line.parentElement instanceof Element &&
+        total_line.parentElement !== offer &&
+        !total_line.parentElement.classList?.contains(
+          "trade-list-detail-offer",
+        )
+          ? total_line.parentElement
+          : total_line;
+      clear_offer_total_usd_clearance(wrap);
+      let usd_rows = offer.querySelectorAll(
+        ".item-card-price .nte-routility-usd-row",
+      );
+      if (!usd_rows.length) continue;
+      let total_rect = total_line.getBoundingClientRect();
+      if (!(total_rect.width || total_rect.height)) continue;
+      let worst_overlap = 0;
+      for (let row of usd_rows) {
+        let rect = row.getBoundingClientRect();
+        if (!(rect.width || rect.height)) continue;
+        let overlap = rect.bottom + 8 - total_rect.top;
+        if (overlap > worst_overlap) worst_overlap = overlap;
+      }
+      if (worst_overlap > 0) {
+        wrap.style.marginTop = `${Math.ceil(worst_overlap)}px`;
+        wrap.setAttribute("data-nte-usd-total-clearance", "1");
       }
     }
   }
@@ -1969,9 +2273,10 @@
       parent.style.overflow = "visible";
       parent.style.setProperty("background-color", "transparent", "important");
       parent.style.borderTop = "0px";
-      parent.style.paddingTop = show_usd ? "64px" : "38px";
-      row.style.position = "absolute";
+      parent.style.paddingTop = "38px";
+      row.style.setProperty("position", "absolute", "important");
       row.style.top = "0";
+      row.style.bottom = "0";
       row.style.left = "0";
       row.style.right = "0";
       row.style.clear = "none";
@@ -1979,13 +2284,14 @@
       row.style.alignSelf = "auto";
       row.style.justifySelf = "auto";
       row.style.gridColumn = "auto";
-      row.style.padding = show_usd ? "3px 6px 0" : "2px 6px 0";
+      row.style.padding = "0 6px";
       row.style.margin = "0";
       row.style.marginTop = "0";
       row.style.marginLeft = "0";
       row.style.marginRight = "0";
       if (row.parentElement !== parent || row !== parent.lastChild)
         parent.appendChild(row);
+      sync_trade_detail_usd_action_spacing(show_usd);
     } else {
       row.style.position = "relative";
       row.style.clear = "both";
@@ -2030,6 +2336,26 @@
     let row_rect = row.getBoundingClientRect();
     if (!(row_rect.height > 0)) return;
     parent.style.paddingTop = `${Math.ceil(row_rect.height + 4)}px`;
+  }
+  function sync_trade_win_loss_detail_mount(row) {
+    if (!(row instanceof Element)) return;
+    let parent = row.parentElement;
+    if (
+      !(parent instanceof Element) ||
+      parent.getAttribute("data-nte-trade-win-loss-detail-mount") !== "1"
+    )
+      return;
+    row.style.setProperty("position", "absolute", "important");
+    row.style.top = "0";
+    row.style.bottom = "0";
+    row.style.left = "0";
+    row.style.right = "0";
+    row.style.transform = "none";
+    let content =
+      row.firstElementChild instanceof Element ? row.firstElementChild : row;
+    let height = content.getBoundingClientRect().height;
+    if (!(height > 0)) return;
+    parent.style.paddingTop = `${Math.max(38, Math.ceil(height + 16))}px`;
   }
   function align_trade_win_loss_container(row) {
     if (!(row instanceof Element)) return;
@@ -2113,7 +2439,7 @@
         p().catch((e) => {
           console.debug("NTE trade stats retry failed", e);
         });
-    }, 250);
+    }, 80);
   }
   async function p() {
     let mount = get_trade_win_loss_mount_point();
@@ -2217,9 +2543,12 @@
         current.setAttribute("title", tooltip);
         current.setAttribute("aria-label", tooltip);
         sync_trade_win_loss_send_mount(r);
+        sync_trade_win_loss_detail_mount(r);
         align_trade_win_loss_container(r);
         requestAnimationFrame(() => {
-          sync_trade_win_loss_send_mount(r), align_trade_win_loss_container(r);
+          sync_trade_win_loss_send_mount(r),
+            sync_trade_win_loss_detail_mount(r),
+            align_trade_win_loss_container(r);
         });
         return;
       }
@@ -2230,9 +2559,12 @@
         e.setAttribute("aria-label", tooltip),
         r.appendChild(e),
         sync_trade_win_loss_send_mount(r),
+        sync_trade_win_loss_detail_mount(r),
         align_trade_win_loss_container(r),
         requestAnimationFrame(() => {
-          sync_trade_win_loss_send_mount(r), align_trade_win_loss_container(r);
+          sync_trade_win_loss_send_mount(r),
+            sync_trade_win_loss_detail_mount(r),
+            align_trade_win_loss_container(r);
         });
     }
   }
@@ -2563,13 +2895,10 @@
   }
   async function get_trade_offer_elements() {
     if ("details" === c.getPageType()) {
-      document.querySelector(".trade-list-detail-offer") ||
-        (await c.waitForElm(".trade-list-detail-offer"));
       let e = document.getElementsByClassName("trade-list-detail-offer");
       if (e[0] && e[1]) return e;
+      return null;
     }
-    document.querySelector(".trade-request-window-offer") ||
-      (await c.waitForElm(".trade-request-window-offer"));
     let t = document.getElementsByClassName("trade-request-window-offer");
     return t[0] && t[1] ? t : null;
   }
@@ -4210,9 +4539,14 @@
   }
   function ensure_search_styles() {
     ensure_demand_styles();
-    if (document.getElementById("nteSearchOverlayStyle")) return;
-    let style = document.createElement("style");
-    style.id = "nteSearchOverlayStyle";
+    let style = document.getElementById("nteSearchOverlayStyle");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "nteSearchOverlayStyle";
+      document.head.appendChild(style);
+    }
+    if (style.dataset.nteVer === "search-multi-2") return;
+    style.dataset.nteVer = "search-multi-2";
     style.textContent = `
       .nte-search-overlay {
         margin-top: 10px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.08);
@@ -4227,18 +4561,27 @@
       }
       .nte-search-overlay .nte-sr-card:hover { background: rgba(128,128,128,0.15); }
       .nte-search-overlay .nte-sr-card.is-active { background: rgba(59,130,246,0.16); box-shadow: inset 0 0 0 1px rgba(96,165,250,0.45); }
-      .nte-search-overlay .nte-sr-card.is-hold { opacity: 0.5; cursor: default; }
+      .nte-search-overlay .nte-sr-card.is-hold,
+      .nte-search-overlay .nte-sr-card.is-in-offer,
+      .nte-search-overlay .nte-sr-card.is-offer-full { opacity: 0.5; cursor: default; }
+      .nte-search-overlay .nte-sr-card.is-hold:hover,
+      .nte-search-overlay .nte-sr-card.is-in-offer:hover,
+      .nte-search-overlay .nte-sr-card.is-offer-full:hover { background: transparent; }
       .nte-search-overlay .nte-sr-header {
         display: flex; align-items: center; justify-content: space-between; gap: 10px;
         padding: 6px 8px 10px; border-bottom: 1px solid rgba(128,128,128,0.12); margin-bottom: 4px;
       }
       .nte-search-overlay .nte-sr-summary { font-size: 12px; color: #8a8f98; }
       .nte-search-overlay .nte-sr-summary strong { color: inherit; font-weight: 800; }
+      .nte-search-overlay .nte-sr-header-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+      .nte-search-overlay .nte-sr-keep-open-btn,
       .nte-search-overlay .nte-sr-syntax-btn{
         flex:0 0 auto;padding:4px 10px;border-radius:999px;border:1px solid rgba(128,128,128,.28);
         background:rgba(128,128,128,.1);color:inherit;font:inherit;font-size:11px;font-weight:700;
         line-height:1.2;cursor:pointer;transition:background .15s,border-color .15s,transform .15s;
       }
+      .nte-search-overlay .nte-sr-keep-open-btn:hover{background:rgba(16,185,129,.16);border-color:rgba(16,185,129,.42);transform:translateY(-1px)}
+      .nte-search-overlay .nte-sr-keep-open-btn.is-on{background:rgba(16,185,129,.22);border-color:rgba(16,185,129,.55)}
       .nte-search-overlay .nte-sr-syntax-btn:hover{background:rgba(99,102,241,.18);border-color:rgba(99,102,241,.45);transform:translateY(-1px)}
       .nte-search-overlay .nte-sr-syntax-btn.is-open{background:rgba(99,102,241,.22);border-color:rgba(99,102,241,.5)}
       .nte-search-overlay .nte-sr-syntax-panel{
@@ -4285,6 +4628,8 @@
         margin-left: 6px;
       }
       .nte-search-overlay .nte-sr-badge.hold { background: rgba(255,80,80,0.15); color: #e55; }
+      .nte-search-overlay .nte-sr-badge.in-offer { background: rgba(59,130,246,0.15); color: #60a5fa; }
+      .nte-search-overlay .nte-sr-badge.offer-full { background: rgba(148,163,184,0.18); color: #94a3b8; }
       .nte-search-overlay .nte-sr-badge.rare { background: rgba(160,80,255,0.15); color: #a050ff; }
       .nte-search-overlay .nte-sr-badge.projected { background: rgba(255,208,91,0.15); color: #d69b00; }
       .nte-search-overlay .nte-sr-badge.rap { background: rgba(67,156,255,0.15); color: #4a9dff; }
@@ -4292,9 +4637,118 @@
         padding: 18px 12px; text-align: center; color: #888; font-size: 13px;
       }
       .nte-search-overlay .nte-sr-loading strong { color: inherit; font-weight: 800; }
-      .nte-trade-search-wrap { position: relative; width: 100%; max-width: 100%; align-self: flex-start; }
+      /* Right-side stack: native filter on top, search under it (same width).
+         Do not resize Roblox's foundation combobox - only place our search. */
+      .trade-inventory-panel .inventory-panel-header.nte-trade-inv-header{
+        display:grid!important;
+        grid-template-columns:minmax(0,1fr) 220px;
+        grid-template-areas:
+          "label dd"
+          "label search"
+          "label reload";
+        align-items:start;
+        column-gap:12px;
+        row-gap:6px;
+      }
+      .trade-inventory-panel .inventory-panel-header.nte-trade-inv-header > .inventory-label{
+        grid-area:label;
+      }
+      .trade-inventory-panel .inventory-panel-header.nte-trade-inv-header > .inventory-type-dropdown{
+        grid-area:dd;
+        width:220px;
+        max-width:220px;
+        box-sizing:border-box;
+      }
+      .trade-inventory-panel .inventory-panel-header.nte-trade-inv-header > .nte-trade-search-wrap{
+        grid-area:search;
+        width:220px;
+        min-width:0;
+        max-width:220px;
+        box-sizing:border-box;
+      }
+      .trade-inventory-panel .inventory-panel-header.nte-trade-inv-header > .nte-inv-reload-wrap{
+        grid-area:reload;
+        width:220px;
+        margin:0!important;
+        padding:0!important;
+        justify-content:flex-end;
+      }
+      .nte-trade-search-wrap{
+        position:relative;box-sizing:border-box;
+      }
+      .nte-trade-search-wrap > div{
+        position:relative;display:flex;align-items:center;margin:0;width:100%;box-sizing:border-box;
+      }
+      .nte-trade-search-wrap .rolimons-search{
+        flex:1 1 auto;min-width:0;width:100%;height:40px;margin:0!important;
+        padding-right:34px;box-sizing:border-box;
+      }
+      .nte-trade-search-wrap .rolimons-search-x-button{
+        position:absolute!important;right:4px;top:50%;transform:translateY(-50%);
+        width:28px!important;height:28px!important;min-width:28px;padding:0!important;margin:0!important;
+        border:0!important;background:transparent!important;box-shadow:none!important;
+        display:none!important;align-items:center;justify-content:center;flex:0 0 auto!important;
+        cursor:pointer;line-height:0;
+      }
+      .nte-trade-search-wrap .rolimons-search-x-button.is-visible{
+        display:flex!important;
+      }
+      .nte-trade-search-wrap .nte-search-x-icon{
+        position:static!important;width:16px!important;height:16px!important;
+        display:flex;align-items:center;justify-content:center;pointer-events:none;
+      }
+      .nte-trade-search-wrap .nte-search-x-icon svg{
+        width:16px;height:16px;display:block;
+      }
+      .nte-trade-search-wrap .rolimons-search-x-button > svg{
+        display:none!important;
+      }
+      .nte-trade-search-wrap .rolimons-search-x-button .nte-search-x-icon svg{
+        display:block!important;
+      }
+      .item-card-container > .nte-thumb-overlay-host {
+        position: absolute !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        box-sizing: border-box !important;
+        z-index: 20 !important;
+        pointer-events: none !important;
+        overflow: visible !important;
+        max-width: 160px !important;
+        max-height: 160px !important;
+      }
+      .nte-thumb-overlay-host > .nte-sales-hover-btn,
+      .nte-thumb-overlay-host > .nte-rap-signal-btn,
+      .nte-thumb-overlay-host > .nte-rolimons-thumb-link {
+        pointer-events: auto !important;
+      }
+      .nte-thumb-overlay-host > .nte-sales-hover-btn,
+      .item-card-container .nte-sales-hover-btn,
+      .trade-request-item .nte-sales-hover-btn {
+        inset: auto !important;
+        top: 6px !important;
+        left: 6px !important;
+        right: auto !important;
+        bottom: auto !important;
+      }
+      .nte-thumb-overlay-host > .nte-rolimons-thumb-link,
+      .item-card-container .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]),
+      .trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]) {
+        inset: auto !important;
+        top: auto !important;
+        right: 6px !important;
+        bottom: 6px !important;
+        left: auto !important;
+        width: 24px !important;
+        height: 24px !important;
+      }
+      .limited-icon-container[data-nte-uaid-link="1"],
+      .limited-hover-target[data-nte-uaid-link="1"],
+      .icon-shop-limited[data-nte-uaid-link="1"] {
+        cursor: pointer !important;
+      }
     `;
-    document.head.appendChild(style);
   }
   async function w() {
     let r = document
@@ -4321,6 +4775,20 @@
         ).forEach((e) => {
           delete e.dataset.nteTradeSearchMounted,
             delete e.dataset.nteTradeSearchMounting;
+          e.parentElement?.classList?.remove(
+            "nte-trade-inv-header-controls",
+            "nte-trade-inv-header",
+          );
+        }),
+        Array.from(
+          document.querySelectorAll(
+            ".nte-trade-inv-header-controls, .nte-trade-inv-header",
+          ),
+        ).forEach((e) => {
+          e.classList.remove(
+            "nte-trade-inv-header-controls",
+            "nte-trade-inv-header",
+          );
         }),
         Array.from(
           document.getElementsByClassName("nte-search-overlay"),
@@ -4334,7 +4802,29 @@
         }),
         void 0
       );
-    async function n(r) {
+  let trade_search_keep_open = !1;
+  let trade_search_keep_open_loaded = !1;
+  const trade_search_keep_open_key = "trade_search_keep_open";
+  async function load_trade_search_keep_open() {
+    if (trade_search_keep_open_loaded) return trade_search_keep_open;
+    trade_search_keep_open_loaded = !0;
+    try {
+      let data = await chrome.storage.local.get(trade_search_keep_open_key);
+      trade_search_keep_open = !!data?.[trade_search_keep_open_key];
+    } catch {}
+    return trade_search_keep_open;
+  }
+  function set_trade_search_keep_open(on) {
+    trade_search_keep_open = !!on;
+    try {
+      chrome.storage.local.set({
+        [trade_search_keep_open_key]: trade_search_keep_open,
+      });
+    } catch {}
+    return trade_search_keep_open;
+  }
+
+  async function n(r) {
       let a = r - 1,
         s = "dark" === c.getColorMode() ? "xDark.svg" : "x.svg",
         panel_el = document.getElementsByClassName("trade-inventory-panel")[a],
@@ -4353,6 +4843,7 @@
       let overlay_el = null;
       let search_timer = null;
       let search_syntax_panel_open = !1;
+      await load_trade_search_keep_open();
       let show_values = await c.getOption("Values on Trading Window");
       let show_rare = await c.getOption("Flag Rare Items");
       let show_projected = await c.getOption("Flag Projected Items");
@@ -4360,6 +4851,35 @@
       let search_token = 0;
       let active_bridge_id = "";
       let active_status_cleanup = null;
+      let search_offer_watch_bound = !1;
+      let search_offer_refresh_timer = 0;
+      function refresh_search_for_offer_change() {
+        if (search_pending) return;
+        if (!overlay_el || !document.contains(overlay_el)) return;
+        let q = m?.value || "";
+        if (!q.trim()) return;
+        let user_id = get_side_user_id();
+        let items = Array.isArray(search_inv_cache[user_id])
+          ? search_inv_cache[user_id]
+          : null;
+        if (!items) return;
+        render_results(items, q);
+      }
+      function bind_search_offer_watch() {
+        if (search_offer_watch_bound) return;
+        let root =
+          document.querySelector(".trade-request-window-offers-parent") ||
+          document.querySelector(".trade-request-window");
+        if (!(root instanceof Element)) return;
+        search_offer_watch_bound = !0;
+        new MutationObserver(() => {
+          clearTimeout(search_offer_refresh_timer);
+          search_offer_refresh_timer = setTimeout(
+            refresh_search_for_offer_change,
+            80,
+          );
+        }).observe(root, { childList: !0, subtree: !0 });
+      }
       function esc_search(value) {
         return String(value ?? "").replace(
           /[&<>"']/g,
@@ -4666,12 +5186,128 @@
       }
       let rendered_results = [],
         active_result_idx = -1;
+      let side_offer_instance_ids = new Set();
+      function item_offer_key(item) {
+        let tid = String(item?.targetId || "").trim();
+        if (tid) {
+          let type =
+            String(item?.itemType || "Asset").toLowerCase() === "bundle"
+              ? "bundles"
+              : "catalog";
+          return type + ":" + tid;
+        }
+        let name = String(item?.name || "")
+          .trim()
+          .toLowerCase();
+        return name ? "name:" + name : "";
+      }
+      function count_side_offer_items() {
+        let offers = document.querySelectorAll(".trade-request-window-offer");
+        let offer = offers[a];
+        if (!(offer instanceof Element)) return 0;
+        let n = 0;
+        for (let el of offer.querySelectorAll(".trade-request-item")) {
+          if (
+            el.classList.contains("blank-item") ||
+            el.classList.contains("draggable-border")
+          )
+            continue;
+          if (
+            el.querySelector(
+              'a[href*="/catalog/"], a[href*="/bundles/"], .item-name, .thumbnail-2d-container img',
+            )
+          )
+            n++;
+        }
+        return n;
+      }
+      function is_side_offer_full() {
+        return count_side_offer_items() >= 4;
+      }
+      function get_side_offer_asset_keys() {
+        let keys = [];
+        let offers = document.querySelectorAll(".trade-request-window-offer");
+        let offer = offers[a];
+        if (!(offer instanceof Element)) return keys;
+        for (let el of offer.querySelectorAll(".trade-request-item")) {
+          if (el.classList.contains("blank-item")) continue;
+          let href =
+            el.querySelector('a[href*="/catalog/"], a[href*="/bundles/"]')
+              ?.getAttribute("href") || "";
+          let match = href.match(/\/(catalog|bundles)\/(\d+)/i);
+          if (match) {
+            keys.push(match[1].toLowerCase() + ":" + match[2]);
+            continue;
+          }
+          let name = (
+            el.querySelector(".item-name, .item-card-name, .text-overflow")
+              ?.textContent || ""
+          )
+            .trim()
+            .toLowerCase();
+          if (name) keys.push("name:" + name);
+        }
+        return keys;
+      }
+      function reconcile_side_offer_instance_ids() {
+        let offer_keys = get_side_offer_asset_keys();
+        let user_id = get_side_user_id();
+        let items = Array.isArray(search_inv_cache[user_id])
+          ? search_inv_cache[user_id]
+          : [];
+        let by_key = new Map();
+        for (let item of items) {
+          let id = String(item?.collectibleItemInstanceId || "").trim();
+          let key = item_offer_key(item);
+          if (!id || !key) continue;
+          if (!by_key.has(key)) by_key.set(key, []);
+          by_key.get(key).push(id);
+        }
+        let used = new Set();
+        let next = new Set();
+        let remaining = offer_keys.slice();
+        for (let id of side_offer_instance_ids) {
+          let item = items.find(
+            (entry) => String(entry?.collectibleItemInstanceId || "") === id,
+          );
+          if (!item) continue;
+          let key = item_offer_key(item);
+          let idx = remaining.indexOf(key);
+          if (idx < 0) continue;
+          remaining.splice(idx, 1);
+          next.add(id);
+          used.add(id);
+        }
+        for (let key of remaining) {
+          let candidates = (by_key.get(key) || []).filter((id) => !used.has(id));
+          if (!candidates.length) continue;
+          let id = candidates[0];
+          used.add(id);
+          next.add(id);
+        }
+        side_offer_instance_ids = next;
+        return side_offer_instance_ids;
+      }
+      function get_side_offer_instance_ids() {
+        return reconcile_side_offer_instance_ids();
+      }
+      function is_search_item_in_offer(item, offer_ids = null) {
+        let id = String(item?.collectibleItemInstanceId || "").trim();
+        if (!id) return !1;
+        let set = offer_ids || get_side_offer_instance_ids();
+        return set.has(id);
+      }
       function get_selectable_indices() {
-        let indices = [];
-        for (let idx = 0; idx < rendered_results.length; idx++)
-          rendered_results[idx] &&
-            !rendered_results[idx].isOnHold &&
-            indices.push(idx);
+        let indices = [],
+          offer_ids = get_side_offer_instance_ids(),
+          offer_full = is_side_offer_full();
+        for (let idx = 0; idx < rendered_results.length; idx++) {
+          let item = rendered_results[idx];
+          if (!item || item.isOnHold || is_search_item_in_offer(item, offer_ids))
+            continue;
+          if (offer_full) continue;
+          indices.push(idx);
+        }
         return indices;
       }
       function set_active_result(idx, scroll_into_view = true) {
@@ -4689,7 +5325,8 @@
       }
       function activate_result(idx) {
         let item = rendered_results[idx];
-        if (!item || item.isOnHold) return;
+        if (!item || item.isOnHold || is_search_item_in_offer(item)) return;
+        if (is_side_offer_full()) return;
         add_search_item_to_trade(item, a);
       }
       function get_thumb_by_inst(inst_id) {
@@ -4914,19 +5551,37 @@
           ? `<strong>${matches.length}</strong> item${matches.length === 1 ? "" : "s"}`
           : `<strong>${matches.length}</strong> match${matches.length === 1 ? "" : "es"}`;
         let syntax_open = search_syntax_panel_open;
+        let keep_open = trade_search_keep_open;
+        let offer_ids = get_side_offer_instance_ids();
+        let offer_full = is_side_offer_full();
         let html = `<div class="nte-sr-header">
           <div class="nte-sr-summary">${summary_label}</div>
-          <button type="button" class="nte-sr-syntax-btn${syntax_open ? " is-open" : ""}" aria-label="Show search syntax" aria-expanded="${syntax_open ? "true" : "false"}">Syntax</button>
+          <div class="nte-sr-header-actions">
+            <button type="button" class="nte-sr-keep-open-btn${keep_open ? " is-on" : ""}" aria-pressed="${keep_open ? "true" : "false"}" title="Keep search open to add multiple items">Multi</button>
+            <button type="button" class="nte-sr-syntax-btn${syntax_open ? " is-open" : ""}" aria-label="Show search syntax" aria-expanded="${syntax_open ? "true" : "false"}">Syntax</button>
+          </div>
         </div>${build_trade_search_syntax_help_html(syntax_open)}${visible_results
           .map((item, idx) => {
             let thumb =
               search_thumb_cache[item.itemType + ":" + item.targetId] || "";
             let meta = get_trade_search_item_meta(item),
               val = meta.value;
-            let hold_class = item.isOnHold ? " is-hold" : "";
+            let in_offer = is_search_item_in_offer(item, offer_ids);
+            let blocked = offer_full && !in_offer;
+            let state_class = item.isOnHold
+              ? " is-hold"
+              : in_offer
+                ? " is-in-offer"
+                : blocked
+                  ? " is-offer-full"
+                  : "";
             let badges = "";
             if (item.isOnHold)
               badges += '<span class="nte-sr-badge hold">Hold</span>';
+            if (in_offer)
+              badges += '<span class="nte-sr-badge in-offer">In trade</span>';
+            else if (blocked)
+              badges += '<span class="nte-sr-badge offer-full">Offer full</span>';
             let dup_key = `${item.itemType}:${item.targetId}:${item.name}`,
               dup_count = dup_counts.get(dup_key) || 1,
               dup_ord = (dup_seen.get(dup_key) || 0) + 1;
@@ -4945,7 +5600,7 @@
               (badges += '<span class="nte-sr-badge rap">RAP</span>');
             if (dup_count > 1 && null == item.serialNumber)
               badges += `<span class="nte-sr-badge">${dup_ord}/${dup_count}</span>`;
-            return `<div class="nte-sr-card${hold_class}" data-sr-idx="${idx}">
+            return `<div class="nte-sr-card${state_class}" data-sr-idx="${idx}">
             <div class="nte-sr-thumb">${thumb ? `<img src="${thumb.replace(/"/g, "&quot;")}" alt="">` : ""}</div>
             <div class="nte-sr-info">
               <div class="nte-sr-name">${item.name.replace(/[<>]/g, "")}${badges}</div>
@@ -4965,6 +5620,10 @@
           let idx = parseInt(card.getAttribute("data-sr-idx") || "-1", 10);
           card.__nte_sales_item = visible_results[idx] || null;
           card.addEventListener("mouseenter", () => {
+            let item = visible_results[idx];
+            if (!item || item.isOnHold || is_search_item_in_offer(item, offer_ids))
+              return;
+            if (offer_full) return;
             set_active_result(idx, false);
           });
         }
@@ -4974,6 +5633,15 @@
         if (typeof mount_trade_sales_hover_targets === "function")
           mount_trade_sales_hover_targets(overlay_el);
         overlay_el.onclick = (ev) => {
+          let keep_btn = ev.target.closest(".nte-sr-keep-open-btn");
+          if (keep_btn) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            let on = set_trade_search_keep_open(!trade_search_keep_open);
+            keep_btn.classList.toggle("is-on", on);
+            keep_btn.setAttribute("aria-pressed", on ? "true" : "false");
+            return;
+          }
           let syntax_btn = ev.target.closest(".nte-sr-syntax-btn");
           if (syntax_btn) {
             ev.preventDefault();
@@ -4993,7 +5661,8 @@
           let card = ev.target.closest("[data-sr-idx]");
           if (!card) return;
           let item = visible_results[parseInt(card.dataset.srIdx)];
-          if (!item || item.isOnHold) return;
+          if (!item || item.isOnHold || is_search_item_in_offer(item)) return;
+          if (is_side_offer_full()) return;
           add_search_item_to_trade(item, a);
         };
         fetch_search_thumbs(visible_results).then((did_fetch) => {
@@ -5003,8 +5672,31 @@
           else render_results(items, query);
         });
       }
+      function finish_search_add_success(item) {
+        stop_search_status();
+        let id = String(item?.collectibleItemInstanceId || "").trim();
+        if (id) side_offer_instance_ids.add(id);
+        reconcile_side_offer_instance_ids();
+        if (!trade_search_keep_open) {
+          clear_search();
+          return;
+        }
+        let q = m?.value || "";
+        let user_id = get_side_user_id();
+        let items = Array.isArray(search_inv_cache[user_id])
+          ? search_inv_cache[user_id]
+          : [];
+        if (q.trim() && items.length) render_results(items, q);
+        try {
+          m?.focus();
+        } catch {}
+      }
       async function add_search_item_to_trade(item, side_idx) {
         if (search_pending) return;
+        if (is_side_offer_full()) {
+          show_search_status("Offer already has <strong>4</strong> items.");
+          return;
+        }
         search_pending = !0;
         let action_token = ++search_token;
         active_bridge_id = "";
@@ -5104,8 +5796,7 @@
               ]);
             ensure_search_active(action_token);
             if (direct_added) {
-              stop_search_status();
-              return void clear_search();
+              return void finish_search_add_success(item);
             }
           } catch (direct_err) {
             if (!is_search_active(action_token)) return;
@@ -5138,8 +5829,7 @@
             });
             active_bridge_id = "";
             ensure_search_active(action_token);
-            stop_search_status();
-            return void clear_search();
+            return void finish_search_add_success(item);
           } catch (bridge_err) {
             active_bridge_id = "";
             if (!is_search_active(action_token)) return;
@@ -5158,7 +5848,7 @@
           if (
             await go_to_search_page(item, page_data, before_sig, action_token)
           )
-            return void clear_search();
+            return void finish_search_add_success(item);
           ensure_search_active(action_token);
           console.warn(
             "[NRU] Could not find the searched item on its predicted trade pages.",
@@ -5193,17 +5883,27 @@
       function clear_search() {
         cancel_search(!0), hide_overlay();
         let x_btn = get_search_x_btn();
-        if (x_btn) x_btn.style.display = "none";
+        if (x_btn) {
+          x_btn.classList.remove("is-visible");
+          x_btn.style.display = "none";
+        }
       }
       function mount_trade_search_ui(html) {
-        // Keep Roblox's Angular inventory filter intact.
-        // Append search into the same container as before, but never
-        // rewrite .inventory-type-dropdown innerHTML (that kills Angular).
+        // Place search under the native inventory filter on the right.
+        // Do not restyle Roblox's foundation combobox.
+        ensure_search_styles();
         let holder = document.createElement("div");
         holder.innerHTML = String(html || "").trim();
         let root = holder.firstElementChild;
         if (!root) return null;
-        u.appendChild(root);
+        let parent = u.parentElement;
+        if (parent) {
+          parent.classList.remove("nte-trade-inv-header-controls");
+          parent.classList.add("nte-trade-inv-header");
+          u.insertAdjacentElement("afterend", root);
+        } else {
+          u.appendChild(root);
+        }
         return root;
       }
       if (!m) {
@@ -5218,12 +5918,6 @@
         let x_icon_el =
           x_btn_el && x_btn_el.querySelector(".nte-search-x-icon");
         if (x_icon_el) {
-          x_icon_el.style.position = "absolute";
-          x_icon_el.style.width = "30px";
-          x_icon_el.style.height = "30px";
-          x_icon_el.style.top = "3px";
-          x_icon_el.style.left = "3px";
-          x_icon_el.style.pointerEvents = "none";
           nte_append_trade_search_clear_icon(x_icon_el, "xDark.svg" === s);
         }
         m = search_root.querySelector(".rolimons-search");
@@ -5233,6 +5927,7 @@
           return;
         }
         x_btn_el?.addEventListener("click", clear_search);
+        bind_search_offer_watch();
         let user_id = get_side_user_id();
         user_id &&
           (fetch_tradable_items(user_id),
@@ -5276,9 +5971,15 @@
           let q = m.value;
           let x_btn = get_search_x_btn();
           if (q.trim()) {
-            if (x_btn) x_btn.style.removeProperty("display");
+            if (x_btn) {
+              x_btn.classList.add("is-visible");
+              x_btn.style.removeProperty("display");
+            }
           } else {
-            if (x_btn) x_btn.style.display = "none";
+            if (x_btn) {
+              x_btn.classList.remove("is-visible");
+              x_btn.style.display = "none";
+            }
             hide_overlay();
             return;
           }
@@ -5315,10 +6016,11 @@
     if (!container_el) return;
     let NS = "http://www.w3.org/2000/svg",
       svg = document.createElementNS(NS, "svg");
-    svg.setAttribute("width", "30");
-    svg.setAttribute("height", "30");
+    svg.setAttribute("width", "16");
+    svg.setAttribute("height", "16");
     svg.setAttribute("viewBox", "0 0 24 24");
     svg.setAttribute("fill", "none");
+    svg.setAttribute("aria-hidden", "true");
     svg.style.pointerEvents = "none";
     svg.style.display = "block";
     let path = document.createElementNS(NS, "path");
@@ -5328,9 +6030,7 @@
     path.setAttribute("stroke-linecap", "round");
     path.setAttribute("stroke-linejoin", "round");
     svg.appendChild(path);
-    for (; container_el.firstChild; )
-      container_el.removeChild(container_el.firstChild);
-    container_el.appendChild(svg);
+    container_el.replaceChildren(svg);
   }
   function E() {
     let load_raw =
@@ -5341,24 +6041,17 @@
         : "";
     return `
         <div class="nte-trade-search-wrap">
-        <div style="display: flex; margin-top: 5px; gap: 5px;">
+        <div>
             <input
             type="text"
             placeholder="Search items"
             class="rolimons-search form-control input-field"
-            style="
-                margin-left: 10px;
-                margin-left: auto;
-            "
             />
             <button
             type="button"
-            class="input-dropdown-btn rolimons-search-x-button"
-            style="
-                width: 40px;
-                position: relative;
-                display: none;
-            "
+            class="rolimons-search-x-button"
+            style="display:none"
+            aria-label="Clear search"
             >
             ${t}
             <span class="nte-search-x-icon"></span>
@@ -5561,7 +6254,15 @@
     let inline = !!price_el.closest(
       ".trade-request-window-offer .trade-request-item, .trade-request-window-offer .item-value",
     );
-    price_el.style.height = inline ? "" : "44px";
+    if (inline) {
+      price_el.style.removeProperty("height");
+      price_el.style.removeProperty("min-height");
+      price_el.style.removeProperty("overflow");
+    } else if (!(usd_value > 0)) {
+      price_el.style.height = "44px";
+      price_el.style.removeProperty("min-height");
+      price_el.style.removeProperty("overflow");
+    }
     if (!(usd_value > 0)) return;
     let row = document.createElement("span"),
       icon = document.createElement("img"),
@@ -5570,15 +6271,20 @@
     row.className = inline
       ? "valueSpan nte-routility-usd-inline"
       : "valueSpan nte-routility-usd-row";
-    row.style.display = "inline-flex";
+    row.style.display = inline ? "flex" : "inline-flex";
     row.style.alignItems = "center";
     row.style.gap = inline ? "4px" : "6px";
-    row.style.marginLeft = inline ? "6px" : "2px";
+    row.style.marginLeft = inline ? "0" : "2px";
     if (!inline) row.style.marginTop = "4px";
-    row.style.minHeight = "20px";
-    row.style.lineHeight = "20px";
+    row.style.minHeight = inline ? "18px" : "20px";
+    row.style.lineHeight = inline ? "18px" : "20px";
     row.style.whiteSpace = "nowrap";
     row.style.verticalAlign = "middle";
+    if (inline) {
+      row.style.width = "100%";
+      row.style.boxSizing = "border-box";
+      row.style.marginTop = "2px";
+    }
     icon.className = "nte-routility-usd-logo";
     icon.src = c.getURL("assets/routility.png");
     icon.alt = "";
@@ -5594,8 +6300,8 @@
     text.style.color = dark ? "rgba(125, 211, 252, 0.96)" : "#0369a1";
     text.style.display = "inline-flex";
     text.style.alignItems = "center";
-    text.style.minHeight = "20px";
-    text.style.lineHeight = "20px";
+    text.style.minHeight = inline ? "18px" : "20px";
+    text.style.lineHeight = inline ? "18px" : "20px";
     text.textContent = format_trade_item_routility_usd(usd_value);
     row.appendChild(icon);
     row.appendChild(text);
@@ -5632,14 +6338,17 @@
     br.className = "nte-routility-usd-break";
     price_el.appendChild(br);
     price_el.appendChild(row);
-    price_el.style.height = "68px";
+    price_el.style.height = "auto";
+    price_el.style.minHeight = "72px";
+    price_el.style.overflow = "visible";
   }
   async function k() {
     let show_routility_usd = !!(await c.getOption("Show Routility USD Values"));
-    for (let item of (await c.waitForElm(".item-card-container"),
-    document.querySelectorAll(".item-card-container"))) {
-      let e = item.querySelector(".item-card-price"),
-        t = c.getItemIdFromElement(item),
+    sync_trade_routility_usd_layout(show_routility_usd);
+    for (let item of document.querySelectorAll(".item-card-container")) {
+      let e = item.querySelector(".item-card-price");
+      if (!e) continue;
+      let t = c.getItemIdFromElement(item),
         r = c.getItemNameFromElement(item),
         n = (function (e) {
           if (!(e instanceof Element)) return 0;
@@ -5714,6 +6423,11 @@
       );
     }
     nte_tag_trade_page_serial_spans();
+    // Item USD rows can overflow into Total Value; push totals down when needed.
+    requestAnimationFrame(() => {
+      sync_trade_offer_total_usd_clearance();
+      requestAnimationFrame(sync_trade_offer_total_usd_clearance);
+    });
   }
   function T(e, t) {
     void 0 === e.getElementsByClassName("valueSpan")[0] &&
@@ -5822,6 +6536,55 @@
       .nte-serial-masked {
         user-select: none !important;
         letter-spacing: .04em;
+      }
+      .nte-serial-hide-host {
+        margin-left: 8px;
+        vertical-align: middle;
+      }
+      .text-label:has(> .nte-serial-hide-host),
+      .nte-trade-action-host {
+        display: inline-flex !important;
+        align-items: center;
+        gap: 8px;
+        vertical-align: middle;
+      }
+      .text-label:has(> .nte-serial-hide-host) > .nte-serial-hide-host,
+      .nte-trade-action-host > .nte-serial-hide-host {
+        margin-left: 0;
+      }
+      .text-label:has(> .nte-proof-btn) > .nte-proof-btn,
+      .nte-trade-action-host > .nte-proof-btn {
+        margin-left: 0;
+        transform: none;
+        vertical-align: middle;
+      }
+      .nte-trade-action-host {
+        margin-left: 8px;
+      }
+      .nte-trade-action-host--below {
+        display: flex !important;
+        align-items: center;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        gap: 8px;
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        margin: 4px 0 8px;
+        margin-left: 0 !important;
+        padding: 0;
+        clear: both;
+      }
+      .nte-trade-action-host--below > .nte-serial-hide-host {
+        margin-left: 0;
+        margin-top: 1px;
+      }
+      .nte-trade-action-host--below > .nte-proof-btn {
+        margin-left: 0;
+        transform: none;
+      }
+      .nte-trade-action-host--below > .nte-proof-btn:hover {
+        transform: translateY(-1px);
       }
       .nte-serial-hide-host.buttontooltip {
         position: relative;
@@ -6142,19 +6905,74 @@
     let t = e.getBoundingClientRect();
     return !(t.width < 2 || t.height < 2);
   }
-  function nte_insert_serial_hide_button(e) {
+  function nte_place_trade_action_host_below(header, host) {
+    if (!header || !host) return host;
+    host.classList.add("nte-trade-action-host--below");
+    host.classList.remove("text-label");
+    if (host.tagName === "SPAN") {
+      let next = document.createElement("div");
+      next.className = host.className;
+      for (let attr of host.attributes)
+        if (attr.name !== "class") next.setAttribute(attr.name, attr.value);
+      while (host.firstChild) next.appendChild(host.firstChild);
+      host.replaceWith(next);
+      host = next;
+    }
     if (
-      !e ||
-      !nte_paired_name_visible(e) ||
-      e.classList.contains("hide-button-inserted")
+      host.parentElement !== header.parentElement ||
+      host.previousElementSibling !== header
     )
-      return !1;
+      header.insertAdjacentElement("afterend", host);
+    return host;
+  }
+  function nte_find_serial_hide_mount(paired_name) {
+    if (!paired_name) return null;
+    let detail =
+      paired_name.closest(".trades-list-detail") ||
+      paired_name.closest(".trades-container") ||
+      (paired_name.parentNode && paired_name.parentNode.parentNode);
+    if (!detail) return null;
+    let label =
+      detail.querySelector(".text-label.ng-binding:not(.ng-hide)") ||
+      detail.querySelector(".text-label:not(.ng-hide)");
+    if (
+      label &&
+      !label.classList.contains("nte-trade-action-host") &&
+      !label.classList.contains("ng-hide")
+    )
+      return label;
+    let header =
+      paired_name.closest(".trades-header-nowrap") || paired_name.parentElement;
+    if (!header) return null;
+    let host =
+      detail.querySelector(".nte-trade-action-host") ||
+      header.parentElement?.querySelector?.(".nte-trade-action-host") ||
+      header.querySelector(".nte-trade-action-host");
+    if (host) return nte_place_trade_action_host_below(header, host);
+    host = document.createElement("div");
+    host.className = "nte-trade-action-host nte-trade-action-host--below";
+    host.setAttribute("data-nte-trade-action-host", "1");
+    header.insertAdjacentElement("afterend", host);
+    return host;
+  }
+  function nte_insert_serial_hide_button(e) {
+    if (!e || !nte_paired_name_visible(e)) return !1;
     if (e.closest(".trade-request-window")) return !1;
-    let t = e.parentNode && e.parentNode.parentNode;
-    if (!t) return !1;
-    let r =
-      t.querySelector(".text-label.ng-binding") ||
-      t.querySelector(".text-label");
+    let detail =
+      e.closest(".trades-list-detail") ||
+      e.closest(".trades-container") ||
+      (e.parentNode && e.parentNode.parentNode);
+    if (detail?.querySelector?.(".nte-serial-hide-host")) {
+      e.classList.add("hide-button-inserted");
+      return !1;
+    }
+    if (
+      e.classList.contains("hide-button-inserted") &&
+      !detail?.querySelector?.(".nte-serial-hide-host")
+    )
+      e.classList.remove("hide-button-inserted");
+    if (e.classList.contains("hide-button-inserted")) return !1;
+    let r = nte_find_serial_hide_mount(e);
     if (!r) return !1;
     if (r.querySelector(".nte-serial-hide-host")) return !1;
     let n = document.createElement("div");
@@ -6186,8 +7004,6 @@
           toggle_nte_serial_text_blur(),
           update_nte_serial_hide_controls();
       }),
-      r.classList.contains("ng-hide") &&
-        ((r.innerHTML = ""), r.classList.remove("ng-hide")),
       r.appendChild(n),
       e.classList.add("hide-button-inserted");
     return !0;
@@ -6202,9 +7018,30 @@
     let was_blurred = nte_serials_currently_blurred();
     nte_tag_trade_page_serial_spans();
     if (was_blurred) set_nte_serial_text_blur(!0);
-    {
-      let e = document.querySelector(".nte-serial-hide-host");
-      if (e && e.isConnected) return void update_nte_serial_hide_controls();
+    let detail = document.querySelector(
+      ".trades-list-detail, .trades-container",
+    );
+    let existing = detail?.querySelector?.(".nte-serial-hide-host");
+    if (existing && existing.isConnected) {
+      let action_host = existing.closest(".nte-trade-action-host");
+      let paired =
+        [...document.getElementsByClassName("trades-header-nowrap")]
+          .at(-1)
+          ?.querySelector(".paired-name") ||
+        detail?.querySelector?.(".paired-name");
+      let header =
+        paired?.closest?.(".trades-header-nowrap") || paired?.parentElement;
+      if (action_host && header) nte_place_trade_action_host_below(header, action_host);
+      return void update_nte_serial_hide_controls();
+    }
+    for (let paired of document.querySelectorAll(
+      ".hide-button-inserted",
+    )) {
+      let scope =
+        paired.closest(".trades-list-detail") ||
+        paired.closest(".trades-container");
+      if (!scope?.querySelector?.(".nte-serial-hide-host"))
+        paired.classList.remove("hide-button-inserted");
     }
     let r = [...document.getElementsByClassName("trades-header-nowrap")]
       .at(-1)
@@ -6228,18 +7065,22 @@
 
   async function ensure_nte_quick_proof_button() {
     inject_nte_serial_blur_styles();
+    let tab = get_current_trade_tab();
     if (
       c.getPageType() !== "details" ||
-      get_current_trade_tab() !== "completed"
+      (tab !== "completed" && tab !== "inactive")
     )
       return remove_nte_quick_proof_buttons();
     if (false === (await c.getOption(nte_quick_proof_option_name)))
       return remove_nte_quick_proof_buttons();
-    let serial = document.querySelector(".nte-serial-hide-host");
+    ensure_nte_serial_hash_button();
+    let serial =
+      document.querySelector(".trades-list-detail .nte-serial-hide-host") ||
+      document.querySelector(".nte-serial-hide-host");
     let host =
       serial?.parentElement ||
       document.querySelector(
-        ".trades-list-detail .text-label, .trades-container .text-label",
+        ".trades-list-detail .nte-trade-action-host, .trades-list-detail .text-label, .trades-container .nte-trade-action-host, .trades-container .text-label",
       );
     if (!host) return remove_nte_quick_proof_buttons();
     for (let btn of document.querySelectorAll(".nte-proof-btn"))
@@ -7277,8 +8118,130 @@
     row_fetch_q = [],
     row_fetch_fast_q = [],
     row_active_requests = 0,
-    row_next_request_at = 0;
+    row_next_request_at = 0,
+    row_fetch_generation = 0,
+    roblox_owned_detail_until = {},
+    page_detail_inflight = {};
   const row_trade_cache_max_entries = 120;
+
+  function mark_roblox_owned_detail(trade_id, ms = 1200) {
+    let key = String(trade_id || "").trim();
+    if (!key) return;
+    roblox_owned_detail_until[key] = Date.now() + ms;
+  }
+
+  function is_roblox_owned_detail(trade_id) {
+    let key = String(trade_id || "").trim();
+    if (!key) return false;
+    let until = roblox_owned_detail_until[key] || 0;
+    if (until < Date.now()) {
+      delete roblox_owned_detail_until[key];
+      return false;
+    }
+    return true;
+  }
+
+  function get_selected_list_trade_id() {
+    let row = document.querySelector(".trade-row-list .trade-row.selected");
+    return row ? String(get_selected_trade_id_sync(row) || "").trim() : "";
+  }
+
+  function wait_for_trade_detail_cache(trade_id, timeout_ms = 900) {
+    let key = String(trade_id || "").trim();
+    if (!key) return Promise.resolve(null);
+    let cached = get_trade_row_cached_trade(key) || get_trade_row_raw_cache_entry(key);
+    if (cached) return Promise.resolve(cached);
+    return new Promise((resolve) => {
+      let started = Date.now();
+      let timer = setInterval(() => {
+        let hit =
+          get_trade_row_cached_trade(key) || get_trade_row_raw_cache_entry(key);
+        if (hit || Date.now() - started >= timeout_ms) {
+          clearInterval(timer);
+          resolve(hit || null);
+        }
+      }, 40);
+    });
+  }
+
+  try {
+    document.addEventListener("nru_trade_detail_network_result", (event) => {
+      let detail = event?.detail;
+      if ("string" == typeof detail) {
+        try {
+          detail = JSON.parse(detail);
+        } catch {
+          detail = null;
+        }
+      }
+      let trade_id = String(detail?.trade_id || "").trim();
+      let trade = detail?.trade;
+      if (!trade_id || !trade || "object" != typeof trade) return;
+      set_trade_row_cached_trade(trade_id, trade);
+      delete page_detail_inflight[trade_id];
+      // Roblox often loads the selected trade before our queue finishes —
+      // mount that row's value summary immediately from the page response.
+      schedule_value_summary_for_trade_id(trade_id);
+    });
+    document.addEventListener("nru_trade_detail_network_start", (event) => {
+      let detail = event?.detail;
+      if ("string" == typeof detail) {
+        try {
+          detail = JSON.parse(detail);
+        } catch {
+          detail = null;
+        }
+      }
+      let trade_id = String(detail?.trade_id || "").trim();
+      if (trade_id) page_detail_inflight[trade_id] = Date.now();
+    });
+  } catch {}
+
+  let value_summary_trade_timers = new Map();
+  let value_summary_from_detail_timer = 0;
+  function schedule_value_summary_for_trade_id(trade_id, delay = 40) {
+    let id = String(trade_id || "").trim();
+    if (!id) return;
+    // During category remount, never kick a full L() pass — that + lock
+    // reattach is what hard-froze Inbound after Completed.
+    if (trade_row_mut_observer_paused()) return;
+    let prev = value_summary_trade_timers.get(id);
+    if (prev) clearTimeout(prev);
+    value_summary_trade_timers.set(
+      id,
+      setTimeout(() => {
+        value_summary_trade_timers.delete(id);
+        if (document.hidden || trade_row_mut_observer_paused()) return;
+        let row = document.querySelector(
+          `.trade-row-list .trade-row[nruTradeId="${id}"], .trade-row-list .trade-row[data-nte-trade-id="${id}"]`,
+        );
+        if (row?.isConnected && try_mount_trade_row_value_box_from_cache(row))
+          return;
+        // Debounce a single list refresh instead of one L() per detail.
+        clearTimeout(value_summary_from_detail_timer);
+        value_summary_from_detail_timer = setTimeout(() => {
+          value_summary_from_detail_timer = 0;
+          if (document.hidden || trade_row_mut_observer_paused()) return;
+          if (count_visible_rows_missing_value_summaries() > 0) L();
+        }, 350);
+      }, Math.max(0, delay)),
+    );
+  }
+
+  function try_mount_trade_row_value_box_from_cache(row) {
+    if (!(row instanceof HTMLElement) || !row.isConnected) return false;
+    if (row.querySelector(".tradeListValuesBox")) return true;
+    let trade_id =
+      row.getAttribute("nruTradeId") ||
+      row.getAttribute("data-nte-trade-id") ||
+      "";
+    if (!trade_id) return false;
+    let l = row_trade_cache[trade_id];
+    if (!l?.offers?.[0] || !l?.offers?.[1]) return false;
+    // Reuse the same paint path as L by queuing a narrow refresh.
+    schedule_missing_value_summaries_retry(50);
+    return false;
+  }
 
   function trim_row_trade_cache() {
     while (row_trade_cache_order.length > row_trade_cache_max_entries) {
@@ -7472,54 +8435,9 @@
     }
     return a || null;
   }
-  function get_trade_row_thumb_type(e) {
-    let t = String(e?.itemType || e?.itemTarget?.itemType || "Asset").trim();
-    return "Bundle" === t ? "BundleThumbnail" : "Asset";
-  }
-  function get_trade_row_trade_thumb_requests(e) {
-    let t = [],
-      r = new Set();
-    if (!e?.offers) return t;
-    for (let e of e.offers || [])
-      for (let n of X(e)) {
-        let a = get_trade_row_item_id(n);
-        if (!(a > 0)) continue;
-        let o = get_trade_row_thumb_type(n),
-          i = `${o}:${a}`;
-        r.has(i) || (r.add(i), t.push({ type: o, targetId: String(a) }));
-      }
-    return t;
-  }
-  function dispatch_trade_row_thumb_prewarm(e) {
-    if (document.hidden) return;
-    let t = [];
-    for (let r of Array.isArray(e) ? e : []) {
-      let e = parseInt(r?.targetId ?? r, 10);
-      if (!(e > 0)) continue;
-      let n =
-          "BundleThumbnail" === String(r?.type || "").trim()
-            ? "BundleThumbnail"
-            : "Asset",
-        a = `${n}:${e}`;
-      t.some((e) => `${e.type}:${e.targetId}` === a) ||
-        t.push({ type: n, targetId: String(e) });
-    }
-    if (!t.length) return;
-    try {
-      document.dispatchEvent(
-        new CustomEvent("nru_trade_thumb_prewarm", {
-          detail: JSON.stringify({ thumb_requests: t }),
-        }),
-      );
-    } catch {}
-  }
-  async function prewarm_trade_row_thumbnails(e) {
-    let t = get_trade_row_trade_thumb_requests(e);
-    t.length && dispatch_trade_row_thumb_prewarm(t);
-  }
   function process_row_fetch_q() {
     let completed_tab = get_current_trade_tab() === "completed";
-    let max_parallel = completed_tab ? 1 : 3;
+    let max_parallel = completed_tab ? 1 : 4;
     if (row_active_requests >= max_parallel) return;
     let q = completed_tab
       ? row_fetch_q
@@ -7550,21 +8468,49 @@
     let { tradeId: e, resolve: t, row: queued_row = null } = next_item,
       r = Math.max(0, row_next_request_at - Date.now());
     row_active_requests++;
-    let pace_ms = 100;
+    let pace_ms = completed_tab ? 100 : 50;
     if (completed_tab) {
       let is_visible = is_trade_row_visible_in_scroll_view(queued_row);
       pace_ms = is_visible ? 80 : 1500;
     }
     row_next_request_at = Date.now() + r + pace_ms;
+    let fetch_gen = row_fetch_generation;
     setTimeout(async () => {
+        if (fetch_gen !== row_fetch_generation) {
+          row_active_requests--;
+          t(null);
+          process_row_fetch_q();
+          return;
+        }
+        // Let Roblox own the auto-selected detail load on tab/select races.
+        if (is_roblox_owned_detail(e) || page_detail_inflight[e]) {
+          let waited = await wait_for_trade_detail_cache(e, 450);
+          if (fetch_gen !== row_fetch_generation) {
+            row_active_requests--;
+            t(waited || null);
+            process_row_fetch_q();
+            return;
+          }
+          if (waited) {
+            row_active_requests--;
+            t(waited);
+            process_row_fetch_q();
+            return;
+          }
+        }
         let r = null;
         try {
-          let t = await fetch_trade_api(
-            `https://trades.roblox.com/v2/trades/${e}`,
-            {
-              credentials: "include",
-            },
-          );
+          let fetch_detail = async (url) => {
+            // Visible list values use the urgent path so a stale rate-limit
+            // resume timer cannot block first-paint summaries.
+            let use_urgent = !completed_tab && !!next_item?.fast;
+            return use_urgent
+              ? await fetch_trade_api_with_timeout(url, {
+                  credentials: "include",
+                })
+              : await fetch_trade_api(url, { credentials: "include" });
+          };
+          let t = await fetch_detail(`https://trades.roblox.com/v2/trades/${e}`);
           200 === t.status
             ? (r = await t.json())
             : 429 === t.status
@@ -7573,15 +8519,28 @@
                   Date.now() + 10000,
                 ))
               : 404 !== t.status &&
-                ((t = await fetch_trade_api(
+                ((t = await fetch_detail(
                   `https://trades.roblox.com/v1/trades/${e}`,
-                  {
-                    credentials: "include",
-                  },
                 )),
                 200 === t.status && (r = await t.json()));
+          // Page-context fallback when the content-script fetch is blocked.
+          // Skip during remount pause / when already busy — prevents freeze.
+          if (
+            !r &&
+            !completed_tab &&
+            !trade_row_mut_observer_paused() &&
+            trade_detail_page_inflight < TRADE_DETAIL_PAGE_MAX_PARALLEL
+          ) {
+            r = await request_trade_detail_via_page(e, 1800);
+          }
         } catch {}
         if (r) {
+          if (fetch_gen !== row_fetch_generation) {
+            row_active_requests--;
+            t(null);
+            process_row_fetch_q();
+            return;
+          }
           let _tab =
             new URLSearchParams(window.location.search).get("tab") || "inbound";
           let _type =
@@ -7606,7 +8565,6 @@
           );
         }
         let n = set_trade_row_cached_trade(e, r);
-        n && prewarm_trade_row_thumbnails(n).catch(() => {});
         t(n);
         row_active_requests--;
         process_row_fetch_q();
@@ -7634,15 +8592,67 @@
   function queue_row_fetch(e, fast = !1, row = null) {
     return new Promise((t) => {
       if (get_current_trade_tab() === "completed") {
-        row_fetch_q.push({ tradeId: e, resolve: t, row });
+        row_fetch_q.push({ tradeId: e, resolve: t, row, fast: false });
       } else {
         (fast ? row_fetch_fast_q : row_fetch_q).push({
           tradeId: e,
           resolve: t,
           row,
+          fast: !!fast,
         });
       }
       process_row_fetch_q();
+    });
+  }
+
+  let trade_detail_page_request_seq = 0;
+  let trade_detail_page_inflight = 0;
+  const TRADE_DETAIL_PAGE_MAX_PARALLEL = 2;
+  function request_trade_detail_via_page(trade_id, timeout_ms = 2500) {
+    let id = String(trade_id || "").trim();
+    if (!id) return Promise.resolve(null);
+    // Never stampede page fetches during category remount — that froze Inbound.
+    if (trade_row_mut_observer_paused()) return Promise.resolve(null);
+    if (trade_detail_page_inflight >= TRADE_DETAIL_PAGE_MAX_PARALLEL)
+      return Promise.resolve(null);
+    trade_detail_page_inflight++;
+    return new Promise((resolve) => {
+      let request_id = `nte-detail-${Date.now()}-${++trade_detail_page_request_seq}`;
+      let done = false;
+      let finish = (trade) => {
+        if (done) return;
+        done = true;
+        trade_detail_page_inflight = Math.max(0, trade_detail_page_inflight - 1);
+        clearTimeout(timer);
+        document.removeEventListener(
+          "nru_trade_detail_fetch_response",
+          on_response,
+        );
+        resolve(trade && "object" == typeof trade ? trade : null);
+      };
+      let on_response = (event) => {
+        let detail = event?.detail;
+        if ("string" == typeof detail) {
+          try {
+            detail = JSON.parse(detail);
+          } catch {
+            detail = null;
+          }
+        }
+        if (detail?.request_id !== request_id) return;
+        finish(detail.trade || null);
+      };
+      let timer = setTimeout(() => finish(null), Math.max(500, timeout_ms));
+      document.addEventListener("nru_trade_detail_fetch_response", on_response);
+      try {
+        document.dispatchEvent(
+          new CustomEvent("nru_trade_detail_fetch_request", {
+            detail: JSON.stringify({ request_id, trade_id: id }),
+          }),
+        );
+      } catch {
+        finish(null);
+      }
     });
   }
   async function Y() {
@@ -7674,7 +8684,9 @@
   async function J(e, t = 20) {
     let waits = t;
     try {
-      if (c.is_roblox_new_ui?.()) waits = Math.min(waits, 3);
+      // New UI is slower to stamp IDs on first paint — 3*100ms was too short
+      // and left inbound rows without value summaries until a tab switch.
+      if (c.is_roblox_new_ui?.()) waits = Math.min(Math.max(waits, 10), 12);
     } catch {}
     for (let r = 0; r < waits; r++) {
       if (!e?.isConnected) return null;
@@ -7715,13 +8727,16 @@
     );
   }
   function get_trade_list_filter_anchor() {
-    let e = document.querySelector(".trade-row-list");
-    if (!e) return null;
+    let list = document.querySelector(".trade-row-list");
+    if (!list) return null;
+    // Prefer trades-header so Sort sits directly under Category.
     return (
-      e.querySelector(".trade-quality") ||
-      e.querySelector(".trades-header") ||
-      e.firstElementChild ||
-      e
+      list.querySelector(".trades-header") ||
+      [...list.querySelectorAll(".trade-quality")].find(
+        (el) => el.id !== "nteTradeListFilter",
+      ) ||
+      list.firstElementChild ||
+      list
     );
   }
   function get_active_trade_tab_link() {
@@ -7947,9 +8962,477 @@
     trade_search_q = "";
   }
   function close_trade_list_filter_menu() {
-    let e = document.getElementById("nteTradeListFilterMenu"),
-      t = document.getElementById("nteTradeListFilterButton");
-    e && (e.style.display = "none"), t?.setAttribute("aria-expanded", "false");
+    let menu = document.getElementById("nteTradeListFilterMenu"),
+      btn = document.getElementById("nteTradeListFilterButton"),
+      dd = menu?.closest?.(".input-group-btn") || menu?.parentElement;
+    if (menu) {
+      menu.style.setProperty("display", "none", "important");
+      menu.classList.remove("nte-filter-open");
+    }
+    dd?.classList.remove("open", "nte-filter-open");
+    btn?.setAttribute("aria-expanded", "false");
+  }
+  function is_trade_list_filter_menu_open() {
+    let btn = document.getElementById("nteTradeListFilterButton");
+    return btn?.getAttribute("aria-expanded") === "true";
+  }
+  function open_trade_list_filter_menu() {
+    let menu = document.getElementById("nteTradeListFilterMenu"),
+      btn = document.getElementById("nteTradeListFilterButton"),
+      dd = menu?.closest?.(".input-group-btn") || menu?.parentElement;
+    if (!menu || !btn) return;
+    menu.style.setProperty("display", "block", "important");
+    menu.classList.add("nte-filter-open");
+    dd?.classList.add("open", "nte-filter-open");
+    btn.setAttribute("aria-expanded", "true");
+  }
+  function toggle_trade_list_filter_menu(event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+    if (is_trade_list_filter_menu_open()) close_trade_list_filter_menu();
+    else open_trade_list_filter_menu();
+  }
+  function ensure_trade_list_filter_menu_style() {
+    let style = document.getElementById("nteTradeListFilterStyle");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "nteTradeListFilterStyle";
+      (document.head || document.documentElement).appendChild(style);
+    }
+    if (style.dataset.nteVer === "13") return;
+    style.dataset.nteVer = "13";
+    style.textContent = `
+      /* Hide Roblox "How do I trade?" help link */
+      .trades-header a[href*="help.roblox.com"],
+      .trades-header a[href*="articles/203313310"],
+      .trade-row-list > a[href*="articles/203313310"],
+      a.text-link.text-secondary[href*="help.roblox.com/hc/articles/203313310"]{
+        display:none!important
+      }
+      .trades-header{
+        display:flex!important;
+        align-items:flex-start!important;
+        justify-content:flex-start!important;
+        flex-wrap:wrap!important;
+        gap:4px 12px!important;
+        margin:0 0 10px!important;
+        padding:0!important;
+        min-height:0!important;
+        float:none!important;
+        clear:both!important
+      }
+      /* Keep page title on its own row above the controls */
+      .trades-header > h1{
+        flex:1 0 100%!important;
+        order:-1!important;
+        width:100%!important;
+        margin:0 0 10px!important;
+        float:none!important
+      }
+      .nte-trade-list-control-label,
+      .trade-row-list .trade-quality-label{
+        display:block!important;
+        margin:0 0 4px!important;
+        padding:0!important;
+        font-size:11px!important;
+        font-weight:700!important;
+        letter-spacing:.04em!important;
+        text-transform:uppercase!important;
+        opacity:.7!important;
+        line-height:1.2!important;
+        user-select:none
+      }
+      /* Category label via CSS ::before — do NOT insert a DOM sibling before
+         React's dropdown (that remount-fights and freezes Inbound). */
+      .trades-header > .trade-list-dropdown,
+      .trades-header > .input-group-btn.group-dropdown,
+      .trades-header > .input-group-btn{
+        flex:0 0 180px!important;
+        order:2!important;
+        width:180px!important;
+        max-width:180px!important;
+        margin:0!important;
+        padding:0!important;
+        float:none!important;
+        position:relative!important;
+        overflow:visible!important;
+        align-self:flex-start!important;
+        justify-self:start!important;
+        box-sizing:border-box!important
+        /* leave display to React — forcing flex here remount-thrashed Inbound */
+      }
+      .trades-header > .trade-list-dropdown::before,
+      .trades-header > .input-group-btn.group-dropdown::before,
+      .trades-header > .input-group-btn::before{
+        content:"Category";
+        display:block!important;
+        margin:0 0 4px!important;
+        padding:0!important;
+        font-size:11px!important;
+        font-weight:700!important;
+        letter-spacing:.04em!important;
+        text-transform:uppercase!important;
+        opacity:.7!important;
+        line-height:1.2!important;
+        user-select:none;
+        pointer-events:none
+      }
+      /* Hide legacy DOM label if an older session left one */
+      #nteTradeTabLabel{display:none!important}
+      .trades-header > .trade-list-dropdown .flex.flex-col,
+      .trades-header > .trade-list-dropdown .gap-small,
+      .trades-header > .input-group-btn .flex.flex-col,
+      .trades-header > .input-group-btn .gap-small{
+        width:100%!important;
+        margin:0!important;
+        padding:0!important;
+        gap:0!important;
+        row-gap:0!important;
+        min-height:0!important
+      }
+      .trades-header .foundation-web-input,
+      .trades-header .input-dropdown-btn,
+      .trade-row-list .trade-quality .foundation-web-input{
+        display:flex!important;
+        align-items:center!important;
+        justify-content:space-between!important;
+        gap:8px!important;
+        width:100%!important;
+        min-height:34px!important;
+        box-sizing:border-box!important
+      }
+      #nteTradeDailyLimitCount{
+        width:100%!important;
+        max-width:180px!important;
+        margin:5px 0 0!important;
+        padding:0!important;
+        text-align:left!important;
+        white-space:nowrap!important;
+        font-size:11px!important;
+        opacity:.78!important;
+        display:flex!important;
+        align-items:center!important;
+        box-sizing:border-box!important
+      }
+      /* Sit under Trade Quality (right), matching Sort's Showing count */
+      .trade-quality.nte-trade-quality-native > #nteTradeDailyLimitCount,
+      .trade-row-list .trade-quality:not(#nteTradeListFilter) > #nteTradeDailyLimitCount{
+        order:10!important;
+        margin-top:5px!important
+      }
+      /* Sort + native quality sit as a compact control row */
+      .trade-row-list > #nteTradeListFilter,
+      .trade-row-list > .trade-quality:not(#nteTradeListFilter),
+      .trade-row-list .trade-quality:not(#nteTradeListFilter){
+        display:inline-flex!important;
+        flex-direction:column!important;
+        align-items:stretch!important;
+        justify-content:flex-start!important;
+        align-self:flex-start!important;
+        vertical-align:top!important;
+        width:180px!important;
+        max-width:calc(50% - 8px)!important;
+        margin:0 12px 10px 0!important;
+        padding:0!important;
+        border:0!important;
+        float:none!important;
+        gap:0!important;
+        row-gap:0!important;
+        box-sizing:border-box!important
+      }
+      #nteTradeListFilter .nte-trade-filter-right,
+      #nteTradeListFilter .input-group-btn{
+        width:100%!important;
+        max-width:100%!important;
+        margin:0!important;
+        padding:0!important;
+        float:none!important;
+        position:relative!important;
+        overflow:visible!important;
+        z-index:30;
+        display:flex!important;
+        flex-direction:column!important;
+        align-items:stretch!important;
+        gap:0!important;
+        row-gap:0!important
+      }
+      #nteTradeListFilterButton{
+        display:flex!important;
+        align-items:center!important;
+        justify-content:space-between!important;
+        gap:8px!important;
+        width:100%!important;
+        min-height:34px!important;
+        box-sizing:border-box!important;
+        border-radius:8px!important;
+        cursor:pointer
+      }
+      #nteTradeListFilterMenu.dropdown-menu,#nteTradeListFilterMenu{
+        position:absolute!important;top:100%!important;left:0!important;right:auto!important;
+        z-index:10050!important;min-width:100%!important;width:180px!important;
+        margin:4px 0 0!important;padding:4px 0!important;box-sizing:border-box!important;
+        list-style:none!important;display:none;border-radius:8px!important
+      }
+      #nteTradeListFilterMenu.nte-filter-open,#nteTradeListFilter .input-group-btn.open>#nteTradeListFilterMenu{
+        display:block!important
+      }
+      #nteTradeListFilterMenu a{display:block;padding:7px 12px;color:inherit;text-decoration:none;cursor:pointer}
+      #nteTradeListFilterMenu li.active>a{font-weight:700}
+      #nteTradeListFilterCount{
+        width:100%!important;
+        margin-top:5px!important;
+        padding:0!important;
+        text-align:left!important;
+        white-space:nowrap!important;
+        font-size:11px!important;
+        opacity:.78!important
+      }
+      /* Match Sort's tight label→control spacing on native quality */
+      .trade-row-list .trade-quality:not(#nteTradeListFilter) > .trade-quality-label{
+        margin:0 0 4px!important;
+        padding:0!important;
+        min-height:0!important
+      }
+      .trade-row-list .trade-quality:not(#nteTradeListFilter) > .trade-list-dropdown,
+      .trade-row-list .trade-quality:not(#nteTradeListFilter) .trade-list-dropdown,
+      .trade-row-list .trade-quality:not(#nteTradeListFilter) .flex.flex-col,
+      .trade-row-list .trade-quality:not(#nteTradeListFilter) .gap-small{
+        width:100%!important;
+        margin:0!important;
+        padding:0!important;
+        float:none!important;
+        gap:0!important;
+        row-gap:0!important;
+        min-height:0!important
+      }
+      .trade-row-list .trade-quality:not(#nteTradeListFilter) .foundation-web-input{
+        min-height:34px!important;
+        margin:0!important
+      }
+      #nteTradeFocusSelectedBar{
+        display:flex!important;
+        clear:both!important;
+        margin-top:2px!important;
+        gap:6px!important
+      }
+      #nteTradeFocusSelectedBtn,#nteTradeListRefreshBtn{
+        margin-top:0!important;
+        margin-left:0!important;
+        border-radius:8px!important
+      }
+    `;
+  }
+  function hide_trade_help_links() {
+    for (let link of document.querySelectorAll(
+      'a[href*="help.roblox.com"], a[href*="articles/203313310"]',
+    )) {
+      if (!/how do i trade/i.test(link.textContent || "") &&
+          !/203313310/.test(link.getAttribute("href") || ""))
+        continue;
+      link.style.setProperty("display", "none", "important");
+      link.setAttribute("aria-hidden", "true");
+    }
+  }
+  function unwrap_trade_category_wrap(header) {
+    let wrap = header?.querySelector?.("#nteTradeCategoryWrap");
+    if (!wrap) return;
+    // Reparenting React's Category dropdown into a wrap left stuck Radix
+    // select layers (scroll works, clicks die) — put nodes back.
+    let parent = wrap.parentElement;
+    if (parent) {
+      while (wrap.firstChild) parent.insertBefore(wrap.firstChild, wrap);
+    }
+    wrap.remove();
+  }
+  function trade_category_select_is_open() {
+    // Only trust a real open listbox/portal. Combobox data-state can stick
+    // on "open" after category remount while body pointer-events stays none.
+    return !!document.querySelector(
+      '[data-radix-select-content][data-state="open"],' +
+        '[role="listbox"][data-state="open"]',
+    );
+  }
+  function unlock_trade_page_pointer_trap() {
+    // Radix Select sets body pointer-events:none + data-scroll-locked.
+    // Category remount can leave that trap after the listbox is gone
+    // (scroll works, clicks die).
+    try {
+      document.body?.removeAttribute?.("aria-hidden");
+      document.body?.removeAttribute?.("data-scroll-locked");
+      document.body?.style?.removeProperty?.("pointer-events");
+      document.body?.style?.removeProperty?.("overflow");
+      document.documentElement?.removeAttribute?.("aria-hidden");
+      document.documentElement?.style?.removeProperty?.("pointer-events");
+      document.documentElement?.style?.removeProperty?.("overflow");
+      if (document.body?.style?.pointerEvents === "none")
+        document.body.style.pointerEvents = "";
+    } catch {}
+    for (let el of [
+      ...document.querySelectorAll("[inert], [data-aria-hidden='true']"),
+    ]) {
+      try {
+        if (el.id === "nteTradeListFilterMenu") continue;
+        if (el.getAttribute?.("aria-hidden") === "true" &&
+            /how do i trade/i.test(el.textContent || ""))
+          continue;
+        el.removeAttribute("inert");
+        if (el.getAttribute("data-aria-hidden") === "true")
+          el.removeAttribute("data-aria-hidden");
+      } catch {}
+    }
+  }
+  function dismiss_stuck_trade_select_layers(force) {
+    // Never tear down a live Category select from routine UI work — removing
+    // Radix portals mid-open freezes the renderer. Only unlock the body trap
+    // unless force=true after a finished tab switch.
+    let open = trade_category_select_is_open();
+    if (open && !force) return;
+    if (open && force) {
+      try {
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Escape",
+            code: "Escape",
+            keyCode: 27,
+            which: 27,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      } catch {}
+    }
+    unlock_trade_page_pointer_trap();
+    if (!force && open) return;
+    // Only after forced dismiss (tab switch): remove orphaned select portals.
+    if (!force) return;
+    for (let el of [
+      ...document.querySelectorAll(
+        '[data-radix-select-content][data-state="open"], [role="listbox"][data-state="open"]',
+      ),
+    ]) {
+      try {
+        let portal = el.closest?.("[data-radix-portal]") || el;
+        // Prefer leaving React-owned wrappers; only drop the select content host.
+        if (portal !== document.body) portal.remove?.();
+      } catch {}
+    }
+    unlock_trade_page_pointer_trap();
+  }
+  function ensure_trade_pointer_trap_watchdog() {
+    if (window.__nteTradePointerTrapWatch) return;
+    window.__nteTradePointerTrapWatch = 1;
+    setInterval(() => {
+      try {
+        let pe = getComputedStyle(document.body).pointerEvents;
+        let locked = document.body?.getAttribute?.("data-scroll-locked");
+        if (pe !== "none" && !locked) return;
+        if (trade_category_select_is_open()) return;
+        unlock_trade_page_pointer_trap();
+      } catch {}
+    }, 500);
+    // Category option click remounts the list while Radix may still hold the
+    // body pointer trap — unlock only; do not delete portals here.
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        let opt = event.target?.closest?.(
+          '[role="option"], [data-radix-select-item]',
+        );
+        if (!opt) return;
+        // Pause before React remounts the list for the new category.
+        begin_trade_category_soft_mode();
+        setTimeout(unlock_trade_page_pointer_trap, 0);
+        setTimeout(unlock_trade_page_pointer_trap, 150);
+        setTimeout(unlock_trade_page_pointer_trap, 400);
+        setTimeout(unlock_trade_page_pointer_trap, 900);
+      },
+      true,
+    );
+    window.addEventListener("popstate", () => {
+      setTimeout(unlock_trade_page_pointer_trap, 0);
+      setTimeout(unlock_trade_page_pointer_trap, 250);
+    });
+  }
+  function ensure_trade_tab_category_label() {
+    let header = document.querySelector(
+      ".trade-row-list .trades-header, .trades-header",
+    );
+    if (!header) return;
+    hide_trade_help_links();
+    unwrap_trade_category_wrap(header);
+    // Remove legacy DOM Category label — CSS ::before owns it now.
+    // Re-inserting a sibling before React's dropdown remount-fights and can
+    // freeze the page when switching back to Inbound.
+    header.querySelector("#nteTradeTabLabel")?.remove?.();
+  }
+  function place_trade_daily_limit_under_quality(quality_el) {
+    let limit = document.getElementById("nteTradeDailyLimitCount");
+    let host =
+      quality_el ||
+      document.querySelector(".trade-quality.nte-trade-quality-native") ||
+      [...document.querySelectorAll(".trade-row-list .trade-quality")].find(
+        (el) => el.id !== "nteTradeListFilter",
+      );
+    if (!host) return null;
+    if (!limit) limit = create_trade_daily_limit_counter(host);
+    if (!limit) return null;
+    if (limit.parentElement !== host) host.appendChild(limit);
+    limit.style.width = "100%";
+    limit.style.maxWidth = "180px";
+    limit.style.marginTop = "5px";
+    limit.style.paddingLeft = "0";
+    limit.style.opacity = "0.78";
+    return limit;
+  }
+  function bind_trade_list_filter_controls(root) {
+    let btn = root?.querySelector?.("#nteTradeListFilterButton"),
+      menu = root?.querySelector?.("#nteTradeListFilterMenu");
+    if (!btn || !menu || btn.dataset.nteFilterBound === "1") return;
+    btn.dataset.nteFilterBound = "1";
+    btn.addEventListener("click", toggle_trade_list_filter_menu, true);
+    btn.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+    }, true);
+    menu.addEventListener(
+      "click",
+      (event) => {
+        let value = event.target
+          ?.closest?.("[data-value]")
+          ?.getAttribute("data-value");
+        if (!value) return;
+        event.preventDefault();
+        event.stopPropagation();
+        close_trade_list_filter_menu();
+        if (value === "item_search") {
+          show_trade_list_search_input();
+        } else {
+          hide_trade_list_search_input();
+          trade_filter_state.value = value;
+          trade_search_q = "";
+          sync_trade_list_filter_ui_state();
+          L();
+        }
+      },
+      true,
+    );
+    if (!trade_filter_bound) {
+      document.addEventListener(
+        "click",
+        (event) => {
+          event.target?.closest?.(".trade-row-list .trade-row") &&
+            setTimeout(() => {
+              sync_trade_focus_button();
+              trade_focus_selected_only && apply_trade_list_filter();
+            }, 0);
+          document
+            .getElementById("nteTradeListFilter")
+            ?.contains?.(event.target) || close_trade_list_filter_menu();
+        },
+        true,
+      );
+      trade_filter_bound = !0;
+    }
   }
   function sync_trade_list_filter_ui_state() {
     let inactive_tab = get_current_trade_tab() === "inactive",
@@ -8036,7 +9519,8 @@
     let dd = document.querySelector("#nteTradeListFilter .input-group-btn");
     if (!dd) return;
     let btn = document.getElementById("nteTradeListFilterButton");
-    if (btn) btn.style.display = "none";
+    if (btn) btn.style.setProperty("display", "none", "important");
+    close_trade_list_filter_menu();
     let existing = document.getElementById("nteTradeListSearchInput");
     if (existing) {
       existing.focus();
@@ -8112,10 +9596,61 @@
     let wrap = document.getElementById("nteTradeListSearchInput");
     if (wrap) wrap.remove();
     let btn = document.getElementById("nteTradeListFilterButton");
-    if (btn) btn.style.display = "";
+    if (btn) {
+      btn.style.removeProperty("display");
+      btn.style.setProperty("display", "flex", "important");
+    }
     trade_search_q = "";
   }
+  function normalize_native_trade_quality_control(sort_el) {
+    let list = document.querySelector(".trade-row-list");
+    if (!list) return null;
+    let native = [...list.querySelectorAll(".trade-quality")].find(
+      (el) => el.id !== "nteTradeListFilter",
+    );
+    if (!native) return null;
+    // Keep Sort + Quality as adjacent siblings so tops share one axis.
+    if (sort_el?.isConnected && native.previousElementSibling !== sort_el)
+      sort_el.insertAdjacentElement("afterend", native);
+    native.classList.add("nte-trade-quality-native");
+    native.style.display = "inline-flex";
+    native.style.flexDirection = "column";
+    native.style.alignItems = "stretch";
+    native.style.justifyContent = "flex-start";
+    native.style.alignSelf = "flex-start";
+    native.style.gap = "0";
+    native.style.width = "180px";
+    native.style.margin = "0 12px 10px 0";
+    native.style.padding = "0";
+    native.style.float = "none";
+    let lbl = native.querySelector(":scope > .trade-quality-label, .trade-quality-label");
+    if (lbl) {
+      lbl.classList.add("nte-trade-list-control-label");
+      lbl.style.margin = "0 0 4px";
+      lbl.style.padding = "0";
+      lbl.style.minHeight = "0";
+    }
+    for (let el of native.querySelectorAll(
+      ".trade-list-dropdown, .flex.flex-col, .gap-small",
+    )) {
+      el.style.margin = "0";
+      el.style.padding = "0";
+      el.style.gap = "0";
+      el.style.rowGap = "0";
+      el.style.minHeight = "0";
+      el.style.width = "100%";
+      el.style.float = "none";
+    }
+    place_trade_daily_limit_under_quality(native);
+    return native;
+  }
   function ensure_trade_list_filter_ui() {
+    ensure_trade_list_filter_menu_style();
+    ensure_trade_tab_category_label();
+    ensure_trade_pointer_trap_watchdog();
+    // Never Escape/remove an open Category select from routine refresh.
+    if (!trade_category_select_is_open()) unlock_trade_page_pointer_trap();
+    hide_trade_help_links();
     let e = get_trade_list_filter_anchor();
     if (!e) return clear_trade_list_filter_ui(), null;
     let t = document.querySelector(".trade-row-list"),
@@ -8125,29 +9660,30 @@
       ((r = document.createElement("div")),
       (r.id = "nteTradeListFilter"),
       (r.className = "trade-quality"),
-      (r.style.display = "flex"),
-      (r.style.alignItems = "flex-start"),
-      (r.style.justifyContent = "space-between"),
-      (r.style.gap = "12px"),
-      (r.style.width = "100%"),
+      (r.style.display = "inline-flex"),
+      (r.style.flexDirection = "column"),
+      (r.style.alignItems = "stretch"),
+      (r.style.justifyContent = "flex-start"),
+      (r.style.gap = "0"),
+      (r.style.width = "180px"),
       (function () {
-        let left = document.createElement("div");
-        left.style.display = "flex";
-        left.style.flexDirection = "column";
-        left.style.alignItems = "flex-start";
-        left.style.flex = "1 1 auto";
-        left.style.minWidth = "0";
+        let col = document.createElement("div");
+        col.className = "nte-trade-filter-right";
+        col.style.display = "flex";
+        col.style.flexDirection = "column";
+        col.style.alignItems = "stretch";
+        col.style.width = "100%";
         let lbl = document.createElement("div");
-        lbl.className = "trade-quality-label";
-        lbl.style.paddingTop = "10px";
-        lbl.textContent = "Sort by";
+        lbl.className = "trade-quality-label nte-trade-list-control-label";
+        lbl.style.paddingTop = "0";
+        lbl.textContent = "Sort";
         let focus_btn = document.createElement("button");
         focus_btn.type = "button";
         focus_btn.id = "nteTradeFocusSelectedBtn";
         focus_btn.textContent = "Hide others";
         focus_btn.setAttribute("aria-pressed", "false");
         focus_btn.style.cssText =
-          "margin-top:4px;height:23px;padding:0 9px;border-radius:999px;border:1px solid rgba(128,128,128,0.24);background:rgba(128,128,128,0.10);color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:22px;white-space:nowrap;transition:background .14s,border-color .14s,opacity .14s;";
+          "margin-top:0;height:23px;padding:0 9px;border-radius:8px;border:1px solid rgba(128,128,128,0.24);background:rgba(128,128,128,0.10);color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:22px;white-space:nowrap;transition:background .14s,border-color .14s,opacity .14s;";
         focus_btn.addEventListener("mouseenter", () => {
           focus_btn.style.background = "rgba(128,128,128,0.18)";
           focus_btn.style.borderColor = "rgba(128,128,128,0.34)";
@@ -8177,7 +9713,7 @@
         refresh_btn.title = "Refresh trade list";
         refresh_btn.setAttribute("aria-label", "Refresh trade list");
         refresh_btn.style.cssText =
-          "margin-top:4px;margin-left:6px;height:23px;padding:0 9px;border-radius:999px;border:1px solid rgba(128,128,128,0.24);background:rgba(128,128,128,0.10);color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:22px;white-space:nowrap;transition:background .14s,border-color .14s,opacity .14s;";
+          "margin-top:0;margin-left:0;height:23px;padding:0 9px;border-radius:8px;border:1px solid rgba(128,128,128,0.24);background:rgba(128,128,128,0.10);color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:22px;white-space:nowrap;transition:background .14s,border-color .14s,opacity .14s;";
         refresh_btn.addEventListener("mouseenter", () => {
           refresh_btn.style.background = "rgba(128,128,128,0.18)";
           refresh_btn.style.borderColor = "rgba(128,128,128,0.34)";
@@ -8204,21 +9740,15 @@
         let focus_bar = document.createElement("div");
         focus_bar.id = "nteTradeFocusSelectedBar";
         focus_bar.style.cssText =
-          "width:100%;display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:0;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
+          "width:100%;display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:6px;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
         focus_bar.append(focus_btn, refresh_btn);
         r._nte_focus_bar = focus_bar;
-        left.append(lbl);
-        create_trade_daily_limit_counter(left);
-        let col = document.createElement("div");
-        col.style.display = "flex";
-        col.style.flexDirection = "column";
-        col.style.alignItems = "flex-end";
-        col.style.flex = "0 0 auto";
-        col.style.width = "202px";
         let dd = document.createElement("div");
         dd.className = "input-group-btn group-dropdown trade-list-dropdown";
-        dd.style.width = "202px";
+        dd.style.width = "100%";
         dd.style.position = "relative";
+        dd.style.overflow = "visible";
+        dd.style.zIndex = "30";
         let btn = document.createElement("button");
         btn.type = "button";
         btn.id = "nteTradeListFilterButton";
@@ -8242,9 +9772,9 @@
         ul.id = "nteTradeListFilterMenu";
         ul.className = "dropdown-menu";
         ul.setAttribute("role", "menu");
-        ul.style.display = "none";
+        ul.style.setProperty("display", "none", "important");
         ul.style.minWidth = "100%";
-        ul.style.width = "202px";
+        ul.style.width = "180px";
         TRADE_LIST_FILTER_OPTIONS.forEach(function (opt) {
           let li = document.createElement("li");
           li.setAttribute("data-value", opt.value);
@@ -8264,71 +9794,68 @@
         cnt.id = "nteTradeListFilterCount";
         cnt.className = "text-date-hint";
         cnt.style.width = "100%";
-        cnt.style.marginTop = "6px";
-        cnt.style.paddingRight = "4px";
-        cnt.style.textAlign = "right";
+        cnt.style.marginTop = "5px";
+        cnt.style.paddingRight = "0";
+        cnt.style.textAlign = "left";
         cnt.style.whiteSpace = "nowrap";
-        cnt.style.opacity = "0.85";
+        cnt.style.opacity = "0.78";
         cnt.textContent = "Showing 0/0";
-        col.append(dd, cnt);
-        r.append(left, col);
+        col.append(lbl, dd, cnt);
+        r.append(col);
       })(),
       e.parentElement)
     ) {
-      let n = r.querySelector("#nteTradeListFilterButton"),
-        a = r.querySelector("#nteTradeListFilterMenu");
-      n &&
-        a &&
-        (n.addEventListener("click", (e) => {
-          e.preventDefault(),
-            e.stopPropagation(),
-            (a.style.display = "none" === a.style.display ? "block" : "none"),
-            n.setAttribute(
-              "aria-expanded",
-              "block" === a.style.display ? "true" : "false",
-            );
-        }),
-        a.addEventListener("click", (e) => {
-          let t = e.target
-            ?.closest?.("[data-value]")
-            ?.getAttribute("data-value");
-          if (!t) return;
-          e.preventDefault();
-          close_trade_list_filter_menu();
-          if (t === "item_search") {
-            show_trade_list_search_input();
-          } else {
-            hide_trade_list_search_input();
-            trade_filter_state.value = t;
-            trade_search_q = "";
-            sync_trade_list_filter_ui_state();
-            L();
-          }
-        }),
-        trade_filter_bound ||
-          (document.addEventListener("click", (e) => {
-            e.target?.closest?.(".trade-row-list .trade-row") &&
-              setTimeout(() => {
-                sync_trade_focus_button();
-                trade_focus_selected_only && apply_trade_list_filter();
-              }, 0);
-            document
-              .getElementById("nteTradeListFilter")
-              ?.contains?.(e.target) || close_trade_list_filter_menu();
-          }),
-          (trade_filter_bound = !0))),
-        e.insertAdjacentElement("afterend", r);
+      bind_trade_list_filter_controls(r);
+      e.insertAdjacentElement("afterend", r);
     }
     if (!r || !t) return r;
-    if (r.previousElementSibling !== e && e.parentElement)
+    // Keep existing mounts tidy when React re-renders the list shell.
+    r.style.display = "inline-flex";
+    r.style.flexDirection = "column";
+    r.style.alignItems = "stretch";
+    r.style.justifyContent = "flex-start";
+    r.style.gap = "0";
+    r.style.width = "180px";
+    let existing_lbl = r.querySelector(".trade-quality-label");
+    if (existing_lbl) {
+      existing_lbl.classList.add("nte-trade-list-control-label");
+      existing_lbl.style.paddingTop = "0";
+      if (/^sort by$/i.test((existing_lbl.textContent || "").trim()))
+        existing_lbl.textContent = "Sort";
+    }
+    let right_col =
+      r.querySelector("#nteTradeListFilterButton")?.closest?.(
+        ".input-group-btn",
+      )?.parentElement || r;
+    if (right_col) {
+      right_col.classList.add("nte-trade-filter-right");
+      right_col.style.width = "100%";
+      if (existing_lbl && existing_lbl.parentElement !== right_col)
+        right_col.insertBefore(existing_lbl, right_col.firstChild);
+    }
+    // Drop the old left spacer column if present.
+    for (let left of [...r.querySelectorAll(".nte-trade-filter-left")]) {
+      if (left === right_col) continue;
+      if (!left.querySelector("#nteTradeListFilterButton")) left.remove();
+    }
+    let menu = r.querySelector("#nteTradeListFilterMenu");
+    if (menu) menu.style.width = "180px";
+    let count = r.querySelector("#nteTradeListFilterCount");
+    if (count) count.style.textAlign = "left";
+    bind_trade_list_filter_controls(r);
+    if (r !== e && r.previousElementSibling !== e && e.parentElement)
       e.insertAdjacentElement("afterend", r);
+    let quality = normalize_native_trade_quality_control(r);
+    ensure_trade_tab_category_label();
+    hide_trade_help_links();
+    place_trade_daily_limit_under_quality(quality);
     let focus_bar =
       document.getElementById("nteTradeFocusSelectedBar") || r._nte_focus_bar;
     if (!focus_bar) {
       focus_bar = document.createElement("div");
       focus_bar.id = "nteTradeFocusSelectedBar";
       focus_bar.style.cssText =
-        "width:100%;display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:0;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
+        "width:100%;display:flex;align-items:center;justify-content:flex-start;flex-wrap:wrap;gap:6px;box-sizing:border-box;margin:6px 0 0;padding:0;position:relative;z-index:1;clear:both;";
     }
     if (!focus_bar.querySelector("#nteTradeListRefreshBtn")) {
       let refresh_btn = document.createElement("button");
@@ -8338,7 +9865,7 @@
       refresh_btn.title = "Refresh trade list";
       refresh_btn.setAttribute("aria-label", "Refresh trade list");
       refresh_btn.style.cssText =
-        "margin-top:4px;margin-left:6px;height:23px;padding:0 9px;border-radius:999px;border:1px solid rgba(128,128,128,0.24);background:rgba(128,128,128,0.10);color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:22px;white-space:nowrap;transition:background .14s,border-color .14s,opacity .14s;";
+        "margin-top:0;margin-left:0;height:23px;padding:0 9px;border-radius:8px;border:1px solid rgba(128,128,128,0.24);background:rgba(128,128,128,0.10);color:inherit;font:inherit;font-size:11px;font-weight:700;line-height:22px;white-space:nowrap;transition:background .14s,border-color .14s,opacity .14s;";
       refresh_btn.addEventListener("mouseenter", () => {
         refresh_btn.style.background = "rgba(128,128,128,0.18)";
         refresh_btn.style.borderColor = "rgba(128,128,128,0.34)";
@@ -8366,9 +9893,7 @@
     }
     place_trade_focus_bar(focus_bar);
     bind_trade_focus_selected_observer();
-    ensure_trade_daily_limit_counter(
-      r.querySelector(".trade-quality-label")?.parentElement || r,
-    );
+    place_trade_daily_limit_under_quality(quality);
     schedule_trade_daily_limit_refresh(0);
     return sync_trade_list_filter_ui_state(), r;
   }
@@ -8720,11 +10245,12 @@
   }
   function remove_trade_row_decline_buttons(scope = document) {
     let rows = new Set();
-    for (let wrap of [
-      ...scope.querySelectorAll(".nte-trade-row-decline-wrap"),
-    ]) {
-      let row = wrap.closest(".trade-row");
-      let status_hint = wrap.closest(".text-date-hint");
+    for (let wrap of query_all_trade_row_controls(
+      ".nte-trade-row-decline-wrap",
+      scope,
+    )) {
+      let row = trade_row_from_control(wrap);
+      let status_hint = wrap.closest?.(".text-date-hint");
       row?.classList.remove("nte-trade-row-has-decline");
       wrap.remove();
       status_hint && reset_trade_row_status_hint_flex(status_hint);
@@ -8734,11 +10260,10 @@
   }
   function remove_trade_row_decline_button(row) {
     if (!row?.querySelector) return;
-    let status_hint = row
-      .querySelector(".nte-trade-row-decline-wrap")
-      ?.closest(".text-date-hint");
+    let wrap = query_trade_row_control(row, ".nte-trade-row-decline-wrap");
+    let status_hint = wrap?.closest?.(".text-date-hint");
     row.classList.remove("nte-trade-row-has-decline");
-    row.querySelector(".nte-trade-row-decline-wrap")?.remove();
+    wrap?.remove();
     status_hint && reset_trade_row_status_hint_flex(status_hint);
     sync_trade_row_lock_position(row);
   }
@@ -8747,8 +10272,171 @@
     return tab === "inbound" || tab === "outbound";
   }
   const locked_trade_ids_key = "nteLockedTradeIds";
+  let trade_row_decline_enabled = true;
+  let trade_row_decline_prime_started = false;
   let locked_trade_ids_loaded = false,
     locked_trade_ids = new Set();
+  let trade_row_controls_sheet = null;
+  const trade_row_controls_css = `
+:host{position:relative}
+.nte-trade-row-lock-wrap{
+  position:absolute;top:auto;left:auto;right:1px;bottom:6px;z-index:2;width:24px;height:24px;
+  display:flex;align-items:center;justify-content:center;box-sizing:border-box;
+  pointer-events:auto;isolation:isolate;cursor:pointer;
+}
+.nte-trade-row-lock{
+  position:relative;top:auto;left:auto;
+  width:18px;height:18px;padding:0;border-radius:6px;border:1px solid rgba(148,163,184,.18);
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;cursor:pointer;
+  appearance:none;-webkit-appearance:none;background:rgba(148,163,184,.08);color:#94a3b8;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 2px 6px rgba(0,0,0,.18);
+  transition:background .14s ease,border-color .14s ease,color .14s ease,box-shadow .14s ease;
+}
+.nte-trade-row-lock svg{width:12px;height:12px;display:block;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.nte-trade-row-lock:hover{background:rgba(148,163,184,.14);border-color:rgba(148,163,184,.28);color:#e2e8f0}
+.nte-trade-row-lock.is-locked{background:rgba(245,158,11,.15);border-color:rgba(245,158,11,.34);color:#f6c453;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 0 1px rgba(245,158,11,.08),0 2px 6px rgba(0,0,0,.18)}
+.nte-trade-row-lock.is-locked:hover{background:rgba(245,158,11,.22);border-color:rgba(245,158,11,.46);color:#ffe08a}
+:host-context(.light-theme) .nte-trade-row-lock{background:rgba(15,23,42,.04);border-color:rgba(100,116,139,.18);color:#64748b;box-shadow:inset 0 1px 0 rgba(255,255,255,.82)}
+:host-context(.light-theme) .nte-trade-row-lock:hover{background:rgba(15,23,42,.07);border-color:rgba(100,116,139,.26);color:#334155}
+:host-context(.light-theme) .nte-trade-row-lock.is-locked{background:rgba(245,158,11,.14);border-color:rgba(217,119,6,.28);color:#b7791f}
+.nte-trade-row-decline-wrap{
+  position:absolute;top:auto;right:8px;bottom:6px;left:auto;transform:none;
+  display:inline-flex;align-items:center;justify-content:flex-end;width:auto;max-width:100%;margin-top:0;line-height:1;z-index:2;
+}
+.nte-trade-row-decline{
+  min-width:0;min-height:20px;padding:0 9px;border-radius:999px;border:1px solid rgba(148,163,184,.18);
+  background:rgba(148,163,184,.08);color:#cbd5e1;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 2px 6px rgba(0,0,0,.18);
+  display:inline-flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none;
+  appearance:none;-webkit-appearance:none;font:inherit;font-size:10px;font-weight:700;letter-spacing:.01em;line-height:1;
+  transition:background .14s ease, border-color .14s ease, box-shadow .14s ease, color .14s ease, opacity .14s ease;
+}
+.nte-trade-row-decline:hover{
+  background:linear-gradient(180deg,rgba(127,29,29,.24),rgba(69,10,10,.18));
+  border-color:rgba(248,113,113,.28);color:#ffe4e6;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 2px 8px rgba(2,6,23,.12);
+}
+.nte-trade-row-decline:disabled{cursor:wait}
+.nte-trade-row-decline.is-pending{
+  background:linear-gradient(180deg,rgba(71,85,105,.3),rgba(51,65,85,.24));border-color:rgba(148,163,184,.24);color:#e2e8f0;
+}
+.nte-trade-row-decline.is-success{
+  background:linear-gradient(180deg,rgba(21,128,61,.24),rgba(20,83,45,.18));border-color:rgba(134,239,172,.26);color:#dcfce7;
+}
+.nte-trade-row-decline.is-error{
+  background:linear-gradient(180deg,rgba(180,83,9,.24),rgba(120,53,15,.18));border-color:rgba(253,186,116,.26);color:#ffedd5;
+}
+:host-context(.light-theme) .nte-trade-row-decline{
+  background:rgba(15,23,42,.04);border-color:rgba(100,116,139,.18);color:#64748b;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.82);
+}
+:host-context(.light-theme) .nte-trade-row-decline:hover{
+  background:linear-gradient(180deg,rgba(255,250,250,.98),rgba(254,242,242,.96));border-color:rgba(239,68,68,.22);color:#b91c1c;box-shadow:inset 0 1px 0 rgba(255,255,255,.96),0 2px 6px rgba(15,23,42,.05);
+}
+:host-context(.light-theme) .nte-trade-row-decline.is-pending{
+  background:linear-gradient(180deg,rgba(241,245,249,.98),rgba(226,232,240,.96));border-color:rgba(148,163,184,.24);color:#334155;
+}
+:host-context(.light-theme) .nte-trade-row-decline.is-success{
+  background:linear-gradient(180deg,rgba(240,253,244,.98),rgba(220,252,231,.96));border-color:rgba(34,197,94,.22);color:#166534;
+}
+:host-context(.light-theme) .nte-trade-row-decline.is-error{
+  background:linear-gradient(180deg,rgba(255,247,237,.98),rgba(254,215,170,.96));border-color:rgba(249,115,22,.22);color:#9a3412;
+}
+:host-context(html.nte-trade-ui-backoff) .nte-trade-row-lock-wrap,
+:host-context(html.nte-trade-ui-backoff) .nte-trade-row-decline-wrap{
+  opacity:0!important;visibility:hidden!important;pointer-events:none!important;
+}
+`;
+  function get_trade_row_controls_sheet() {
+    if (trade_row_controls_sheet) return trade_row_controls_sheet;
+    if (typeof CSSStyleSheet === "undefined") return null;
+    try {
+      trade_row_controls_sheet = new CSSStyleSheet();
+      trade_row_controls_sheet.replaceSync(trade_row_controls_css);
+      return trade_row_controls_sheet;
+    } catch {
+      trade_row_controls_sheet = null;
+      return null;
+    }
+  }
+  function ensure_trade_row_control_mount(row) {
+    if (!(row instanceof HTMLElement)) return row;
+    if (row.dataset.nteCtrlShadow === "0") return row;
+    try {
+      let shadow = row.shadowRoot;
+      if (!shadow) {
+        shadow = row.attachShadow({ mode: "open" });
+        shadow.appendChild(document.createElement("slot"));
+      } else if (!shadow.querySelector(":scope > slot")) {
+        shadow.insertBefore(document.createElement("slot"), shadow.firstChild);
+      }
+      let sheet = get_trade_row_controls_sheet();
+      if (sheet) {
+        let sheets = shadow.adoptedStyleSheets || [];
+        if (![...sheets].includes(sheet))
+          shadow.adoptedStyleSheets = [...sheets, sheet];
+      } else if (!shadow.querySelector("style[data-nte-row-ctrl]")) {
+        let style = document.createElement("style");
+        style.dataset.nteRowCtrl = "1";
+        style.textContent = trade_row_controls_css;
+        shadow.appendChild(style);
+      }
+      for (let wrap of [
+        ...row.querySelectorAll(
+          ":scope > .nte-trade-row-lock-wrap, :scope > .nte-trade-row-decline-wrap",
+        ),
+      ]) {
+        shadow.appendChild(wrap);
+      }
+      row.dataset.nteCtrlShadow = "1";
+      row.classList.add("nte-trade-row-lock-host");
+      return shadow;
+    } catch {
+      row.dataset.nteCtrlShadow = "0";
+      return row;
+    }
+  }
+  function query_trade_row_control(row, sel) {
+    if (!row) return null;
+    return (
+      row.shadowRoot?.querySelector(sel) || row.querySelector?.(sel) || null
+    );
+  }
+  function query_all_trade_row_controls(sel, scope = document) {
+    let out = [];
+    let rows;
+    if (scope instanceof Element && scope.classList?.contains("trade-row"))
+      rows = [scope];
+    else {
+      let root = scope && scope.querySelectorAll ? scope : document;
+      rows = [
+        ...root.querySelectorAll(".trade-row-list .trade-row, .trade-row"),
+      ];
+    }
+    for (let row of rows) {
+      if (row.shadowRoot) out.push(...row.shadowRoot.querySelectorAll(sel));
+      out.push(...row.querySelectorAll(sel));
+    }
+    return out;
+  }
+  function append_trade_row_control(row, wrap) {
+    if (!row || !wrap) return false;
+    let owner = trade_row_from_control(wrap);
+    // Never steal a live button from another connected row (fp/id collisions
+    // were leaving olivxr-style rows permanently without controls).
+    if (owner && owner !== row && owner.isConnected) return false;
+    let mount = ensure_trade_row_control_mount(row);
+    if (wrap.parentNode !== mount) mount.appendChild(wrap);
+    return true;
+  }
+  function trade_row_from_control(el) {
+    let root = el?.getRootNode?.();
+    if (
+      root instanceof ShadowRoot &&
+      root.host?.classList?.contains("trade-row")
+    )
+      return root.host;
+    return el?.closest?.(".trade-row") || null;
+  }
   function normalize_locked_trade_ids(ids) {
     return (Array.isArray(ids) ? ids : [])
       .map((id) => String(id || "").trim())
@@ -8821,13 +10509,13 @@
     let key = String(trade_id || "");
     for (let row of document.querySelectorAll(".trade-row-list .trade-row")) {
       if (String(get_selected_trade_id_sync(row) || "") !== key) continue;
-      let btn = row.querySelector(".nte-trade-row-lock");
+      let btn = query_trade_row_control(row, ".nte-trade-row-lock");
       update_trade_row_lock_button(btn, is_trade_row_locked(key));
     }
   }
   function sync_trade_row_lock_position(row) {
     if (!row?.querySelector) return;
-    let lock_wrap = row.querySelector(".nte-trade-row-lock-wrap");
+    let lock_wrap = query_trade_row_control(row, ".nte-trade-row-lock-wrap");
     if (!lock_wrap) return;
     let box = row.querySelector(".tradeListValuesBox");
     let summary_width = box
@@ -8835,7 +10523,7 @@
       : 0;
     let values_gap = summary_width > 0 ? 6 : 8;
     let right = summary_width > 0 ? summary_width + values_gap : values_gap;
-    let decline_wrap = row.querySelector(".nte-trade-row-decline-wrap");
+    let decline_wrap = query_trade_row_control(row, ".nte-trade-row-decline-wrap");
     if (trade_row_decline_enabled && decline_wrap) {
       let decline_width = Math.ceil(
         decline_wrap.getBoundingClientRect().width ||
@@ -8852,47 +10540,65 @@
   }
   async function ensure_trade_row_lock_button(row) {
     if (!row?.querySelector || !is_trade_row_decline_tab()) return;
-    await load_locked_trade_ids();
+    if (!locked_trade_ids_loaded) await load_locked_trade_ids();
     let trade_id = get_selected_trade_id_sync(row);
     if (!trade_id) {
       prime_trade_row_id(row);
       trade_id = await J(row, 3);
     }
     if (!trade_id || !row.isConnected) return;
+    mount_trade_row_lock_button_sync(row, trade_id);
+  }
+  function mount_trade_row_lock_button_sync(row, trade_id) {
+    if (!row?.querySelector || !is_trade_row_decline_tab() || !trade_id) return;
+    remember_trade_row_id(row, trade_id);
     row.classList.add("nte-trade-row-lock-host");
     for (let avatar of row.querySelectorAll(".avatar.nte-trade-row-lock-host")) {
       avatar.classList.remove("nte-trade-row-lock-host");
     }
-    let wrap = row.querySelector(".nte-trade-row-lock-wrap");
+    let wrap = query_trade_row_control(row, ".nte-trade-row-lock-wrap");
     let legacy_btn =
+      query_trade_row_control(row, ".nte-trade-row-lock") ||
       row.querySelector(":scope > .nte-trade-row-lock") ||
       row.querySelector(".avatar .nte-trade-row-lock");
     if (legacy_btn && legacy_btn.parentElement !== wrap) {
       legacy_btn.parentElement?.classList.remove("nte-trade-row-lock-host");
     }
+    // Rebuild wrappers from older binds that ignored real mouse clicks
+    // (event.detail !== 0 early-return) or over-stopped pointer events.
+    if (wrap && wrap.dataset.nteLockBound !== "3") {
+      wrap.remove();
+      wrap = null;
+    }
     if (!wrap) {
       wrap = document.createElement("div");
       wrap.className = "nte-trade-row-lock-wrap";
-      for (let ev of ["click", "mousedown", "mouseup", "pointerup", "touchstart", "touchend", "dblclick"]) {
+      wrap.dataset.nteLockBound = "3";
+      for (let ev of [
+        "mousedown",
+        "mouseup",
+        "pointerdown",
+        "pointerup",
+        "touchstart",
+        "touchend",
+        "dblclick",
+      ]) {
         wrap.addEventListener(ev, (event) => {
-          event.preventDefault();
           event.stopPropagation();
-          event.stopImmediatePropagation();
         });
       }
-      wrap.addEventListener("pointerdown", async (event) => {
-        if (event.button && event.button !== 0) return;
+      wrap.addEventListener("click", async (event) => {
         event.preventDefault();
         event.stopPropagation();
-        event.stopImmediatePropagation();
-        let current_row = wrap.closest(".trade-row");
+        let current_row = trade_row_from_control(wrap);
         let current_btn = wrap.querySelector(".nte-trade-row-lock");
         if (!current_row?.isConnected || !current_btn) return;
         await toggle_trade_row_lock(current_row, current_btn);
       });
     }
+    wrap.dataset.nteTradeId = String(trade_id);
     let btn = wrap.querySelector(".nte-trade-row-lock") || legacy_btn;
-    if (btn && btn.dataset.nteLockBound !== "2") {
+    if (btn && btn.dataset.nteLockBound !== "3") {
       btn.remove();
       btn = null;
     }
@@ -8900,35 +10606,339 @@
       btn = document.createElement("button");
       btn.type = "button";
       btn.className = "nte-trade-row-lock";
-      btn.dataset.nteLockBound = "2";
+      btn.dataset.nteLockBound = "3";
       btn.setAttribute("aria-label", "Lock trade");
-      for (let ev of ["mousedown", "mouseup", "pointerup", "touchstart", "touchend", "dblclick"]) {
-        btn.addEventListener(ev, (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          event.stopImmediatePropagation();
-        });
-      }
-      btn.addEventListener("click", async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        if (event.detail !== 0) return;
-        let current_row = wrap.closest(".trade-row");
-        if (!current_row?.isConnected) return;
-        await toggle_trade_row_lock(current_row, btn);
-      });
     }
     if (btn.parentElement !== wrap) wrap.appendChild(btn);
-    if (wrap.parentElement !== row) row.appendChild(wrap);
+    append_trade_row_control(row, wrap);
+    park_trade_row_control_node(wrap, trade_id);
     sync_trade_row_lock_position(row);
     update_trade_row_lock_button(btn, is_trade_row_locked(trade_id));
   }
+  let trade_row_id_by_fp = new Map();
+  let trade_row_fp_collisions = new Set();
+  let trade_row_control_park = new Map();
+  function get_trade_row_fingerprint(row) {
+    if (!(row instanceof Element)) return "";
+    let user_id = 0;
+    try {
+      user_id = get_trade_row_partner_user_id(row) || 0;
+    } catch {
+      user_id = 0;
+    }
+    let date =
+      row
+        .querySelector(".trade-sent-date")
+        ?.textContent?.replace(/\s+/g, " ")
+        .trim() || "";
+    let name =
+      row
+        .querySelector(".text-lead")
+        ?.textContent?.replace(/\s+/g, " ")
+        .trim() || "";
+    // Disambiguate same user/date (olivxr×2 same day) via value sig / items.
+    let sig =
+      row.querySelector(".tradeListValuesBox")?.dataset?.nteListSig ||
+      row.dataset?.nteTradeItemNames ||
+      "";
+    if (!user_id && !date && !name) return "";
+    return `${user_id}|${date}|${name}|${sig}`;
+  }
+  function remember_trade_row_id(row, trade_id) {
+    let id = String(trade_id || "").trim();
+    if (!(row instanceof Element) || !id) return;
+    row.setAttribute("nruTradeId", id);
+    row.setAttribute("data-nte-trade-id", id);
+    let fp = get_trade_row_fingerprint(row);
+    if (!fp || trade_row_fp_collisions.has(fp)) return;
+    let prev = trade_row_id_by_fp.get(fp);
+    if (prev && prev !== id) {
+      trade_row_id_by_fp.delete(fp);
+      trade_row_fp_collisions.add(fp);
+      return;
+    }
+    trade_row_id_by_fp.set(fp, id);
+  }
+  function restore_trade_row_id_from_fp(row) {
+    let existing = get_selected_trade_id_sync(row);
+    if (existing) {
+      remember_trade_row_id(row, existing);
+      return existing;
+    }
+    let fp = get_trade_row_fingerprint(row);
+    if (!fp || trade_row_fp_collisions.has(fp)) return "";
+    let id = trade_row_id_by_fp.get(fp) || "";
+    if (!id) return "";
+    // Don't restore onto a live row that would collide with another owner.
+    let safe =
+      typeof CSS !== "undefined" && typeof CSS.escape === "function"
+        ? CSS.escape(id)
+        : id;
+    let owner = document.querySelector(
+      `.trade-row-list .trade-row[nruTradeId="${safe}"], .trade-row-list .trade-row[data-nte-trade-id="${safe}"]`,
+    );
+    if (owner && owner !== row && owner.isConnected) return "";
+    remember_trade_row_id(row, id);
+    return id;
+  }
+  function park_trade_row_control_node(node, trade_id_hint) {
+    if (!(node instanceof Element)) return;
+    let wraps = [];
+    if (node.matches?.(".nte-trade-row-lock-wrap,.nte-trade-row-decline-wrap"))
+      wraps.push(node);
+    else
+      wraps.push(
+        ...(node.querySelectorAll?.(
+          ".nte-trade-row-lock-wrap,.nte-trade-row-decline-wrap",
+        ) || []),
+      );
+    let hint =
+      String(trade_id_hint || "").trim() ||
+      (node.classList?.contains("trade-row")
+        ? get_selected_trade_id_sync(node)
+        : "") ||
+      "";
+    if (node.classList?.contains("trade-row")) {
+      let fp = get_trade_row_fingerprint(node);
+      let id = hint || get_selected_trade_id_sync(node);
+      if (fp && id) trade_row_id_by_fp.set(fp, String(id));
+    }
+    for (let wrap of wraps) {
+      let tid =
+        String(wrap.dataset.nteTradeId || "").trim() ||
+        hint ||
+        get_selected_trade_id_sync(trade_row_from_control(wrap)) ||
+        "";
+      if (!tid) continue;
+      wrap.dataset.nteTradeId = tid;
+      let parked = trade_row_control_park.get(tid) || {};
+      if (wrap.classList.contains("nte-trade-row-lock-wrap")) parked.lock = wrap;
+      if (wrap.classList.contains("nte-trade-row-decline-wrap"))
+        parked.decline = wrap;
+      trade_row_control_park.set(tid, parked);
+    }
+  }
+  function reattach_parked_trade_row_controls(row) {
+    if (!(row instanceof Element) || !row.isConnected) return false;
+    let trade_id =
+      restore_trade_row_id_from_fp(row) || get_selected_trade_id_sync(row);
+    if (!trade_id) return false;
+    let parked = trade_row_control_park.get(String(trade_id));
+    if (!parked) return false;
+    let did = false;
+    if (parked.lock instanceof Element) {
+      row.classList.add("nte-trade-row-lock-host");
+      if (trade_row_from_control(parked.lock) !== row) {
+        if (append_trade_row_control(row, parked.lock)) did = true;
+      }
+      if (query_trade_row_control(row, ".nte-trade-row-lock-wrap"))
+        sync_trade_row_lock_position(row);
+    }
+    if (parked.decline instanceof Element) {
+      row.classList.add("nte-trade-row-has-decline");
+      if (trade_row_from_control(parked.decline) !== row) {
+        if (append_trade_row_control(row, parked.decline)) did = true;
+      }
+      if (query_trade_row_control(row, ".nte-trade-row-decline-wrap"))
+        sync_trade_row_decline_position(row);
+    }
+    return did;
+  }
+  function find_live_trade_row_for_id_or_fp(trade_id, fingerprint) {
+    let id = String(trade_id || "").trim();
+    let fp = String(fingerprint || "").trim();
+    let rows = [...document.querySelectorAll(".trade-row-list .trade-row")];
+    if (id) {
+      let by_id = rows.find(
+        (r) => String(get_selected_trade_id_sync(r) || "") === id,
+      );
+      if (by_id) return by_id;
+    }
+    if (fp) {
+      let by_fp = rows.find((r) => get_trade_row_fingerprint(r) === fp);
+      if (by_fp) {
+        if (id) remember_trade_row_id(by_fp, id);
+        return by_fp;
+      }
+    }
+    return null;
+  }
+  function ensure_trade_row_list_controls(scope_rows = null) {
+    if (!is_trade_row_decline_tab()) return;
+    // Full-list / remount lock work freezes Completed→Inbound. Soft mode
+    // defers everything until React finishes swapping the list.
+    if (trade_category_soft_mode()) return;
+    if (!scope_rows && trade_row_mut_observer_paused()) return;
+    let rows = scope_rows
+      ? [...scope_rows]
+      : [...document.querySelectorAll(".trade-row-list .trade-row")];
+    // Cap unscoped work if the list is huge mid-hydrate.
+    if (!scope_rows && rows.length > 24) rows = rows.slice(0, 24);
+    for (let row of rows) {
+      if (!row?.isConnected || row.style.display === "none") continue;
+      restore_trade_row_id_from_fp(row);
+      reattach_parked_trade_row_controls(row);
+      // Only (re)mount missing controls — never remove existing ones here.
+      if (!query_trade_row_control(row, ".nte-trade-row-lock-wrap")) {
+        let trade_id = get_selected_trade_id_sync(row);
+        if (trade_id && locked_trade_ids_loaded)
+          mount_trade_row_lock_button_sync(row, trade_id);
+        else ensure_trade_row_lock_button(row);
+      } else sync_trade_row_lock_position(row);
+      if (!trade_row_decline_enabled) continue;
+      if (!query_trade_row_control(row, ".nte-trade-row-decline-wrap"))
+        ensure_trade_row_decline_button(row);
+      else sync_trade_row_decline_position(row);
+    }
+  }
+  let deferred_controls_ensure_timer = 0;
+  let deferred_controls_ensure_rows = new Set();
+  let deferred_controls_reattach_rows = new Set();
+  let deferred_controls_reattach_raf = 0;
+  let trade_row_control_storm_hits = 0;
+  let trade_row_control_storm_window_start = 0;
+  function note_trade_row_control_storm(count) {
+    let now = Date.now();
+    if (now - trade_row_control_storm_window_start > 800) {
+      trade_row_control_storm_window_start = now;
+      trade_row_control_storm_hits = 0;
+    }
+    trade_row_control_storm_hits += Math.max(1, count | 0);
+    // Sync reattach during React remount freezes Inbound — soft-pause instead.
+    // Keep threshold high so one noisy selected row cannot suppress controls.
+    if (trade_row_control_storm_hits >= 120) {
+      trade_row_control_storm_hits = 0;
+      begin_trade_category_soft_mode(2500);
+    }
+  }
+  function flush_deferred_trade_row_controls_reattach() {
+    deferred_controls_reattach_raf = 0;
+    if (trade_category_soft_mode() || trade_row_mut_observer_paused()) {
+      deferred_controls_reattach_rows.clear();
+      return;
+    }
+    let batch = [...deferred_controls_reattach_rows];
+    deferred_controls_reattach_rows.clear();
+    let need_ensure = [];
+    for (let row of batch) {
+      if (!row?.isConnected) continue;
+      restore_trade_row_id_from_fp(row);
+      reattach_parked_trade_row_controls(row);
+      if (
+        !query_trade_row_control(row, ".nte-trade-row-lock-wrap") ||
+        (trade_row_decline_enabled &&
+          !query_trade_row_control(row, ".nte-trade-row-decline-wrap"))
+      ) {
+        need_ensure.push(row);
+        deferred_controls_ensure_rows.add(row);
+      }
+    }
+    if (!need_ensure.length && !deferred_controls_ensure_rows.size) return;
+    clearTimeout(deferred_controls_ensure_timer);
+    deferred_controls_ensure_timer = setTimeout(() => {
+      deferred_controls_ensure_timer = 0;
+      if (trade_category_soft_mode() || trade_row_mut_observer_paused()) {
+        deferred_controls_ensure_rows.clear();
+        return;
+      }
+      let ensure_batch = [...deferred_controls_ensure_rows];
+      deferred_controls_ensure_rows.clear();
+      if (!ensure_batch.length) return;
+      ensure_trade_row_list_controls(ensure_batch.slice(0, 30));
+    }, 280);
+  }
+  function schedule_deferred_trade_row_controls_reattach(rows) {
+    // Never reattach inside the MutationObserver turn — that fought React and
+    // hard-froze Inbound. Park synchronously; reattach next animation frame.
+    let queued = 0;
+    for (let row of rows || []) {
+      if (!row?.isConnected) continue;
+      deferred_controls_reattach_rows.add(row);
+      queued++;
+    }
+    if (!queued && !deferred_controls_reattach_rows.size) return;
+    note_trade_row_control_storm(queued);
+    if (trade_category_soft_mode() || trade_row_mut_observer_paused()) {
+      // Keep the queue — flush after soft/pause ends (dropping it caused flicker).
+      return;
+    }
+    if (deferred_controls_reattach_raf) return;
+    deferred_controls_reattach_raf = requestAnimationFrame(() => {
+      // One extra frame so React can finish the current remount commit.
+      deferred_controls_reattach_raf = requestAnimationFrame(
+        flush_deferred_trade_row_controls_reattach,
+      );
+    });
+  }
+  function collect_stripped_trade_row_controls(mutations) {
+    let rows = new Set();
+    for (let mutation of mutations || []) {
+      if ("childList" !== mutation.type) continue;
+      let target = mutation.target;
+      let in_list =
+        target instanceof Element &&
+        !!(
+          target.classList?.contains("trade-row") ||
+          target.closest?.(".trade-row-list .trade-row, .trade-row-list")
+        );
+      if (!in_list) continue;
+      let row =
+        target instanceof Element && target.classList?.contains("trade-row")
+          ? target
+          : target?.closest?.(".trade-row");
+      for (let node of mutation.removedNodes || []) {
+        if (!(node instanceof Element)) continue;
+        let had_controls =
+          node.matches?.(
+            ".nte-trade-row-lock-wrap,.nte-trade-row-decline-wrap,.nte-trade-row-lock,.nte-trade-row-decline",
+          ) ||
+          !!node.querySelector?.(
+            ".nte-trade-row-lock-wrap,.nte-trade-row-decline-wrap",
+          );
+        if (!had_controls && !node.classList?.contains("trade-row")) continue;
+        let hint =
+          (node.classList?.contains("trade-row") &&
+            get_selected_trade_id_sync(node)) ||
+          node.dataset?.nteTradeId ||
+          (row && get_selected_trade_id_sync(row)) ||
+          "";
+        let fp = node.classList?.contains("trade-row")
+          ? get_trade_row_fingerprint(node)
+          : row
+            ? get_trade_row_fingerprint(row)
+            : "";
+        park_trade_row_control_node(node, hint);
+        if (row?.isConnected) rows.add(row);
+        let live = find_live_trade_row_for_id_or_fp(hint, fp);
+        if (live) rows.add(live);
+      }
+      for (let node of mutation.addedNodes || []) {
+        if (!(node instanceof Element)) continue;
+        // Queue only — never sync-reattach here (Inbound remount freeze).
+        if (node.classList?.contains("trade-row")) {
+          restore_trade_row_id_from_fp(node);
+          rows.add(node);
+        } else if (node.querySelector?.(".trade-row")) {
+          for (let child of node.querySelectorAll(".trade-row")) {
+            restore_trade_row_id_from_fp(child);
+            rows.add(child);
+          }
+        }
+      }
+    }
+    return rows;
+  }
+  function mutation_stripped_trade_row_controls(mutations) {
+    return collect_stripped_trade_row_controls(mutations).size > 0;
+  }
   function remove_trade_row_lock_buttons(scope = document) {
-    for (let wrap of [...scope.querySelectorAll(".nte-trade-row-lock-wrap")]) {
+    for (let wrap of query_all_trade_row_controls(
+      ".nte-trade-row-lock-wrap",
+      scope,
+    )) {
       wrap.remove();
     }
-    for (let btn of [...scope.querySelectorAll(".nte-trade-row-lock")]) {
+    for (let btn of query_all_trade_row_controls(".nte-trade-row-lock", scope)) {
       btn.remove();
     }
     for (let row of [...scope.querySelectorAll(".trade-row.nte-trade-row-lock-host")]) {
@@ -8946,14 +10956,175 @@
         let trade_id = get_selected_trade_id_sync(row);
         if (!trade_id) continue;
         update_trade_row_lock_button(
-          row.querySelector(".nte-trade-row-lock"),
+          query_trade_row_control(row, ".nte-trade-row-lock"),
           is_trade_row_locked(trade_id),
         );
       }
     });
   } catch {}
-  let trade_row_decline_prime_started = false;
-  let trade_row_decline_enabled = true;
+  load_locked_trade_ids().catch(() => {});
+  let trade_row_mut_observer_paused_until = 0;
+  let trade_category_soft_until = 0;
+  let trade_category_soft_end_timer = 0;
+  let trade_category_soft_settle_obs = null;
+  let trade_category_soft_settle_timer = 0;
+  let trade_category_soft_tab_poll = 0;
+  function pause_trade_row_mut_observer(ms = 1200) {
+    trade_row_mut_observer_paused_until = Math.max(
+      trade_row_mut_observer_paused_until,
+      Date.now() + Math.max(0, ms),
+    );
+  }
+  function trade_row_mut_observer_paused() {
+    return Date.now() < trade_row_mut_observer_paused_until;
+  }
+  function trade_category_soft_mode() {
+    return Date.now() < trade_category_soft_until;
+  }
+  function stop_trade_list_settle_watch() {
+    if (trade_category_soft_settle_obs) {
+      try {
+        trade_category_soft_settle_obs.disconnect();
+      } catch {}
+      trade_category_soft_settle_obs = null;
+    }
+    if (trade_category_soft_settle_timer) {
+      clearTimeout(trade_category_soft_settle_timer);
+      trade_category_soft_settle_timer = 0;
+    }
+    if (trade_category_soft_tab_poll) {
+      clearInterval(trade_category_soft_tab_poll);
+      trade_category_soft_tab_poll = 0;
+    }
+  }
+  function finish_trade_category_soft_mode() {
+    if (!trade_ui_refresh_muted && !trade_category_soft_until) return;
+    trade_category_soft_until = 0;
+    trade_row_mut_observer_paused_until = 0;
+    stop_trade_list_settle_watch();
+    clearTimeout(trade_category_soft_end_timer);
+    trade_category_soft_end_timer = 0;
+    trade_ui_refresh_muted = false;
+    flush_deferred_trade_row_controls_reattach();
+    if (L_queued) {
+      L_queued = false;
+      L();
+    }
+    schedule_trade_ui_refresh(0, false);
+  }
+  function start_trade_list_settle_watch() {
+    stop_trade_list_settle_watch();
+    let start_tab = get_current_trade_tab();
+    let start_count = document.querySelectorAll(
+      ".trade-row-list .trade-row",
+    ).length;
+    let seen_swap = false;
+    function row_count() {
+      return document.querySelectorAll(".trade-row-list .trade-row").length;
+    }
+    function note_maybe_swapped() {
+      if (get_current_trade_tab() !== start_tab || row_count() !== start_count)
+        seen_swap = true;
+    }
+    function try_finish() {
+      if (!trade_category_soft_mode()) {
+        stop_trade_list_settle_watch();
+        return;
+      }
+      note_maybe_swapped();
+      if (!seen_swap) return;
+      if (row_count() > 0) {
+        finish_trade_category_soft_mode();
+        return;
+      }
+      // Empty tab: URL changed, list stayed empty after a short extra quiet.
+      if (get_current_trade_tab() === start_tab) return;
+      clearTimeout(trade_category_soft_settle_timer);
+      trade_category_soft_settle_timer = setTimeout(() => {
+        if (!trade_category_soft_mode()) return;
+        finish_trade_category_soft_mode();
+      }, 280);
+    }
+    function bump_quiet(from_mut) {
+      if (from_mut) seen_swap = true;
+      note_maybe_swapped();
+      clearTimeout(trade_category_soft_settle_timer);
+      trade_category_soft_settle_timer = setTimeout(try_finish, 160);
+    }
+    let host =
+      document.querySelector(".trade-row-list") ||
+      document.getElementById("trade-row-scroll-container") ||
+      document.querySelector(".trades-container");
+    if (host) {
+      trade_category_soft_settle_obs = new MutationObserver(() =>
+        bump_quiet(true),
+      );
+      trade_category_soft_settle_obs.observe(host, {
+        childList: true,
+        subtree: true,
+      });
+    }
+    trade_category_soft_tab_poll = setInterval(() => {
+      if (!trade_category_soft_mode()) {
+        stop_trade_list_settle_watch();
+        return;
+      }
+      if (get_current_trade_tab() !== start_tab) {
+        clearInterval(trade_category_soft_tab_poll);
+        trade_category_soft_tab_poll = 0;
+        bump_quiet(true);
+      }
+    }, 50);
+    bump_quiet(false);
+  }
+  function begin_trade_category_soft_mode(ms = 900) {
+    // Already paused for this remount — do not extend the 5s-style hold.
+    if (trade_category_soft_mode()) return;
+    let hold = Math.max(700, Math.min(1200, Number(ms) || 900));
+    trade_category_soft_until = Date.now() + hold;
+    pause_trade_row_mut_observer(hold);
+    // Suppress full UI refresh loops while React remounts the list.
+    trade_ui_refresh_muted = true;
+    trade_ui_refresh_pending = false;
+    clearTimeout(trade_ui_refresh_timer);
+    trade_ui_refresh_timer = 0;
+    clearTimeout(trade_ui_refresh_retry_timer);
+    trade_ui_refresh_retry_timer = 0;
+    clearTimeout(L_missing_values_timer);
+    L_missing_values_timer = 0;
+    clearTimeout(deferred_controls_ensure_timer);
+    deferred_controls_ensure_timer = 0;
+    deferred_controls_ensure_rows.clear();
+    if (deferred_controls_reattach_raf) {
+      try {
+        cancelAnimationFrame(deferred_controls_reattach_raf);
+      } catch {}
+      deferred_controls_reattach_raf = 0;
+    }
+    // Keep deferred_controls_reattach_rows for flush after soft ends.
+    row_fetch_generation++;
+    try {
+      while (row_fetch_q.length) {
+        let item = row_fetch_q.shift();
+        try {
+          item?.resolve?.(null);
+        } catch {}
+      }
+      while (row_fetch_fast_q.length) {
+        let item = row_fetch_fast_q.shift();
+        try {
+          item?.resolve?.(null);
+        } catch {}
+      }
+      row_active_requests = 0;
+    } catch {}
+    clearTimeout(trade_category_soft_end_timer);
+    trade_category_soft_end_timer = setTimeout(() => {
+      trade_category_soft_end_timer = 0;
+      finish_trade_category_soft_mode();
+    }, hold);
+    start_trade_list_settle_watch();
+  }
   function prime_trade_row_decline() {
     if (trade_row_decline_prime_started) return;
     trade_row_decline_prime_started = true;
@@ -8998,7 +11169,6 @@
       (trade = !row_trade_pending[trade_id]
         ? await K(trade_id, null, !1, row).catch(() => null)
         : await row_trade_pending[trade_id].catch(() => null));
-    trade && prewarm_trade_row_thumbnails(trade).catch(() => {});
   }
   let trade_row_detail_prewarm_bound = false;
   function bind_trade_row_detail_prewarm() {
@@ -9067,10 +11237,9 @@
       prime_trade_row_id(row);
       trade_id = await J(row, 3);
     }
-    if (!trade_id || !get_trade_row_cached_trade(trade_id, saved_trades)) {
-      remove_trade_row_decline_button(row);
-      return;
-    }
+    // Keep an existing decline button across refresh/selection — mount once
+    // we have a trade id (click path still requires detail cache).
+    if (!trade_id) return;
     ensure_trade_row_decline_button(row);
   }
   function request_trade_row_decline(trade_id) {
@@ -9151,6 +11320,7 @@
       delete row_trade_pending[trade_id];
     }
     row.classList.remove("selected", "nte-trade-row-has-decline");
+    row.dataset.nteDeclinedHidden = "1";
     row.style.pointerEvents = "none";
     row.style.transition = "opacity .12s ease";
     row.style.opacity = "0";
@@ -9163,20 +11333,21 @@
     row.style.paddingBottom = "0";
     row.style.border = "0";
     row.style.display = "none";
+    // Don't row.remove() — React owns the list and throws removeChild if we
+    // detach nodes it still expects. Hide only; Roblox refresh cleans up.
     setTimeout(() => {
       if (next_row?.isConnected) {
         try {
           next_row.click();
         } catch {}
       }
-      if (row.isConnected) row.remove();
       apply_trade_list_filter();
       L();
     }, 30);
   }
   function sync_trade_row_decline_position(row) {
     if (!row?.querySelector) return;
-    let wrap = row.querySelector(".nte-trade-row-decline-wrap");
+    let wrap = query_trade_row_control(row, ".nte-trade-row-decline-wrap");
     if (!wrap) return;
     let box = row.querySelector(".tradeListValuesBox");
     let summary_width = box
@@ -9190,86 +11361,255 @@
   }
   function ensure_trade_row_decline_button(row) {
     if (!row?.querySelector) return;
-    let trade_id = get_selected_trade_id_sync(row);
-    let wrap = row.querySelector(".nte-trade-row-decline-wrap");
-    if (
-      !trade_row_decline_enabled ||
-      !is_trade_row_decline_tab() ||
-      !trade_id ||
-      !get_trade_row_cached_trade(trade_id)
-    ) {
+    let trade_id =
+      restore_trade_row_id_from_fp(row) || get_selected_trade_id_sync(row);
+    let wrap = query_trade_row_control(row, ".nte-trade-row-decline-wrap");
+    if (!trade_row_decline_enabled || !is_trade_row_decline_tab()) {
       remove_trade_row_decline_button(row);
       return;
     }
+    if (!trade_id) return;
+    let parked = trade_row_control_park.get(String(trade_id));
+    // Always restore a parked/existing button even if detail cache is briefly
+    // missing — requiring cache here left a visible flicker gap on some rows.
+    if (!wrap && parked?.decline instanceof Element) {
+      wrap = parked.decline;
+      if (!append_trade_row_control(row, wrap)) wrap = null;
+    }
+    if (wrap) {
+      remember_trade_row_id(row, trade_id);
+      row.classList.add("nte-trade-row-has-decline");
+      append_trade_row_control(row, wrap);
+      wrap.dataset.nteTradeId = String(trade_id);
+      park_trade_row_control_node(wrap, trade_id);
+      sync_trade_row_decline_position(row);
+      return;
+    }
+    // Create as soon as we have a trade id. Click handler still guards on cache.
+    remember_trade_row_id(row, trade_id);
     prime_trade_row_decline();
     row.classList.add("nte-trade-row-has-decline");
-    if (!wrap) {
-      wrap = document.createElement("div");
-      wrap.className = "nte-trade-row-decline-wrap";
-      row.appendChild(wrap);
-    } else if (wrap.parentElement !== row) row.appendChild(wrap);
-    let btn = wrap.querySelector(".nte-trade-row-decline");
-    if (!btn) {
-      btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "nte-trade-row-decline";
-      for (let ev of [
-        "click",
-        "mousedown",
-        "mouseup",
-        "pointerdown",
-        "pointerup",
-        "touchstart",
-        "touchend",
-        "dblclick",
-      ]) {
-        btn.addEventListener(ev, (event) => {
-          event.stopPropagation();
-        });
-      }
-      btn.addEventListener("click", async (event) => {
-        event.preventDefault();
-        let current_row = btn.closest(".trade-row");
-        if (!current_row?.isConnected || btn.disabled) return;
-        set_trade_row_decline_button_state(btn, "pending");
-        let trade_id = get_selected_trade_id_sync(current_row);
-        if (!trade_id || !get_trade_row_cached_trade(trade_id)) {
-          set_trade_row_decline_button_state(
-            btn,
-            "error",
-            "Trade data is not ready yet.",
-          );
-          setTimeout(() => {
-            btn.isConnected && set_trade_row_decline_button_state(btn, "idle");
-          }, 1800);
-          return;
-        }
-        let result = await request_trade_row_decline(trade_id);
-        if (result?.ok) {
-          set_trade_row_decline_button_state(btn, "success");
-          remove_trade_row_after_decline(current_row, trade_id);
-          return;
-        }
+    wrap = document.createElement("div");
+    wrap.className = "nte-trade-row-decline-wrap";
+    append_trade_row_control(row, wrap);
+    wrap.dataset.nteTradeId = String(trade_id);
+    park_trade_row_control_node(wrap, trade_id);
+    let btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "nte-trade-row-decline";
+    for (let ev of [
+      "click",
+      "mousedown",
+      "mouseup",
+      "pointerdown",
+      "pointerup",
+      "touchstart",
+      "touchend",
+      "dblclick",
+    ]) {
+      btn.addEventListener(ev, (event) => {
+        event.stopPropagation();
+      });
+    }
+    btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      let current_row = trade_row_from_control(btn);
+      if (!current_row?.isConnected || btn.disabled) return;
+      set_trade_row_decline_button_state(btn, "pending");
+      let trade_id = get_selected_trade_id_sync(current_row);
+      if (!trade_id || !get_trade_row_cached_trade(trade_id)) {
         set_trade_row_decline_button_state(
           btn,
           "error",
-          result?.error || "Decline failed.",
+          "Trade data is not ready yet.",
         );
         setTimeout(() => {
           btn.isConnected && set_trade_row_decline_button_state(btn, "idle");
         }, 1800);
-      });
-      wrap.appendChild(btn);
-    }
-    if (!btn.dataset.nteState || btn.dataset.nteState === "idle") {
-      set_trade_row_decline_button_state(btn, "idle");
-    }
+        return;
+      }
+      let result = await request_trade_row_decline(trade_id);
+      if (result?.ok) {
+        set_trade_row_decline_button_state(btn, "success");
+        remove_trade_row_after_decline(current_row, trade_id);
+        return;
+      }
+      set_trade_row_decline_button_state(
+        btn,
+        "error",
+        result?.error || "Decline failed.",
+      );
+      setTimeout(() => {
+        btn.isConnected && set_trade_row_decline_button_state(btn, "idle");
+      }, 1800);
+    });
+    wrap.appendChild(btn);
+    set_trade_row_decline_button_state(btn, "idle");
     sync_trade_row_decline_position(row);
   }
   let L_running = false,
-    L_queued = false;
+    L_queued = false,
+    L_missing_values_timer = 0;
+  function count_visible_rows_missing_value_summaries() {
+    let rows = filter_trade_rows_in_viewport(
+      [...document.querySelectorAll(".trade-row-list .trade-row")],
+    );
+    let missing = 0;
+    for (let row of rows) {
+      if (!(row instanceof HTMLElement)) continue;
+      if (row.style.display === "none") continue;
+      if (!row.querySelector(".tradeListValuesBox")) missing++;
+    }
+    return missing;
+  }
+  function schedule_missing_value_summaries_retry(delay = 700) {
+    clearTimeout(L_missing_values_timer);
+    L_missing_values_timer = setTimeout(() => {
+      L_missing_values_timer = 0;
+      if (document.hidden) return;
+      if (trade_row_mut_observer_paused()) {
+        schedule_missing_value_summaries_retry(400);
+        return;
+      }
+      if (count_visible_rows_missing_value_summaries() > 0) L();
+    }, Math.max(150, delay));
+  }
+  function read_boot_trade_list_payload() {
+    try {
+      let el = document.getElementById("nru-trade-list-boot");
+      if (!el) return null;
+      let raw = el.textContent || "";
+      if (!raw) return null;
+      let data = JSON.parse(raw);
+      if (!data || !Array.isArray(data.trades)) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  }
+  function ingest_trade_list_payload(type, raw_trades) {
+    if (!type || !Array.isArray(raw_trades) || !raw_trades.length) return 0;
+    let tab = String(type || "").toLowerCase();
+    let mapped = [];
+    for (let t of raw_trades) {
+      let id = t?.id ?? t?.tradeId;
+      if (null == id || "" === id) continue;
+      mapped.push({ id: String(id), status: t.status, listTrade: t });
+    }
+    if (!mapped.length) return 0;
+    let now = Date.now();
+    if (
+      trade_list_id_cache.tab === tab &&
+      trade_list_id_cache.trades.length &&
+      now - trade_list_id_cache.at < 20000
+    ) {
+      let seen = new Set(trade_list_id_cache.trades.map((t) => String(t.id)));
+      for (let t of mapped) {
+        if (seen.has(String(t.id))) continue;
+        trade_list_id_cache.trades.push(t);
+        seen.add(String(t.id));
+      }
+      trade_list_id_cache.at = now;
+    } else {
+      trade_list_id_cache = { tab, at: now, trades: mapped };
+    }
+    return apply_trade_list_ids_to_rows(trade_list_id_cache.trades);
+  }
+  function apply_trade_list_ids_to_rows(trades) {
+    if (!Array.isArray(trades) || !trades.length) return 0;
+    let rows = [
+      ...document.querySelectorAll(".trade-row-list .trade-row, .trade-row"),
+    ];
+    if (!rows.length) return 0;
+    let unused = trades.slice();
+    let assigned = 0;
+    for (let row of rows) {
+      let existing = row.getAttribute("nruTradeId");
+      let provisional = row.getAttribute("data-nru-index-assigned") === "1";
+      let user_id = get_trade_row_partner_user_id(row);
+      // Re-resolve provisional index stamps once partner links hydrate.
+      if (existing && provisional && user_id > 0) {
+        row.removeAttribute("nruTradeId");
+        row.removeAttribute("data-nte-trade-id");
+        row.removeAttribute("data-nru-index-assigned");
+        existing = "";
+      }
+      if (existing) {
+        let keep = String(existing);
+        remember_trade_row_id(row, keep);
+        unused = unused.filter((t) => String(t.id) !== keep);
+        continue;
+      }
+      restore_trade_row_id_from_fp(row);
+      if (row.getAttribute("nruTradeId")) {
+        assigned++;
+        let keep = String(row.getAttribute("nruTradeId"));
+        unused = unused.filter((t) => String(t.id) !== keep);
+        continue;
+      }
+      if (!(user_id > 0)) continue;
+      let idx = unused.findIndex(
+        (t) => trade_list_entry_user_id(t) === user_id,
+      );
+      if (idx < 0) continue;
+      let hit = unused.splice(idx, 1)[0];
+      remember_trade_row_id(row, hit.id);
+      row.removeAttribute("data-nru-index-assigned");
+      let created = hit.listTrade?.created || hit.created;
+      let time = created ? Date.parse(created) : 0;
+      if (Number.isFinite(time) && time > 0)
+        row.setAttribute("data-nte-trade-time", String(time));
+      row.removeAttribute("data-nru-row-token");
+      assigned++;
+    }
+    // First paint sometimes has rows before /users/ links hydrate. When the
+    // list order still matches DOM order, stamp provisional IDs by index so
+    // values can mount immediately; later passes re-check via user id.
+    let still_missing = rows.filter((row) => !row.getAttribute("nruTradeId"));
+    if (
+      still_missing.length &&
+      unused.length &&
+      still_missing.every((row) => !(get_trade_row_partner_user_id(row) > 0))
+    ) {
+      let n = Math.min(still_missing.length, unused.length);
+      for (let i = 0; i < n; i++) {
+        let hit = unused[i];
+        let row = still_missing[i];
+        remember_trade_row_id(row, hit.id);
+        row.setAttribute("data-nru-index-assigned", "1");
+        let created = hit.listTrade?.created || hit.created;
+        let time = created ? Date.parse(created) : 0;
+        if (Number.isFinite(time) && time > 0)
+          row.setAttribute("data-nte-trade-time", String(time));
+        row.removeAttribute("data-nru-row-token");
+        assigned++;
+      }
+    }
+    return assigned;
+  }
+  function get_trade_list_data_fast(timeout_ms = 700) {
+    return new Promise((resolve) => {
+      let done = false;
+      let finish = (value) => {
+        if (done) return;
+        done = true;
+        resolve(value || {});
+      };
+      try {
+        nte_send_message("getTradeListData", (data) => finish(data || {}));
+      } catch {
+        finish({});
+        return;
+      }
+      setTimeout(() => finish({}), Math.max(200, timeout_ms));
+    });
+  }
   async function L() {
     if (document.hidden) return;
+    if (trade_category_soft_mode()) {
+      L_queued = true;
+      return;
+    }
     if (L_running) {
       L_queued = true;
       return;
@@ -9281,7 +11621,8 @@
       L_running = false;
       if (L_queued) {
         L_queued = false;
-        L();
+        if (!trade_category_soft_mode()) L();
+        else L_queued = true;
       }
     }
   }
@@ -9293,6 +11634,7 @@
       trade_row_decline_enabled && is_trade_row_decline_tab();
     quick_decline_tab && prime_trade_row_decline();
     if (!is_trade_row_decline_tab()) remove_trade_row_lock_buttons();
+    else ensure_trade_row_list_controls();
     document.getElementById("nteTradeListFilter") ||
       ensure_trade_list_filter_ui() ||
       document.getElementById("nteTradeListFilterEmpty")?.remove();
@@ -9300,8 +11642,10 @@
     bind_trade_row_detail_prewarm();
     bind_trade_row_view_prewarm();
     schedule_trade_row_view_prewarm(0);
-    await c.waitForElm(".trade-row");
-    await ensure_trade_row_ids_from_api();
+    if (!document.querySelector(".trade-row-list .trade-row")) {
+      schedule_missing_value_summaries_retry(180);
+      return;
+    }
     e ||
       (function () {
         for (let e of document.querySelectorAll(".tradeListValuesBox"))
@@ -9312,9 +11656,7 @@
       })();
     if (!e && "all" === trade_filter_state.value && !trade_search_q) {
       let saved_trades = quick_decline_tab
-        ? (await new Promise((resolve) =>
-            nte_send_message("getTradeListData", resolve),
-          )) || {}
+        ? (await get_trade_list_data_fast(900)) || {}
         : null;
       let pl = await c.getOption("Add User Profile Links");
       let rows = get_trade_rows_for_processing();
@@ -9334,163 +11676,227 @@
       schedule_trade_list_filter_backfill();
       return;
     }
-    nte_send_message("getTradeListData", async function (r) {
-      await ensure_trade_row_ids_from_api();
-        let show_profile_links = await c.getOption("Add User Profile Links");
-        if (!show_profile_links) remove_trade_row_rolimons_links();
-        if (!quick_decline_tab) remove_trade_row_decline_buttons();
-        async function t(t, n) {
-          if (!t?.isConnected) return;
-          show_profile_links && ensure_trade_row_rolimons_link(t);
-          is_trade_row_decline_tab() && ensure_trade_row_lock_button(t);
-          let a = t.getAttribute("nruTradeId");
-          a || (await H(t, n));
-          a = await J(t);
-          if (!a) {
-            await ensure_trade_row_ids_from_api();
-            a = t.getAttribute("nruTradeId");
-          }
-          if (!a) return;
-          let l = await K(a, r, !0, t);
-          quick_decline_tab &&
-            (l
-              ? ensure_trade_row_decline_button(t)
-              : remove_trade_row_decline_button(t));
-          if (!l?.offers?.[0] || !l?.offers?.[1] || !t.isConnected) return;
-          let s = get_trade_row_filter_metrics(l);
-          set_trade_row_filter_metrics(t, s);
-          let all_trade_items = [...X(l.offers[0]), ...X(l.offers[1])];
-          let item_names_arr = all_trade_items
-            .map((it) => V(it))
-            .filter(Boolean);
-          t.dataset.nteTradeItemNames = item_names_arr.join("|");
-          let d = X(l.offers[0]),
-            u = X(l.offers[1]);
-          let o = 0,
-            i = 0;
-          for (let e = 0; e < d.length; e++) {
-            let t = d[e];
-            o += c.getValueOrRAP(
-              get_trade_row_item_id(t),
-              V(t),
-              t?.recentAveragePrice,
-            );
-          }
-          o += l.offers[0]?.robux || 0;
-          for (let e = 0; e < u.length; e++) {
-            let t = u[e];
-            i += c.getValueOrRAP(
-              get_trade_row_item_id(t),
-              V(t),
-              t?.recentAveragePrice,
-            );
-          }
-          if (((i += l.offers[1]?.robux || 0), !e)) {
-            t.querySelector(".tradeListValuesBox")?.remove();
-            if (quick_decline_tab) sync_trade_row_decline_position(t);
-            else if (is_trade_row_decline_tab()) sync_trade_row_lock_position(t);
-            return;
-          }
-          t.querySelector(".tradeListValuesBox")?.remove();
-          let trade_delta = i - o,
-            state = get_trade_profit_state_meta(trade_delta),
-            palette = get_trade_profit_palette(),
-            glow_color = state.equal
-              ? palette.list_even_color
-              : state.win
-                ? palette.list_gain_color
-                : palette.list_loss_color,
-            glow_fill = state.equal
-              ? palette.list_even_fill
-              : state.win
-                ? palette.list_gain_fill
-                : palette.list_loss_fill;
-          let box = document.createElement("div");
-          box.className = "tradeListValuesBox";
-          box.style.height = "60%";
-          box.style.padding = "2px";
-          box.style.zIndex = "0";
-          box.style.borderTopLeftRadius = "8px";
-          box.style.overflow = "visible";
-          box.style.position = "absolute";
-          box.style.bottom = "0";
-          box.style.right = "0";
-          let glow = document.createElement("div");
-          glow.className = "glowBar";
-          glow.style.marginTop = "2%";
-          glow.style.marginLeft = "3%";
-          glow.style.height = "90%";
-          glow.style.width = "15px";
-          glow.style.cssFloat = "left";
-          glow.style.backgroundColor = glow_color;
-          glow.style.backgroundImage = glow_fill;
-          glow.style.borderTopLeftRadius = "8px";
-          let rap = document.createElement("div");
-          rap.className = "rapElement";
-          rap.style.fontFamily =
-            "HCo Gotham SSm, Helvetica Neue, Helvetica, Arial, Lucida Grande, sans-serif";
-          rap.style.fontWeight = "bold";
-          rap.style.fontSize = "15px";
-          rap.style.lineHeight = trade_profit_colorblind_mode ? "1.3" : "1.5";
-          rap.style.color = "rgb(255, 255, 255)";
-          rap.style.zIndex = "1001";
-          rap.style.marginLeft = "25px";
-          rap.style.paddingRight = "3px";
-          rap.style.fontVariantNumeric = "tabular-nums";
-          rap.style.textShadow = "0 1px 2px rgba(0,0,0,0.35)";
-          let span1 = document.createElement("span");
-          span1.className = "amount-1 text-robux";
-          span1.textContent = c.commafy(o);
-          let hr = document.createElement("hr");
-          hr.style.cssFloat = "right";
-          hr.style.width = "80%";
-          hr.style.backgroundColor = "rgba(0, 0, 0, 0.18)";
-          hr.style.height = "2px";
-          hr.style.border = "0px";
-          hr.style.margin = "0px";
-          hr.style.borderRadius = "1px";
-          let span2 = document.createElement("span");
-          span2.className = "amount-2 text-robux";
-          span2.textContent = c.commafy(i);
-          if (trade_profit_colorblind_mode) {
-            let status = document.createElement("div");
-            status.className = "tradeListState";
-            status.textContent = state.label.toUpperCase();
-            status.style.fontSize = "10px";
-            status.style.fontWeight = "800";
-            status.style.letterSpacing = "0.08em";
-            status.style.lineHeight = "1";
-            status.style.marginBottom = "2px";
-            status.style.color = state.equal
-              ? palette.list_even_label
-              : state.win
-                ? palette.list_gain_label
-                : palette.list_loss_label;
-            rap.append(status);
-          }
-          rap.append(span1, document.createElement("br"), hr, span2);
-          box.append(glow, rap);
-          let m = Z(t);
-          m &&
-            !t.querySelector(".tradeListValuesBox") &&
-            (m === t &&
-              !m.dataset.ntePositionFixed &&
-              ((m.dataset.ntePositionFixed = "1"),
-              (m.style.position = "relative")),
-            m.appendChild(box));
-          if (quick_decline_tab) sync_trade_row_decline_position(t);
-          else if (is_trade_row_decline_tab()) sync_trade_row_lock_position(t);
-        }
-        r || (r = {});
-        get_current_trade_tab() !== "completed" && prefetch_uncached_trades(r);
-        let n = sort_trade_rows_by_viewport_priority(
-          get_trade_rows_for_processing(),
+
+    // Prefer IDs from Roblox's own list fetch (MAIN-world patch) — no extra
+    // trades API call and no rate-limit queue stall on first paint.
+    let boot_list = read_boot_trade_list_payload();
+    if (boot_list?.type) ingest_trade_list_payload(boot_list.type, boot_list.trades);
+
+    // Fast path: mount visible values immediately. Do not await list ID
+    // assignment first — rate-limit waits / extra list GETs were delaying
+    // first paint until a tab switch re-ran L.
+    let id_fast = ensure_trade_row_ids_from_api({
+      max_extra_pages: 0,
+      urgent: true,
+    });
+    let r = await get_trade_list_data_fast(500);
+    // Give ID assign a brief head start, then mount whether or not it finished.
+    await Promise.race([id_fast, U(200)]);
+
+    let show_profile_links = await c.getOption("Add User Profile Links");
+    if (!show_profile_links) remove_trade_row_rolimons_links();
+    if (!quick_decline_tab) remove_trade_row_decline_buttons();
+
+    async function mount_row_values(t, n) {
+      if (!t?.isConnected) return;
+      show_profile_links && ensure_trade_row_rolimons_link(t);
+      let a =
+        t.getAttribute("nruTradeId") ||
+        restore_trade_row_id_from_fp(t) ||
+        "";
+      if (!a) {
+        await H(t, n);
+        a = (await J(t, 6)) || "";
+      }
+      if (!a) {
+        await Promise.race([
+          ensure_trade_row_ids_from_api({ max_extra_pages: 0, urgent: true }),
+          U(900),
+        ]);
+        a = t.getAttribute("nruTradeId") || "";
+      }
+      if (!a) return;
+      if (is_trade_row_decline_tab()) mount_trade_row_lock_button_sync(t, a);
+      if (quick_decline_tab) ensure_trade_row_decline_button(t);
+      // Cap wait so one stalled detail fetch cannot block the whole list pass.
+      let l = await Promise.race([
+        K(a, r, !0, t),
+        U(4500).then(() => row_trade_cache[a] || null),
+      ]);
+      // Re-ensure after detail resolves (id/fp may have corrected).
+      if (is_trade_row_decline_tab()) mount_trade_row_lock_button_sync(t, a);
+      if (quick_decline_tab) ensure_trade_row_decline_button(t);
+      if (!l?.offers?.[0] || !l?.offers?.[1] || !t.isConnected) return;
+      let s = get_trade_row_filter_metrics(l);
+      set_trade_row_filter_metrics(t, s);
+      let all_trade_items = [...X(l.offers[0]), ...X(l.offers[1])];
+      let item_names_arr = all_trade_items
+        .map((it) => V(it))
+        .filter(Boolean);
+      t.dataset.nteTradeItemNames = item_names_arr.join("|");
+      let d = X(l.offers[0]),
+        u = X(l.offers[1]);
+      let o = 0,
+        i = 0;
+      for (let e = 0; e < d.length; e++) {
+        let t = d[e];
+        o += c.getValueOrRAP(
+          get_trade_row_item_id(t),
+          V(t),
+          t?.recentAveragePrice,
         );
-        for (let e = 0; e < n.length; e++) t(n[e], e);
-        apply_trade_list_filter();
-        schedule_trade_list_filter_backfill();
-        show_profile_links && c.initTooltips();
-      });
+      }
+      o += l.offers[0]?.robux || 0;
+      for (let e = 0; e < u.length; e++) {
+        let t = u[e];
+        i += c.getValueOrRAP(
+          get_trade_row_item_id(t),
+          V(t),
+          t?.recentAveragePrice,
+        );
+      }
+      if (((i += l.offers[1]?.robux || 0), !e)) {
+        t.querySelector(".tradeListValuesBox")?.remove();
+        if (quick_decline_tab) sync_trade_row_decline_position(t);
+        else if (is_trade_row_decline_tab()) sync_trade_row_lock_position(t);
+        return;
+      }
+      let trade_delta = i - o,
+        list_sig = `${o}|${i}|${trade_profit_colorblind_mode ? 1 : 0}`;
+      let existing_box = t.querySelector(".tradeListValuesBox");
+      if (existing_box?.dataset?.nteListSig === list_sig) {
+        if (is_trade_row_decline_tab())
+          mount_trade_row_lock_button_sync(t, a);
+        if (quick_decline_tab) ensure_trade_row_decline_button(t);
+        else if (is_trade_row_decline_tab()) sync_trade_row_lock_position(t);
+        return;
+      }
+      existing_box?.remove();
+      let state = get_trade_profit_state_meta(trade_delta),
+        palette = get_trade_profit_palette(),
+        glow_color = state.equal
+          ? palette.list_even_color
+          : state.win
+            ? palette.list_gain_color
+            : palette.list_loss_color,
+        glow_fill = state.equal
+          ? palette.list_even_fill
+          : state.win
+            ? palette.list_gain_fill
+            : palette.list_loss_fill;
+      let box = document.createElement("div");
+      box.className = "tradeListValuesBox";
+      box.dataset.nteListSig = list_sig;
+      box.style.height = "60%";
+      box.style.padding = "2px";
+      box.style.zIndex = "0";
+      box.style.borderTopLeftRadius = "8px";
+      box.style.overflow = "visible";
+      box.style.position = "absolute";
+      box.style.bottom = "0";
+      box.style.right = "0";
+      let glow = document.createElement("div");
+      glow.className = "glowBar";
+      glow.style.marginTop = "2%";
+      glow.style.marginLeft = "3%";
+      glow.style.height = "90%";
+      glow.style.width = "15px";
+      glow.style.cssFloat = "left";
+      glow.style.backgroundColor = glow_color;
+      glow.style.backgroundImage = glow_fill;
+      glow.style.borderTopLeftRadius = "8px";
+      let rap = document.createElement("div");
+      rap.className = "rapElement";
+      rap.style.fontFamily =
+        "HCo Gotham SSm, Helvetica Neue, Helvetica, Arial, Lucida Grande, sans-serif";
+      rap.style.fontWeight = "bold";
+      rap.style.fontSize = "15px";
+      rap.style.lineHeight = trade_profit_colorblind_mode ? "1.3" : "1.5";
+      rap.style.color = "rgb(255, 255, 255)";
+      rap.style.zIndex = "1001";
+      rap.style.marginLeft = "25px";
+      rap.style.paddingRight = "3px";
+      rap.style.fontVariantNumeric = "tabular-nums";
+      rap.style.textShadow = "0 1px 2px rgba(0,0,0,0.35)";
+      let span1 = document.createElement("span");
+      span1.className = "amount-1 text-robux";
+      span1.textContent = c.commafy(o);
+      let hr = document.createElement("hr");
+      hr.style.cssFloat = "right";
+      hr.style.width = "80%";
+      hr.style.backgroundColor = "rgba(0, 0, 0, 0.18)";
+      hr.style.height = "2px";
+      hr.style.border = "0px";
+      hr.style.margin = "0px";
+      hr.style.borderRadius = "1px";
+      let span2 = document.createElement("span");
+      span2.className = "amount-2 text-robux";
+      span2.textContent = c.commafy(i);
+      if (trade_profit_colorblind_mode) {
+        let status = document.createElement("div");
+        status.className = "tradeListState";
+        status.textContent = state.label.toUpperCase();
+        status.style.fontSize = "10px";
+        status.style.fontWeight = "800";
+        status.style.letterSpacing = "0.08em";
+        status.style.lineHeight = "1";
+        status.style.marginBottom = "2px";
+        status.style.color = state.equal
+          ? palette.list_even_label
+          : state.win
+            ? palette.list_gain_label
+            : palette.list_loss_label;
+        rap.append(status);
+      }
+      rap.append(span1, document.createElement("br"), hr, span2);
+      box.append(glow, rap);
+      let m = Z(t);
+      m &&
+        !t.querySelector(".tradeListValuesBox") &&
+        (m === t &&
+          !m.dataset.ntePositionFixed &&
+          ((m.dataset.ntePositionFixed = "1"),
+          (m.style.position = "relative")),
+        m.appendChild(box));
+      // Values sig updates fingerprint — re-ensure so this row keeps its own
+      // controls instead of sharing a collided park slot with another trade.
+      remember_trade_row_id(t, a);
+      if (is_trade_row_decline_tab()) mount_trade_row_lock_button_sync(t, a);
+      if (quick_decline_tab) ensure_trade_row_decline_button(t);
+      else if (is_trade_row_decline_tab()) sync_trade_row_lock_position(t);
+    }
+
+    async function mount_rows(rows) {
+      let list = sort_trade_rows_by_viewport_priority(rows || []);
+      if (!list.length) return;
+      let cursor = 0;
+      let workers = Math.min(4, list.length);
+      await Promise.all(
+        Array.from({ length: workers }, async () => {
+          while (cursor < list.length) {
+            let idx = cursor++;
+            try {
+              await mount_row_values(list[idx], idx);
+            } catch {}
+          }
+        }),
+      );
+    }
+
+    r || (r = {});
+    // Prefetch after first paint so it does not starve visible value mounts.
+    await mount_rows(get_trade_rows_for_processing());
+    get_current_trade_tab() !== "completed" && prefetch_uncached_trades(r);
+    apply_trade_list_filter();
+    schedule_trade_list_filter_backfill();
+    show_profile_links && c.initTooltips();
+    schedule_missing_value_summaries_retry(500);
+
+    // Backfill IDs beyond the first page without blocking first paint.
+    ensure_trade_row_ids_from_api({ max_extra_pages: 5 }).then(() => {
+      if (trade_row_mut_observer_paused()) return;
+      if (count_visible_rows_missing_value_summaries() > 0) L();
+    });
   }
   let prefetch_running = false,
     prefetch_last_tab = null,
@@ -9517,6 +11923,30 @@
   }
 
   let trade_list_id_cache = { tab: null, at: 0, trades: [] };
+  let ensure_trade_row_ids_inflight = null;
+  let ensure_trade_row_ids_inflight_extra = 0;
+  let ensure_trade_row_ids_want_urgent = false;
+
+  try {
+    document.addEventListener("nru_trade_list_network_result", (event) => {
+      let raw = event?.detail;
+      let detail = raw;
+      if (typeof raw === "string") {
+        try {
+          detail = JSON.parse(raw);
+        } catch {
+          detail = null;
+        }
+      }
+      if (!detail || !Array.isArray(detail.trades)) return;
+      let type = String(detail.type || "").toLowerCase();
+      if (!type) return;
+      let assigned = ingest_trade_list_payload(type, detail.trades);
+      if (assigned > 0 && count_visible_rows_missing_value_summaries() > 0) {
+        schedule_missing_value_summaries_retry(120);
+      }
+    });
+  } catch {}
 
   function get_trade_row_partner_user_id(row) {
     if (!row?.querySelector) return 0;
@@ -9537,8 +11967,44 @@
     return Number(user?.id || user?.userId || 0) || 0;
   }
 
-  async function ensure_trade_row_ids_from_api() {
+  async function ensure_trade_row_ids_from_api(opts = {}) {
+    let max_extra_pages = Math.max(
+      0,
+      Number(opts.max_extra_pages ?? 5) || 0,
+    );
+    let urgent = !!opts.urgent;
+    if (ensure_trade_row_ids_inflight) {
+      ensure_trade_row_ids_inflight_extra = Math.max(
+        ensure_trade_row_ids_inflight_extra,
+        max_extra_pages,
+      );
+      if (urgent) ensure_trade_row_ids_want_urgent = true;
+      return ensure_trade_row_ids_inflight;
+    }
+    ensure_trade_row_ids_inflight_extra = max_extra_pages;
+    ensure_trade_row_ids_want_urgent = urgent;
+    ensure_trade_row_ids_inflight = (async () => {
+      try {
+        await ensure_trade_row_ids_from_api_inner({
+          max_extra_pages: ensure_trade_row_ids_inflight_extra,
+          urgent: ensure_trade_row_ids_want_urgent,
+        });
+      } finally {
+        ensure_trade_row_ids_inflight = null;
+        ensure_trade_row_ids_inflight_extra = 0;
+        ensure_trade_row_ids_want_urgent = false;
+      }
+    })();
+    return ensure_trade_row_ids_inflight;
+  }
+
+  async function ensure_trade_row_ids_from_api_inner(opts = {}) {
     try {
+      let max_extra_pages = Math.max(
+        0,
+        Number(opts.max_extra_pages ?? 5) || 0,
+      );
+      let urgent = !!opts.urgent;
       let rows = [
         ...document.querySelectorAll(".trade-row-list .trade-row, .trade-row"),
       ];
@@ -9554,16 +12020,20 @@
         !trade_list_id_cache.trades.length
       ) {
         let all = [];
-        let page = await fetch_trade_list_page(tab);
+        let page = await fetch_trade_list_page(tab, "", {
+          urgent: urgent || ensure_trade_row_ids_want_urgent,
+        });
         if (page?.trades?.length) all = page.trades.slice();
         let cursor = page?.nextCursor || "";
         // Pull extra pages while visible rows still outnumber known IDs.
         for (
           let i = 0;
-          i < 5 && cursor && all.length < Math.max(100, rows.length + 20);
+          i < max_extra_pages &&
+          cursor &&
+          all.length < Math.max(100, rows.length + 20);
           i++
         ) {
-          let next = await fetch_trade_list_page(tab, cursor);
+          let next = await fetch_trade_list_page(tab, cursor, { urgent: false });
           if (!next?.trades?.length) break;
           all = all.concat(next.trades);
           cursor = next.nextCursor || "";
@@ -9572,27 +12042,7 @@
         trade_list_id_cache = { tab, at: now, trades: all };
       }
 
-      let unused = trade_list_id_cache.trades.slice();
-      for (let row of rows) {
-        if (row.getAttribute("nruTradeId")) {
-          let keep = String(row.getAttribute("nruTradeId"));
-          unused = unused.filter((t) => String(t.id) !== keep);
-          continue;
-        }
-        let user_id = get_trade_row_partner_user_id(row);
-        if (!(user_id > 0)) continue;
-        let idx = unused.findIndex(
-          (t) => trade_list_entry_user_id(t) === user_id,
-        );
-        if (idx < 0) continue;
-        let hit = unused.splice(idx, 1)[0];
-        row.setAttribute("nruTradeId", String(hit.id));
-        let created = hit.listTrade?.created || hit.created;
-        let time = created ? Date.parse(created) : 0;
-        if (Number.isFinite(time) && time > 0)
-          row.setAttribute("data-nte-trade-time", String(time));
-        row.removeAttribute("data-nru-row-token");
-      }
+      apply_trade_list_ids_to_rows(trade_list_id_cache.trades);
     } catch (err) {
       console.debug("NTE trade row id assign failed", err);
     }
@@ -9614,11 +12064,16 @@
     return trades.every((t) => t.id in cached || row_trade_cache[t.id]);
   }
 
-  async function fetch_trade_list_page(type, cursor = "") {
+  async function fetch_trade_list_page(type, cursor = "", opts = {}) {
     if (!is_trade_list_page() || get_current_trade_tab() !== type) return null;
     let url = `https://trades.roblox.com/v1/trades/${type}?limit=100&sortOrder=Desc`;
     if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
-    let resp = await fetch_trade_api(url, { credentials: "include" });
+    let init = { credentials: "include" };
+    // Urgent path skips the shared rate-limit queue so first-paint ID assign
+    // is not blocked by an old resume timer from earlier browsing.
+    let resp = opts.urgent
+      ? await fetch_trade_api_with_timeout(url, init)
+      : await fetch_trade_api(url, init);
     if (!resp.ok) return null;
     let data = await resp.json();
     let trades = [];
@@ -9890,14 +12345,25 @@
   }
   function find_collectible_item_instance_id(e) {
     if (!(e instanceof Element)) return null;
-    let t = [e, ...e.querySelectorAll("[data-collectibleiteminstanceid]")];
-    for (let e of t) {
-      let t = e.getAttribute?.("data-collectibleiteminstanceid");
-      if (t) return t;
+    let t = [
+      e,
+      ...e.querySelectorAll(
+        "[data-collectibleiteminstanceid], .item-card-container, .trade-request-item",
+      ),
+    ];
+    for (let el of t) {
+      let id =
+        el.getAttribute?.("data-collectibleiteminstanceid") ||
+        el.__nte_react_item?.collectibleItemInstanceId ||
+        null;
+      if (id) return id;
     }
-    for (let t = e; t; t = t.parentElement) {
-      let e = t.getAttribute?.("data-collectibleiteminstanceid");
-      if (e) return e;
+    for (let cur = e; cur; cur = cur.parentElement) {
+      let id =
+        cur.getAttribute?.("data-collectibleiteminstanceid") ||
+        cur.__nte_react_item?.collectibleItemInstanceId ||
+        null;
+      if (id) return id;
     }
     return null;
   }
@@ -10282,6 +12748,12 @@
         color:#ffe08a;
       }
       .nte-sales-hover-btn.is-pressed,.nte-rap-signal-btn.is-pressed{transform:scale(.9)!important}
+      .nte-sales-hover-btn.nte-sales-btn-pop{animation:nteSalesBtnPop .22s ease-out}
+      @keyframes nteSalesBtnPop{
+        0%{transform:scale(1)}
+        40%{transform:scale(.86)}
+        100%{transform:scale(1)}
+      }
       .nte-sales-hover-btn svg{width:13px;height:13px;display:block;overflow:visible}
       .nte-sales-hover-btn-glyph{
         fill:none;stroke:currentColor;stroke-width:2.15;stroke-linecap:round;stroke-linejoin:round;
@@ -10397,10 +12869,17 @@
       .light-theme .nte-trade-row-decline.is-error{
         background:linear-gradient(180deg,rgba(255,247,237,.98),rgba(254,215,170,.96));border-color:rgba(249,115,22,.22);color:#9a3412;
       }
-      .item-card-link.nte-has-flag.nte-flag-side-left.nte-has-rap-signal .nte-sales-hover-btn{left:auto;right:6px;top:36px}
-      .item-card-link.nte-has-flag.nte-flag-side-left:not(.nte-has-rap-signal) .nte-sales-hover-btn{left:auto;right:6px;top:6px}
-      .item-card-link.nte-has-flag.nte-flag-side-right .nte-sales-hover-btn{left:6px;right:auto;top:6px}
-      .item-card-link.nte-has-flag.nte-flag-side-right .nte-rap-signal-btn{right:6px;top:36px}
+      /* STRICT: sales top-left; projected/rare flags top-right. */
+      .item-card-container .item-card-link .flagBox,
+      .trade-request-item .flagBox{
+        left:auto!important;right:2px!important;top:2px!important;
+      }
+      .item-card-container:has(.item-card-link.nte-has-flag.nte-flag-side-right) > .nte-thumb-overlay-host > .nte-rap-signal-btn{
+        right:6px;top:36px;
+      }
+      .item-card-container > .nte-thumb-overlay-host > .nte-sales-hover-btn{
+        left:6px;right:auto;top:6px;
+      }
       .nte-sales-hover-panel.is-mobile{
         width:min(420px, calc(100vw - 12px)); max-width:min(420px, calc(100vw - 12px));
         max-height:calc(100vh - 16px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
@@ -10411,10 +12890,10 @@
         .nte-sales-hover-btn { width:24px; height:24px; top:3px; left:3px; border-radius:6px; }
         .nte-sales-hover-btn svg{width:14px;height:14px}
         .nte-rap-signal-btn { width:32px; height:32px; top:2px; right:2px; }
-        .item-card-link.nte-has-flag.nte-flag-side-left.nte-has-rap-signal .nte-sales-hover-btn{left:auto;right:3px;top:33px}
-        .item-card-link.nte-has-flag.nte-flag-side-left:not(.nte-has-rap-signal) .nte-sales-hover-btn{left:auto;right:3px;top:3px}
-        .item-card-link.nte-has-flag.nte-flag-side-right .nte-sales-hover-btn{left:3px;right:auto;top:3px}
-        .item-card-link.nte-has-flag.nte-flag-side-right .nte-rap-signal-btn{right:2px;top:33px}
+        .item-card-container .item-card-link .flagBox,
+        .trade-request-item .flagBox{left:auto!important;right:2px!important;top:2px!important}
+        .item-card-container:has(.item-card-link.nte-has-flag.nte-flag-side-right) > .nte-thumb-overlay-host > .nte-rap-signal-btn{right:2px;top:33px}
+        .item-card-container:has(.item-card-link.nte-has-flag) > .nte-thumb-overlay-host > .nte-sales-hover-btn{left:3px;right:auto;top:3px}
         .nte-sales-hover-panel { max-width:calc(100vw - 12px); }
         .nte-sales-hover-close{width:36px;height:36px;border-radius:11px}
       }
@@ -11630,13 +14109,12 @@
     btn.innerHTML =
       '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path class="nte-sales-hover-btn-glyph" d="M12 5.2v13.6"/><path class="nte-sales-hover-btn-glyph" d="M15.1 8.5c0-1.6-1.2-2.5-3.1-2.5-2 0-3.4 1.1-3.4 2.7 0 2 1.6 2.5 3.4 2.8 1.9.3 3.4.9 3.4 2.9 0 1.7-1.4 2.8-3.5 2.8-2.1 0-3.5-1.1-3.5-2.8"/></svg>';
     wire_trade_thumb_button_press(btn);
-    btn.addEventListener("mousedown", (ev) => {
+    let activate = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
-    });
-    btn.addEventListener("click", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
+      btn.classList.remove("nte-sales-btn-pop");
+      void btn.offsetWidth;
+      btn.classList.add("nte-sales-btn-pop");
       btn.__nte_last_rect = btn.getBoundingClientRect();
       clearTimeout(nte_trade_sales_hover_hide_timer);
       clearTimeout(nte_trade_sales_hover_show_timer);
@@ -11648,20 +14126,49 @@
         return;
       }
       show_trade_sales_hover_from_element(btn);
+    };
+    btn.addEventListener(
+      "pointerdown",
+      (ev) => {
+        if ("mouse" === ev.pointerType && 0 !== ev.button) return;
+        ev.stopPropagation();
+      },
+      true,
+    );
+    btn.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
     });
+    btn.addEventListener("click", activate, true);
     return btn;
   }
   function wire_trade_thumb_button_press(btn) {
     if (!btn || btn.__nte_trade_thumb_press_bound) return;
     btn.__nte_trade_thumb_press_bound = !0;
-    let clear = () => btn.classList.remove("is-pressed");
-    btn.addEventListener("pointerdown", (ev) => {
-      if ("mouse" === ev.pointerType && 0 !== ev.button) return;
+    let clear = () => {
+      clearTimeout(btn.__nte_press_clear_timer);
+      btn.__nte_press_clear_timer = 0;
+      btn.classList.remove("is-pressed");
+    };
+    let arm = () => {
       btn.classList.add("is-pressed");
+      clearTimeout(btn.__nte_press_clear_timer);
+      // Keep the press frame visible long enough to read as a click.
+      btn.__nte_press_clear_timer = setTimeout(clear, 160);
+    };
+    btn.addEventListener(
+      "pointerdown",
+      (ev) => {
+        if ("mouse" === ev.pointerType && 0 !== ev.button) return;
+        arm();
+      },
+      true,
+    );
+    btn.addEventListener("pointerup", () => {
+      clearTimeout(btn.__nte_press_clear_timer);
+      btn.__nte_press_clear_timer = setTimeout(clear, 80);
     });
-    btn.addEventListener("pointerup", clear);
     btn.addEventListener("pointercancel", clear);
-    btn.addEventListener("pointerleave", clear);
     btn.addEventListener("blur", clear);
     btn.addEventListener("dragstart", clear);
   }
@@ -11673,11 +14180,7 @@
     btn.innerHTML =
       '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="nte-rap-signal-shell" cx="12" cy="12" r="9.15"/><path class="nte-rap-signal-chevron-over" d="M8.95 14.2 12 9.7l3.05 4.5"/><path class="nte-rap-signal-chevron-under" d="M8.95 9.8 12 14.3l3.05-4.5"/></svg>';
     wire_trade_thumb_button_press(btn);
-    btn.addEventListener("mousedown", (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-    });
-    btn.addEventListener("click", (ev) => {
+    let activate = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       btn.__nte_last_rect = btn.getBoundingClientRect();
@@ -11691,7 +14194,20 @@
         return;
       }
       show_trade_rap_signal_hover_from_element(btn);
+    };
+    btn.addEventListener(
+      "pointerdown",
+      (ev) => {
+        if ("mouse" === ev.pointerType && 0 !== ev.button) return;
+        ev.stopPropagation();
+      },
+      true,
+    );
+    btn.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
     });
+    btn.addEventListener("click", activate, true);
     return btn;
   }
   function update_trade_rap_signal_button(btn, ctx) {
@@ -11706,49 +14222,201 @@
     btn.setAttribute("title", `${signal.label} - click for details`);
     btn.__nte_rap_signal_ctx = ctx;
   }
+  function sync_trade_card_overlay_host(card, host) {
+    if (!(card instanceof Element) || !(host instanceof Element)) return;
+    if ("static" === getComputedStyle(card).position)
+      card.style.position = "relative";
+    // Must stay out of document flow or it pushes captions down.
+    host.style.setProperty("position", "absolute", "important");
+    host.style.setProperty("pointer-events", "none", "important");
+    host.style.setProperty("z-index", "20", "important");
+    host.style.setProperty("overflow", "visible", "important");
+    host.style.setProperty("margin", "0", "important");
+    host.style.setProperty("padding", "0", "important");
+    host.style.setProperty("border", "0", "important");
+    host.style.boxSizing = "border-box";
+    host.style.aspectRatio = "";
+    host.style.maxWidth = "160px";
+    host.style.maxHeight = "160px";
+    let thumb =
+      card.querySelector(".item-card-thumb-container") ||
+      card.querySelector(".thumbnail-2d-container") ||
+      null;
+    if (!thumb) {
+      // Keep last good size if React briefly empties the thumb — zeroing /
+      // hiding every sync made the sales button flicker.
+      if (!host.__nte_overlay_sized) {
+        host.style.setProperty("left", "0", "important");
+        host.style.setProperty("top", "0", "important");
+        host.style.width = "0";
+        host.style.height = "0";
+        host.style.visibility = "hidden";
+      }
+      return;
+    }
+    let cr = card.getBoundingClientRect(),
+      tr = thumb.getBoundingClientRect();
+    let left = Math.round(tr.left - cr.left),
+      top = Math.round(tr.top - cr.top),
+      width = Math.round(tr.width),
+      height = Math.round(tr.height);
+    // Mid-swap measurements can be bad — keep the last good rect instead of
+    // flashing the host to hidden/0x0 (that flickered sales/RAP buttons).
+    if (
+      !Number.isFinite(left) ||
+      !Number.isFinite(top) ||
+      !Number.isFinite(width) ||
+      !Number.isFinite(height) ||
+      width < 8 ||
+      height < 8 ||
+      width > 220 ||
+      height > 220 ||
+      left < -4 ||
+      top < -4 ||
+      left > cr.width + 4 ||
+      top > cr.height + 4
+    ) {
+      if (!host.__nte_overlay_sized) {
+        host.style.setProperty("left", "0", "important");
+        host.style.setProperty("top", "0", "important");
+        host.style.width = "0";
+        host.style.height = "0";
+        host.style.visibility = "hidden";
+      }
+      return;
+    }
+    host.style.setProperty("left", `${Math.max(0, left)}px`, "important");
+    host.style.setProperty("top", `${Math.max(0, top)}px`, "important");
+    host.style.width = `${width}px`;
+    host.style.height = `${height}px`;
+    host.style.visibility = "";
+    host.__nte_overlay_sized = !0;
+  }
+  function ensure_trade_card_overlay_host(card) {
+    if (!(card instanceof Element)) return null;
+    if (card.classList?.contains("trade-request-item")) {
+      if ("static" === getComputedStyle(card).position)
+        card.style.position = "relative";
+      return card;
+    }
+    let host = card.querySelector(":scope > .nte-thumb-overlay-host");
+    if (!host) {
+      host = document.createElement("div");
+      host.className = "nte-thumb-overlay-host";
+      host.setAttribute("data-nte-overlay-host", "1");
+      card.insertBefore(host, card.firstChild);
+    }
+    sync_trade_card_overlay_host(card, host);
+    return host;
+  }
+  function get_trade_card_overlay_thumb(card) {
+    return (
+      card?.querySelector?.(".item-card-thumb-container") ||
+      card?.querySelector?.(".thumbnail-2d-container") ||
+      card
+    );
+  }
+  // React empty offer tiles keep .trade-request-item and often .draggable-border
+  // / .blank-item with no asset content. Sales must not mount on those.
+  function is_trade_request_slot_filled(card) {
+    if (!(card instanceof Element)) return false;
+    if (!card.classList?.contains("trade-request-item")) return true;
+    if (
+      card.classList.contains("blank-item") ||
+      card.classList.contains("draggable-border")
+    )
+      return false;
+    return !!(
+      card.__nte_react_item?.collectibleItemInstanceId ||
+      card.getAttribute("data-collectibleiteminstanceid") ||
+      card.querySelector(
+        'a[href*="/catalog/"], a[href*="/bundles/"], .item-name, .item-card-name, .item-card-thumb-container, thumbnail-2d, .thumbnail-2d-container',
+      )
+    );
+  }
+  function is_trade_request_offer_card(card) {
+    return !!(
+      card instanceof Element &&
+      card.closest?.(".trade-request-window-offer")
+    );
+  }
+  function remove_trade_rap_signal_button(card) {
+    if (!card) return;
+    let btn = card.querySelector(".nte-rap-signal-btn");
+    let flag_host = card.querySelector(".item-card-link") || card;
+    flag_host?.classList?.remove("nte-has-rap-signal");
+    if (!btn) return;
+    nte_trade_sales_hover_active_el === btn && hide_trade_sales_hover_panel();
+    btn.remove();
+  }
+  function remove_trade_sales_hover_button(card) {
+    if (!card) return;
+    let btn = card.querySelector(".nte-sales-hover-btn");
+    if (!btn) {
+      delete card.__nte_sales_item;
+      return;
+    }
+    nte_trade_sales_hover_active_el === btn && hide_trade_sales_hover_panel();
+    btn.remove();
+    delete card.__nte_sales_item;
+  }
   function ensure_trade_sales_hover_button(card) {
     if (!card) return;
+    if (is_trade_request_offer_card(card)) {
+      remove_trade_sales_hover_button(card);
+      remove_trade_rap_signal_button(card);
+      return;
+    }
+    if (
+      card.classList?.contains("trade-request-item") &&
+      !is_trade_request_slot_filled(card)
+    ) {
+      remove_trade_sales_hover_button(card);
+      remove_trade_rap_signal_button(card);
+      return;
+    }
     let cached_item =
       get_cached_search_item_from_el(card) || card.__nte_sales_item || null;
     cached_item && (card.__nte_sales_item = cached_item);
-    let thumb =
-      card.querySelector(".item-card-thumb-container") ||
-      card.querySelector(".item-card-link") ||
-      card.querySelector("thumbnail-2d") ||
-      card.querySelector(".thumbnail-2d-container") ||
-      card;
-    if (!thumb) return;
-    if ("static" === getComputedStyle(thumb).position)
-      thumb.style.position = "relative";
-    let existing = thumb.querySelector(".nte-sales-hover-btn");
+    let host = ensure_trade_card_overlay_host(card);
+    let thumb = get_trade_card_overlay_thumb(card);
+    if (!host || !thumb) return;
+    let existing =
+      host.querySelector(":scope > .nte-sales-hover-btn") ||
+      card.querySelector(".nte-sales-hover-btn");
     if (existing) {
       cached_item
         ? (existing.__nte_sales_item = cached_item)
         : delete existing.__nte_sales_item;
       existing.__nte_sales_source = thumb;
+      if (existing.parentElement !== host) host.appendChild(existing);
       return;
     }
     let btn = create_trade_sales_hover_button();
     cached_item && (btn.__nte_sales_item = cached_item);
     btn.__nte_sales_source = thumb;
-    thumb.appendChild(btn);
+    host.appendChild(btn);
   }
   function sync_trade_rap_signal_button(card) {
     if (!card) return;
+    if (
+      is_trade_request_offer_card(card) ||
+      (card.classList?.contains("trade-request-item") &&
+        !is_trade_request_slot_filled(card))
+    ) {
+      remove_trade_rap_signal_button(card);
+      return;
+    }
     let cached_item =
       get_cached_search_item_from_el(card) || card.__nte_sales_item || null;
     cached_item && (card.__nte_sales_item = cached_item);
     let flag_host = card.querySelector(".item-card-link") || card;
-    let thumb =
-      card.querySelector(".item-card-thumb-container") ||
-      card.querySelector(".item-card-link") ||
-      card.querySelector("thumbnail-2d") ||
-      card.querySelector(".thumbnail-2d-container") ||
-      card;
-    if (!thumb) return;
-    if ("static" === getComputedStyle(thumb).position)
-      thumb.style.position = "relative";
-    let btn = thumb.querySelector(".nte-rap-signal-btn"),
+    let host = ensure_trade_card_overlay_host(card);
+    let thumb = get_trade_card_overlay_thumb(card);
+    if (!host || !thumb) return;
+    let btn =
+        host.querySelector(":scope > .nte-rap-signal-btn") ||
+        card.querySelector(".nte-rap-signal-btn"),
       ctx = get_trade_rap_signal_context_from_element(card);
     if (!ctx) {
       flag_host?.classList?.remove("nte-has-rap-signal");
@@ -11766,16 +14434,48 @@
       : delete btn.__nte_sales_item;
     btn.__nte_sales_source = thumb;
     update_trade_rap_signal_button(btn, ctx);
-    btn.isConnected || thumb.appendChild(btn);
+    if (btn.parentElement !== host) host.appendChild(btn);
+  }
+  function sync_trade_flag_sides_for_sales(root = document) {
+    // STRICT: projected/rare flags stay top-right (sales owns top-left).
+    for (let card of root.querySelectorAll(
+      ".item-card-container, .trade-request-item",
+    )) {
+      let link = card.querySelector(".item-card-link") || card,
+        box = link.querySelector(".flagBox");
+      if (!box) continue;
+      box.dataset.nteSide = "right";
+      box.style.left = "auto";
+      box.style.right = "2px";
+      box.style.top = "2px";
+      link.classList.add("nte-has-flag", "nte-flag-side-right");
+      link.classList.remove("nte-flag-side-left");
+    }
   }
   function mount_trade_sales_hover_targets(root = document) {
     ensure_trade_sales_hover_panel();
+    // Counter/send offer slots never get sales or RAP signal buttons.
     for (let el of root.querySelectorAll(
-      ".trade-list-detail-offer .item-card-container, .trade-inventory-panel .item-card-container",
+      ".trade-request-window-offer .trade-request-item, .trade-request-window-offer .item-card-container",
     )) {
+      remove_trade_sales_hover_button(el);
+      remove_trade_rap_signal_button(el);
+    }
+    // Offer tiles are reused in place; clear orphaned sales btns when emptied.
+    for (let el of root.querySelectorAll(".trade-request-item")) {
+      if (!is_trade_request_slot_filled(el)) {
+        remove_trade_sales_hover_button(el);
+        remove_trade_rap_signal_button(el);
+      }
+    }
+    for (let el of root.querySelectorAll(
+      ".trade-list-detail-offer .item-card-container, .trades-list-detail .item-card-container, .trade-inventory-panel .item-card-container, .trade-request-window .trade-inventory-panel .item-card-container",
+    )) {
+      if (is_trade_request_offer_card(el)) continue;
       ensure_trade_sales_hover_button(el);
       sync_trade_rap_signal_button(el);
     }
+    sync_trade_flag_sides_for_sales(root);
   }
   function sync_mobile_trade_inventory_scroll() {
     if ("sendOrCounter" !== c.getPageType()) return;
@@ -12004,10 +14704,18 @@
   function should_back_off_trade_thumb_ui() {
     return has_active_trade_modal();
   }
-  // Roblox renders the RAP line under trade item thumbnails in muted gray with
-  // the robux icon flush against the amount. Match the Rolimons line below it.
+  // Keep native Roblox robux sprite sizing. Nudge RAP digits only so they
+  // share Rolimons .valueSpan column (roli 19px + 6px mr ≈ 25px; native robux
+  // sprite ~20px with mr -2px ≈ 18px → +5..+7 on text; +9 overshot right).
   function ensure_trade_item_price_styles() {
-    if (document.getElementById("nte-trade-item-price-style")) return;
+    let style = document.getElementById("nte-trade-item-price-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "nte-trade-item-price-style";
+      document.head.appendChild(style);
+    }
+    if (style.dataset.nteVer === "usd-send-1") return;
+    style.dataset.nteVer = "usd-send-1";
     let scopes = [
       ".trade-list-detail-offer",
       ".trade-request-window-offer",
@@ -12017,26 +14725,80 @@
       scopes
         .map((scope) => `${theme}${scope} .item-card-price ${part}`)
         .join(",");
-    let summary = (part) =>
-      scopes.map((scope) => `${scope} .robux-line-amount ${part}`).join(",");
-    let style = document.createElement("style");
-    style.id = "nte-trade-item-price-style";
     style.textContent = `
-      ${sel("", ".icon-robux-16x16")}{margin-right:5px}
+      ${sel("", ".text-robux-tile")}{margin-left:5px!important;padding-left:0!important}
       ${sel(".light-theme ", ".text-robux-tile")}{color:rgb(32,34,39)}
-      ${sel(".light-theme ", ".icon-robux-16x16")}{filter:brightness(0)}
       ${sel(".dark-theme ", ".text-robux-tile")}{color:rgb(247,247,248)}
-      ${sel(".dark-theme ", ".icon-robux-16x16")}{filter:brightness(0) invert(1)}
-      ${summary(".icon-robux-16x16")},${summary(".icon-robux-gray-16x16")}{margin-right:5px}
+      /* Routility USD adds a 3rd price row — grow inventory tiles so it isn't clipped */
+      .trade-inventory-panel.nte-has-routility-usd .item-cards,
+      .trade-inventory-panel.nte-has-routility-usd .item-cards-stackable{
+        height:auto!important;
+        min-height:520px!important;
+        max-height:none!important;
+        overflow:visible!important;
+      }
+      .trade-inventory-panel.nte-has-routility-usd .trade-inventory-card,
+      .trade-inventory-panel.nte-has-routility-usd .list-item.item-card,
+      .trade-inventory-panel.nte-has-routility-usd .list-item.grid-item-container,
+      .trade-inventory-panel.nte-has-routility-usd .item-card-container{
+        height:auto!important;
+        min-height:262px!important;
+        max-height:none!important;
+        overflow:visible!important;
+      }
+      .trade-inventory-panel.nte-has-routility-usd .item-card-price,
+      .trade-list-detail-offer.nte-has-routility-usd .item-card-price,
+      .trade-request-window-offer .item-card-price:has(.nte-routility-usd-row){
+        height:auto!important;
+        min-height:72px!important;
+        max-height:none!important;
+        overflow:visible!important;
+      }
+      .item-card-price .nte-routility-usd-row{
+        display:inline-flex!important;
+        align-items:center!important;
+        gap:6px!important;
+        margin-top:2px!important;
+        min-height:20px!important;
+        line-height:20px!important;
+        white-space:nowrap!important;
+      }
+      .trade-request-window-offer .trade-request-item .item-value{
+        overflow:visible!important;
+        max-width:100%!important;
+      }
+      .trade-request-window-offer .trade-request-item .item-value .nte-routility-usd-inline{
+        display:flex!important;
+        width:100%!important;
+        box-sizing:border-box!important;
+        align-items:center!important;
+        gap:4px!important;
+        margin:2px 0 0!important;
+        min-height:18px!important;
+        line-height:18px!important;
+        white-space:nowrap!important;
+      }
     `;
-    document.head.appendChild(style);
+  }
+  function sync_trade_routility_usd_layout(show_usd) {
+    ensure_trade_item_price_styles();
+    let on = !!show_usd;
+    for (let el of document.querySelectorAll(
+      ".trade-inventory-panel, .trade-list-detail-offer",
+    ))
+      el.classList.toggle("nte-has-routility-usd", on);
   }
   function ensure_trade_page_dominance_styles() {
-    if (document.getElementById("nte-trade-dominance-style")) return;
-    let style = document.createElement("style");
-    style.id = "nte-trade-dominance-style";
+    let style = document.getElementById("nte-trade-dominance-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "nte-trade-dominance-style";
+      document.head.appendChild(style);
+    }
     style.textContent = `
       .trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row{overflow:visible!important}
+      /* Do not force flex/gap/margins on .trade-buttons — Roblox floats that row.
+         Extension buttons already use btn-control-md so native spacing applies. */
       .trade-buttons .nte-history-btn,
       .trade-buttons .nte-analyze-trade-btn,
       .trade-buttons .nte-poison-btn,
@@ -12045,43 +14807,66 @@
       .nte-history-fallback-row .nte-analyze-trade-btn,
       .nte-poison-fallback-row .nte-analyze-trade-btn,
       .nte-poison-fallback-row .nte-poison-btn,
-      .nte-trade-request-analyze-row .nte-analyze-trade-btn{position:relative!important;pointer-events:auto!important;isolation:isolate!important}
+      .nte-trade-request-analyze-row .nte-analyze-trade-btn{position:static!important;pointer-events:auto!important;isolation:auto!important;z-index:0!important}
       .nte-trade-row-lock-wrap,.nte-trade-row-lock{pointer-events:auto!important;isolation:isolate!important}
-      .nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row{position:relative!important;isolation:isolate!important}
+      .nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row{position:relative!important;isolation:auto!important;z-index:0!important}
+      /* Offer text/totals must paint over History/Analyze if USD rows overflow into the button row. */
+      .trades-list-detail .item-card-name,
+      .trades-list-detail .item-card-price,
+      .trades-list-detail .robux-line,
+      .trade-request-window .item-card-name,
+      .trade-request-window .item-card-price,
+      .trade-request-window .robux-line,
+      .nte-duplicate-trade-warning,
+      .nte-miss-send-warning,
+      .nte-ownership-banner{position:relative!important;z-index:2!important}
+      .rbx-divider[data-nte-trade-win-loss-detail-mount="1"] #winLossStatsContainer,
+      .rbx-divider[data-nte-trade-win-loss-detail-mount="1"] .winLossStatsContainer{position:absolute!important;z-index:4!important;top:0!important;bottom:0!important;left:0!important;right:0!important;transform:none!important;margin:0!important}
       .nte-history-panel,.nte-sales-hover-panel,.nte-sales-chart-point-tooltip{pointer-events:auto!important;isolation:isolate!important}
       .nte-history-panel{position:relative!important}
-      .item-card-container,.item-card-link,.item-card-thumb-container,.trade-request-item{overflow:visible!important}
+      .item-card-container,.item-card-link,.trade-request-item{overflow:visible!important}
+      .trade-request-window-offer .trade-request-item .item-name,.trade-request-window-offer .trade-request-item .text-lead.item-name{overflow:visible!important;max-width:100%!important;min-width:0!important}
+      .trade-request-window-offer .trade-request-item .item-name>span,.trade-request-window-offer .trade-request-item .text-lead.item-name>span{display:flex!important;align-items:center!important;min-width:0!important;max-width:100%!important;overflow:visible!important;gap:4px!important}
+      .trade-request-window-offer .trade-request-item .item-name a[href*="/catalog/"],.trade-request-window-offer .trade-request-item .item-name a[href*="/bundles/"],.trade-request-window-offer .trade-request-item .text-lead.item-name a[href*="/catalog/"],.trade-request-window-offer .trade-request-item .text-lead.item-name a[href*="/bundles/"]{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;min-width:0!important;flex:1 1 auto!important}
+      .trade-request-window-offer .trade-request-item .item-name .nte-rolimons-thumb-link[data-nte-name-link="1"],.trade-request-window-offer .trade-request-item .text-lead.item-name .nte-rolimons-thumb-link[data-nte-name-link="1"]{flex:0 0 16px!important;width:16px!important;height:16px!important;margin-left:0!important;padding:0!important;transform:none!important;overflow:visible!important;position:static!important;inset:auto!important}
+      .trade-request-window-offer .trade-request-item .nte-offer-name-link-icon{display:block!important;width:16px!important;height:16px!important;background-position:center!important;background-repeat:no-repeat!important;background-size:16px 16px!important;background-color:transparent!important}
       .item-card-link,.item-card-container,.trade-request-item{position:relative!important}
+      .item-card-container > .nte-thumb-overlay-host{position:absolute!important;margin:0!important;padding:0!important;border:0!important;box-sizing:border-box!important;pointer-events:none!important;z-index:20!important;overflow:visible!important;max-width:160px!important;max-height:160px!important}
       .item-card-thumb-container,.trade-request-item .item-card-thumb-container{position:relative!important;overflow:hidden!important;z-index:0!important}
       .item-card-thumb-container thumbnail-2d,.item-card-thumb-container .thumbnail-2d-container,.item-card-link thumbnail-2d,.item-card-container thumbnail-2d,.trade-request-item thumbnail-2d{z-index:0!important}
-      .item-card-thumb-container .thumbnail-2d-container img,.item-card-link .thumbnail-2d-container img,.item-card-container .thumbnail-2d-container img,.trade-request-item .thumbnail-2d-container img{position:static!important}
-      .item-card-container .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.item-card-link .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.item-card-thumb-container .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.trade-request-item .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.item-card-container .limited-number-container,.item-card-link .limited-number-container,.item-card-thumb-container .limited-number-container,.trade-request-item .limited-number-container,.trades-list-detail .limited-number-container,.item-card-container .item-card-holding,.item-card-link .item-card-holding,.item-card-thumb-container .item-card-holding,.trade-request-item .item-card-holding,.trades-list-detail .item-card-holding,.item-card-container .item-card-equipped,.item-card-link .item-card-equipped,.item-card-thumb-container .item-card-equipped,.trade-request-item .item-card-equipped,.trades-list-detail .item-card-equipped{z-index:6!important}
+      /* Keep Roblox absolute thumb img sizing — position:static stretches item art */
+      /* Match Roblox StyleGuide: .limited-icon-container { bottom:8px; left:8px } */
+      .item-card-container .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.item-card-link .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.item-card-thumb-container .limited-icon-container:not(.tooltip-pastnames):not(.hide-button),.trade-request-item .limited-icon-container:not(.tooltip-pastnames):not(.hide-button){z-index:35!important;pointer-events:auto!important;position:absolute!important;inset:auto!important;left:8px!important;bottom:8px!important;right:auto!important;top:auto!important}
+      /* Roblox's hover clone hides #serial; keep the original and ignore the overlay. */
+      .item-card-container .limited-hover-target,.item-card-link .limited-hover-target,.item-card-thumb-container .limited-hover-target,.trade-request-item .limited-hover-target{display:none!important;pointer-events:none!important}
+      .item-card-container .limited-icon-container>.limited-number-container:not(.ng-hide),.item-card-link .limited-icon-container>.limited-number-container:not(.ng-hide),.item-card-thumb-container .limited-icon-container>.limited-number-container:not(.ng-hide),.trade-request-item .limited-icon-container>.limited-number-container:not(.ng-hide){display:inline-block!important;opacity:1!important;visibility:visible!important}
+      .item-card-container .limited-number-container,.item-card-link .limited-number-container,.item-card-thumb-container .limited-number-container,.trade-request-item .limited-number-container,.trades-list-detail .limited-number-container,.item-card-container .item-card-holding,.item-card-link .item-card-holding,.item-card-thumb-container .item-card-holding,.trade-request-item .item-card-holding,.trades-list-detail .item-card-holding,.item-card-container .item-card-equipped,.item-card-link .item-card-equipped,.item-card-thumb-container .item-card-equipped,.trade-request-item .item-card-equipped,.trades-list-detail .item-card-equipped{z-index:6!important}
       .item-card-container .nte-sales-hover-btn,.item-card-link .nte-sales-hover-btn,.item-card-thumb-container .nte-sales-hover-btn,.trade-request-item .nte-sales-hover-btn,
       .item-card-container .nte-rap-signal-btn,.item-card-link .nte-rap-signal-btn,.item-card-thumb-container .nte-rap-signal-btn,.trade-request-item .nte-rap-signal-btn,
-      .item-card-container .nte-rolimons-thumb-link,.item-card-link .nte-rolimons-thumb-link,.item-card-thumb-container .nte-rolimons-thumb-link,.trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]),
-      .item-card-container .nte-uaid-thumb-link,.item-card-link .nte-uaid-thumb-link,.item-card-thumb-container .nte-uaid-thumb-link,.trade-request-item .nte-uaid-thumb-link{position:absolute!important;pointer-events:auto!important;isolation:isolate!important}
-      html.nte-trade-ui-fight .trade-buttons .nte-history-btn,
-      html.nte-trade-ui-fight .trade-buttons .nte-analyze-trade-btn,
-      html.nte-trade-ui-fight .trade-buttons .nte-poison-btn,
-      html.nte-trade-ui-fight .trade-buttons .nte-counter-send-btn,
-      html.nte-trade-ui-fight .nte-history-fallback-row .nte-history-btn,
-      html.nte-trade-ui-fight .nte-history-fallback-row .nte-analyze-trade-btn,
-      html.nte-trade-ui-fight .nte-poison-fallback-row .nte-analyze-trade-btn,
-      html.nte-trade-ui-fight .nte-trade-request-analyze-row .nte-analyze-trade-btn,
-      html.nte-trade-ui-fight .nte-poison-fallback-row .nte-poison-btn{z-index:2147483588!important}
-      html.nte-trade-ui-fight .nte-history-fallback-row,html.nte-trade-ui-fight .nte-poison-fallback-row,html.nte-trade-ui-fight .nte-trade-request-analyze-row{z-index:2147483586!important}
-      html.nte-trade-ui-fight .nte-trade-row-lock-wrap{z-index:2147483587!important}
-      html.nte-trade-ui-fight .nte-history-panel{z-index:2147483610!important}
-      html.nte-trade-ui-fight .nte-sales-hover-panel{z-index:2147483612!important}
-      html.nte-trade-ui-fight .nte-sales-chart-point-tooltip{z-index:2147483613!important}
-      html.nte-trade-ui-fight .item-card-container .nte-sales-hover-btn,html.nte-trade-ui-fight .item-card-link .nte-sales-hover-btn,html.nte-trade-ui-fight .item-card-thumb-container .nte-sales-hover-btn,html.nte-trade-ui-fight .trade-request-item .nte-sales-hover-btn,
-      html.nte-trade-ui-fight .item-card-container .nte-rap-signal-btn,html.nte-trade-ui-fight .item-card-link .nte-rap-signal-btn,html.nte-trade-ui-fight .item-card-thumb-container .nte-rap-signal-btn,html.nte-trade-ui-fight .trade-request-item .nte-rap-signal-btn,
-      html.nte-trade-ui-fight .item-card-container .nte-rolimons-thumb-link,html.nte-trade-ui-fight .item-card-link .nte-rolimons-thumb-link,html.nte-trade-ui-fight .item-card-thumb-container .nte-rolimons-thumb-link,html.nte-trade-ui-fight .trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]),
-      html.nte-trade-ui-fight .item-card-container .nte-uaid-thumb-link,html.nte-trade-ui-fight .item-card-link .nte-uaid-thumb-link,html.nte-trade-ui-fight .item-card-thumb-container .nte-uaid-thumb-link,html.nte-trade-ui-fight .trade-request-item .nte-uaid-thumb-link{z-index:2147483589!important}
+      .item-card-container .nte-rolimons-thumb-link,.item-card-link .nte-rolimons-thumb-link,.item-card-thumb-container .nte-rolimons-thumb-link,.trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]){position:absolute!important;pointer-events:auto!important;isolation:isolate!important}
+      /* Sales: top-left */
+      .item-card-container .nte-sales-hover-btn,.item-card-link .nte-sales-hover-btn,.item-card-thumb-container .nte-sales-hover-btn,.trade-request-item .nte-sales-hover-btn{inset:auto!important;top:6px!important;left:6px!important;right:auto!important;bottom:auto!important;width:24px!important;height:24px!important}
+      /* RAP signal: top-right (flag CSS may push down) */
+      .item-card-container .nte-rap-signal-btn,.item-card-link .nte-rap-signal-btn,.item-card-thumb-container .nte-rap-signal-btn,.trade-request-item .nte-rap-signal-btn{inset:auto!important;top:4px!important;right:4px!important;left:auto!important;bottom:auto!important;width:30px!important;height:30px!important}
+      /* Rolimons item page: bottom-right */
+      .item-card-container .nte-rolimons-thumb-link,.item-card-link .nte-rolimons-thumb-link,.item-card-thumb-container .nte-rolimons-thumb-link,.trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]){inset:auto!important;top:auto!important;right:6px!important;bottom:6px!important;left:auto!important;width:24px!important;height:24px!important}
+      /* Limited badge opens ownership (no separate UAID icon button) */
+      .limited-icon-container[data-nte-uaid-link="1"],.limited-hover-target[data-nte-uaid-link="1"],.icon-shop-limited[data-nte-uaid-link="1"]{cursor:pointer!important}
+      /* Projected/rare flags: top-right */
+      .item-card-container .item-card-link .flagBox,.trade-request-item .flagBox{left:auto!important;right:2px!important;top:2px!important}
+      /* Fight mode: only elevate floating panels, not the inline action buttons.
+         Mega z-index on History/Analyze was covering the robux/value row above. */
+      html.nte-trade-ui-fight .nte-history-panel{z-index:1200!important}
+      html.nte-trade-ui-fight .nte-sales-hover-panel{z-index:1210!important}
+      html.nte-trade-ui-fight .nte-sales-chart-point-tooltip{z-index:1220!important}
+      html.nte-trade-ui-fight .nte-history-fallback-row,html.nte-trade-ui-fight .nte-poison-fallback-row,html.nte-trade-ui-fight .nte-trade-request-analyze-row{z-index:0!important}
+      html.nte-trade-ui-fight .nte-trade-row-lock-wrap{z-index:6!important}
+      .item-card-container .nte-sales-hover-btn,.item-card-link .nte-sales-hover-btn,.item-card-thumb-container .nte-sales-hover-btn,.trade-request-item .nte-sales-hover-btn,
+      .item-card-container .nte-rap-signal-btn,.item-card-link .nte-rap-signal-btn,.item-card-thumb-container .nte-rap-signal-btn,.trade-request-item .nte-rap-signal-btn,
+      .item-card-container .nte-rolimons-thumb-link,.item-card-link .nte-rolimons-thumb-link,.item-card-thumb-container .nte-rolimons-thumb-link,.trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]){z-index:40!important}
       html.nte-trade-ui-backoff .item-card-container .nte-sales-hover-btn,html.nte-trade-ui-backoff .item-card-link .nte-sales-hover-btn,html.nte-trade-ui-backoff .item-card-thumb-container .nte-sales-hover-btn,html.nte-trade-ui-backoff .trade-request-item .nte-sales-hover-btn,
       html.nte-trade-ui-backoff .item-card-container .nte-rap-signal-btn,html.nte-trade-ui-backoff .item-card-link .nte-rap-signal-btn,html.nte-trade-ui-backoff .item-card-thumb-container .nte-rap-signal-btn,html.nte-trade-ui-backoff .trade-request-item .nte-rap-signal-btn,
-      html.nte-trade-ui-backoff .item-card-container .nte-rolimons-thumb-link,html.nte-trade-ui-backoff .item-card-link .nte-rolimons-thumb-link,html.nte-trade-ui-backoff .item-card-thumb-container .nte-rolimons-thumb-link,html.nte-trade-ui-backoff .trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]),
-      html.nte-trade-ui-backoff .item-card-container .nte-uaid-thumb-link,html.nte-trade-ui-backoff .item-card-link .nte-uaid-thumb-link,html.nte-trade-ui-backoff .item-card-thumb-container .nte-uaid-thumb-link,html.nte-trade-ui-backoff .trade-request-item .nte-uaid-thumb-link{opacity:0!important;visibility:hidden!important;pointer-events:none!important;transform:none!important}
+      html.nte-trade-ui-backoff .item-card-container .nte-rolimons-thumb-link,html.nte-trade-ui-backoff .item-card-link .nte-rolimons-thumb-link,html.nte-trade-ui-backoff .item-card-thumb-container .nte-rolimons-thumb-link,html.nte-trade-ui-backoff .trade-request-item .nte-rolimons-thumb-link:not([data-nte-inline-link="1"]){opacity:0!important;visibility:hidden!important;pointer-events:none!important;transform:none!important}
       html.nte-trade-ui-backoff .nte-sales-hover-panel,html.nte-trade-ui-backoff .nte-sales-chart-point-tooltip{display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
       html.nte-trade-ui-backoff .trade-buttons .nte-history-btn,html.nte-trade-ui-backoff .trade-buttons .nte-analyze-trade-btn,html.nte-trade-ui-backoff .trade-buttons .nte-poison-btn,html.nte-trade-ui-backoff .nte-history-fallback-row .nte-history-btn,html.nte-trade-ui-backoff .nte-history-fallback-row .nte-analyze-trade-btn,html.nte-trade-ui-backoff .nte-poison-fallback-row .nte-analyze-trade-btn,html.nte-trade-ui-backoff .nte-trade-request-analyze-row .nte-analyze-trade-btn,html.nte-trade-ui-backoff .nte-poison-fallback-row .nte-poison-btn{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;filter:none!important}
       html.nte-trade-ui-backoff .nte-history-fallback-row,html.nte-trade-ui-backoff .nte-poison-fallback-row,html.nte-trade-ui-backoff .nte-trade-request-analyze-row{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
@@ -12283,8 +15068,7 @@
       );
       if (
         fight_mode === trade_dominance_last_fight &&
-        back_off_thumb_ui === trade_dominance_last_back_off &&
-        !fight_mode
+        back_off_thumb_ui === trade_dominance_last_back_off
       )
         return;
       trade_dominance_last_fight = fight_mode;
@@ -12300,7 +15084,10 @@
       ))
         set_trade_style(el, "overflow", "visible", "important");
       for (let el of get_trade_dominance_card_hosts()) {
-        set_trade_style(el, "overflow", "visible", "important");
+        // Never force overflow:visible on thumb boxes — it breaks Roblox
+        // image clipping / aspect and can stretch item art.
+        if (!el.classList?.contains("item-card-thumb-container"))
+          set_trade_style(el, "overflow", "visible", "important");
         if (!el.dataset.ntePositionFixed) {
           el.dataset.ntePositionFixed = "1";
           let position = getComputedStyle(el).position;
@@ -12311,51 +15098,44 @@
       for (let el of document.querySelectorAll(
         ".nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn,.nte-counter-send-btn",
       )) {
-        fight_mode
-          ? mark_trade_dominant(el, 2147483588)
-          : clear_trade_dominant(el);
+        // Keep inline trade-row buttons in normal stacking so they don't cover
+        // nearby Roblox/value UI (robux line, Rolimons totals, etc.).
+        clear_trade_dominant(el);
+        remove_trade_style(el, "position");
+        remove_trade_style(el, "pointer-events");
+        remove_trade_style(el, "isolation");
         sync_trade_button_position(el);
       }
-      for (let el of document.querySelectorAll(".nte-trade-row-lock-wrap")) {
+      for (let el of query_all_trade_row_controls(".nte-trade-row-lock-wrap")) {
         fight_mode
-          ? mark_trade_dominant(el, 2147483587)
+          ? mark_trade_dominant(el, 6)
           : clear_trade_dominant(el);
       }
       for (let el of get_trade_dominance_thumb_buttons()) {
-        if (
-          el.classList?.contains("nte-rolimons-thumb-link") &&
-          el.dataset.nteInlineLink === "1"
-        ) {
-          clear_trade_dominant(el);
-          continue;
-        }
-        fight_mode
-          ? mark_trade_dominant(el, 2147483589)
-          : clear_trade_dominant(el);
-        let host =
-          el.__nte_sales_source ||
-          el.closest(
-            ".item-card-link,.item-card-thumb-container,.item-card-container,.trade-request-item",
-          );
-        host && el.parentElement !== host && host.appendChild(el);
+        // Never elevate thumb overlays into the 2e9 z-index fight band — if a
+        // host is briefly mis-sized while switching trades, that blocked the
+        // whole trade pane while the rest of the page still scrolled.
+        clear_trade_dominant(el);
+        // Do not relocate overlay nodes — moving React-owned children causes
+        // removeChild crashes on trade list reload / quick decline.
       }
       for (let el of document.querySelectorAll(
         ".nte-history-fallback-row,.nte-poison-fallback-row",
       ))
         fight_mode
-          ? mark_trade_dominant(el, 2147483586)
+          ? mark_trade_dominant(el, 5)
           : clear_trade_dominant(el);
       for (let el of document.querySelectorAll(".nte-history-panel"))
         fight_mode
-          ? mark_trade_dominant(el, 2147483610)
+          ? mark_trade_dominant(el, 1200)
           : clear_trade_dominant(el);
       if (!back_off_thumb_ui && fight_mode) {
         for (let el of document.querySelectorAll(".nte-sales-hover-panel"))
-          mark_trade_dominant(el, 2147483612);
+          mark_trade_dominant(el, 1210);
         for (let el of document.querySelectorAll(
           ".nte-sales-chart-point-tooltip",
         ))
-          mark_trade_dominant(el, 2147483613);
+          mark_trade_dominant(el, 1220);
       } else {
         for (let el of document.querySelectorAll(
           ".nte-sales-hover-panel,.nte-sales-chart-point-tooltip",
@@ -12367,33 +15147,88 @@
   let trade_ui_refresh_timer = 0,
     trade_ui_refresh_retry_timer = 0,
     trade_ui_refresh_running = null,
-    trade_ui_refresh_pending = !1;
+    trade_ui_refresh_pending = !1,
+    trade_ui_refresh_muted = !1,
+    trade_ui_refresh_pass_budget = 0;
+  function is_nte_owned_mutation_node(node) {
+    if (!(node instanceof Element)) return !node;
+    if (
+      node.matches?.(
+        ".nte-thumb-overlay-host,.nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link,.nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn,.nte-counter-send-btn,.nte-trade-row-decline,.nte-trade-row-decline-wrap,.nte-trade-row-lock-wrap,.nte-history-panel,.nte-sales-hover-panel,.nte-sales-chart-point-tooltip,.tradeListValuesBox,.glowBar,.nte-trade-search-wrap,.rolimons-search,.nte-serial-hide-host,.winLossStatsContainer,.flagBox,.projected-flag,.rare-flag,.nte-flag-tip,.nte-flag-tip-text,.nte-profile-rolimons-link,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row,.tooltip,.tooltip-inner,.tooltip-arrow",
+      )
+    )
+      return true;
+    return !!node.closest?.(
+      ".nte-thumb-overlay-host,.nte-history-panel,.nte-sales-hover-panel,.nte-trade-search-wrap,.tradeListValuesBox,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row,.flagBox,.projected-flag,.tooltip",
+    );
+  }
+  function mutation_is_extension_only(mutations) {
+    for (let mutation of mutations || []) {
+      if ("attributes" === mutation.type) {
+        let target = mutation.target;
+        if (target instanceof Element && !is_nte_owned_mutation_node(target))
+          return false;
+        continue;
+      }
+      let nodes = [
+        ...(mutation.addedNodes || []),
+        ...(mutation.removedNodes || []),
+      ];
+      if (!nodes.length) continue;
+      for (let node of nodes) {
+        if (node.nodeType !== 1) continue;
+        if (!is_nte_owned_mutation_node(node)) return false;
+      }
+    }
+    return true;
+  }
   async function run_trade_ui_refresh_now() {
-    if (document.hidden) return;
+    if (document.hidden || !nte_extension_alive()) return;
     if (trade_ui_refresh_running)
       return (trade_ui_refresh_pending = !0), trade_ui_refresh_running;
     trade_ui_refresh_running = (async () => {
-      do {
+      // One trailing pass max — observers used to set pending during N() and
+      // spin forever (page frozen, CSS animations still running).
+      trade_ui_refresh_pass_budget = 2;
+      while (trade_ui_refresh_pass_budget-- > 0) {
         trade_ui_refresh_pending = !1;
-        await N();
-      } while (trade_ui_refresh_pending);
+        trade_ui_refresh_muted = !0;
+        try {
+          await N();
+        } finally {
+          queueMicrotask(() => {
+            trade_ui_refresh_muted = !1;
+          });
+        }
+        if (!trade_ui_refresh_pending) break;
+      }
+      trade_ui_refresh_pending = !1;
     })();
     return trade_ui_refresh_running.finally(() => {
       trade_ui_refresh_running = null;
     });
   }
   function schedule_trade_ui_refresh(delay = 0, retry = !1) {
+    if (!nte_extension_alive()) return;
+    if (trade_category_soft_mode()) {
+      trade_ui_refresh_pending = !0;
+      return;
+    }
+    if (trade_ui_refresh_muted) {
+      trade_ui_refresh_pending = !0;
+      return;
+    }
     clearTimeout(trade_ui_refresh_timer);
     trade_ui_refresh_timer = setTimeout(() => {
       trade_ui_refresh_timer = 0;
       run_trade_ui_refresh_now().catch(() => {});
-    }, delay);
+    }, Math.max(0, delay));
     if (retry) {
       clearTimeout(trade_ui_refresh_retry_timer);
       trade_ui_refresh_retry_timer = setTimeout(() => {
         trade_ui_refresh_retry_timer = 0;
         run_trade_ui_refresh_now().catch(() => {});
-      }, delay + 140);
+      }, Math.max(0, delay) + 220);
     }
   }
   // The React trades UI mutates offer tiles in place, so watching for added
@@ -12434,10 +15269,10 @@
   }
   async function N() {
     try {
-      if (document.hidden) return;
+      if (document.hidden || !nte_extension_alive()) return;
       ensure_trade_item_price_styles();
       await sync_trade_profit_mode();
-      get_trade_list_filter_anchor() || clear_trade_list_filter_ui();
+      ensure_trade_list_filter_ui();
       try {
         (0, u.default)();
       } catch (err) {
@@ -12454,10 +15289,21 @@
       } catch (err) {
         console.debug("NTE trade stats refresh failed", err);
       }
+      // Mount sales before flags so projected/rare land on the right, not under $.
+      try {
+        mount_trade_sales_hover_targets();
+      } catch (err) {
+        console.debug("NTE trade sales hover mount failed", err);
+      }
       try {
         w();
       } catch (err) {
         console.debug("NTE trade flags refresh failed", err);
+      }
+      try {
+        sync_trade_flag_sides_for_sales();
+      } catch (err) {
+        console.debug("NTE trade flag side sync failed", err);
       }
       try {
         mount_trade_inventory_reload_buttons();
@@ -12482,7 +15328,6 @@
       ensure_nte_quick_proof_button().catch(() => {});
       L();
       F();
-      mount_trade_sales_hover_targets();
       sync_mobile_trade_inventory_scroll();
       if (typeof nte_is_lite !== "function" || !nte_is_lite()) {
         if (typeof inject_trade_history_button === "function")
@@ -12595,6 +15440,20 @@
   apply_trade_ad_offer_robux_param();
   c.refreshData(N);
   // Don't wait on Rolimons or React mount — list features need an early kick.
+  // Inbound/Outbound first paint remounts rows a lot; pause control mut work
+  // briefly so we don't fight React (without soft-mode killing value fetches).
+  try {
+    let boot_tab = get_current_trade_tab();
+    if (boot_tab === "inbound" || boot_tab === "outbound") {
+      pause_trade_row_mut_observer(2800);
+      setTimeout(() => {
+        if (trade_category_soft_mode() || trade_row_mut_observer_paused())
+          return;
+        flush_deferred_trade_row_controls_reattach();
+        ensure_trade_row_list_controls();
+      }, 3000);
+    }
+  } catch {}
   schedule_trade_ui_refresh(0, true);
   schedule_trade_ui_refresh(1500, true);
   schedule_trade_ui_refresh(4000, true);
@@ -12610,30 +15469,106 @@
     }
     if (!e) return;
     let _obs_L_timer = 0;
-    new MutationObserver((e) => {
-      if (e.some(mutation_touches_trade_offers)) sync_trade_offer_changes();
-      for (let t of e) {
+    function schedule_list_ui_refresh() {
+      if (trade_ui_refresh_muted || trade_category_soft_mode()) return;
+      if (trade_row_mut_observer_paused() || !nte_extension_alive()) return;
+      clearTimeout(_obs_L_timer);
+      _obs_L_timer = setTimeout(() => {
+        _obs_L_timer = 0;
+        if (trade_category_soft_mode() || trade_row_mut_observer_paused())
+          return;
+        schedule_trade_ui_refresh(0, !1);
+      }, 180);
+    }
+    let last_selected_trade_overlay_key = "";
+    function reset_trade_detail_overlays() {
+      try {
+        if (typeof hide_trade_sales_hover_panel === "function")
+          hide_trade_sales_hover_panel();
+        // Drop stale thumb overlays for the previous trade. Also clear
+        // hasAssetLink — otherwise Rolimons links never remount (c() skips
+        // .hasAssetLink price rows and the fallback skips cards with prices).
+        document
+          .querySelectorAll(
+            ".trades-list-detail .nte-thumb-overlay-host, .trades-list-detail .nte-uaid-thumb-link, .trades-list-detail .nte-rolimons-thumb-link, .trades-list-detail .nte-sales-hover-btn, .trades-list-detail .nte-rap-signal-btn",
+          )
+          .forEach((node) => {
+            try {
+              node.remove();
+            } catch {}
+          });
+        document
+          .querySelectorAll(".trades-list-detail .hasAssetLink")
+          .forEach((node) => {
+            node.classList.remove("hasAssetLink");
+          });
+      } catch {}
+    }
+    function on_trade_row_selected(node) {
+      if (!(node instanceof Element)) return;
+      if (trade_category_soft_mode() || trade_row_mut_observer_paused()) return;
+      let key =
+        (typeof get_selected_trade_id_sync === "function" &&
+          get_selected_trade_id_sync(node)) ||
+        node.getAttribute("data-tradeid") ||
+        node.getAttribute("data-trade-id") ||
+        node.id ||
+        node.querySelector?.(".trade-row-container")?.id ||
+        "";
+      key = String(key || "").trim();
+      // React re-stamps class on the same selected row — do not tear down
+      // overlays unless the trade actually changed (that caused sales flicker).
+      if (key && key === last_selected_trade_overlay_key) return;
+      if (key) last_selected_trade_overlay_key = key;
+      if (key) mark_roblox_owned_detail(key, 1500);
+      reset_trade_detail_overlays();
+      reset_ownership_check_state_for_row(node);
+      if (typeof prewarm_ownership_for_row === "function")
+        prewarm_ownership_for_row(node);
+      if (typeof schedule_ownership_check === "function")
+        schedule_ownership_check(0);
+      // React re-renders the list on select and strips our injected controls.
+      // Reattach via debounce — sync ensure here fought React and froze Inbound.
+      restore_trade_row_id_from_fp(node);
+      schedule_deferred_trade_row_controls_reattach([node]);
+      schedule_list_ui_refresh();
+    }
+    new MutationObserver((mutations) => {
+      if (
+        trade_ui_refresh_muted ||
+        trade_category_soft_mode() ||
+        trade_row_mut_observer_paused()
+      )
+        return;
+      let stripped = collect_stripped_trade_row_controls(mutations);
+      if (stripped.size) {
+        // Park only here. Sync reattach+ensure on every React strip caused a
+        // Completed→Inbound main-thread freeze (lock mount → strip → remount).
+        for (let row of stripped) restore_trade_row_id_from_fp(row);
+        schedule_deferred_trade_row_controls_reattach(stripped);
+      }
+      if (mutation_is_extension_only(mutations)) return;
+      if (mutations.some(mutation_touches_trade_offers))
+        sync_trade_offer_changes();
+      for (let t of mutations) {
         if ("attributes" === t.type) {
           let node = t.target;
           if (
             node?.classList?.contains("trade-row") &&
             node.classList.contains("selected")
           ) {
-            reset_ownership_check_state_for_row(node);
-            if (typeof prewarm_ownership_for_row === "function")
-              prewarm_ownership_for_row(node);
-            if (typeof schedule_ownership_check === "function")
-              schedule_ownership_check(0);
-            schedule_trade_ui_refresh(0, !0);
+            on_trade_row_selected(node);
             continue;
           }
         }
         if ("childList" !== t.type || !t.addedNodes) continue;
         for (let node of t.addedNodes) {
+          if (!(node instanceof Element) || is_nte_owned_mutation_node(node))
+            continue;
           if (node.classList?.contains("trade-item-card")) {
             if (typeof schedule_ownership_check === "function")
               schedule_ownership_check(0);
-            return schedule_trade_ui_refresh(0, !0);
+            return schedule_list_ui_refresh();
           }
           if (
             node.matches?.(
@@ -12645,19 +15580,19 @@
           ) {
             if (typeof schedule_ownership_check === "function")
               schedule_ownership_check(0);
-            return schedule_trade_ui_refresh(0, !0);
+            return schedule_list_ui_refresh();
           }
           if (
             node.classList?.contains("trade-row") ||
             node.querySelector?.(".trade-row")
           ) {
-            return L();
+            return schedule_list_ui_refresh();
           }
           if (
             node.classList?.contains("loading") ||
             node.classList?.contains("trade-request-item")
           )
-            return schedule_trade_ui_refresh(0, !0);
+            return schedule_list_ui_refresh();
         }
       }
     }).observe(e, {
@@ -12694,45 +15629,32 @@
       let current = get_current_trade_tab();
       if (current !== _last_observed_tab) {
         _last_observed_tab = current;
+        unlock_trade_page_pointer_trap();
+        // Soft mode: no lock reattach / L / mut-observer work until React
+        // finishes remounting Inbound (that storm hard-froze the page).
+        begin_trade_category_soft_mode();
         cancel_background_trade_fetch();
-        prefetch_last_tab = null;
-        prefetch_last_time = 0;
-        prefetch_list_signature = null;
-        prefetch_full_scan_clear = false;
-        trade_list_id_cache = { tab: null, at: 0, trades: [] };
-        row_trade_cache = {};
-        row_trade_cache_order = [];
-        row_trade_pending = {};
-        row_trade_raw_cache = window.__nte_trade_row_raw_cache = {};
-        try {
-          document.dispatchEvent(new CustomEvent("nru_trade_thumb_clear"));
-        } catch {}
-        clear_trade_search_caches();
-        row_fetch_q = [];
-        row_fetch_fast_q = [];
-        row_active_requests = 0;
-        reset_ownership_check_state();
-        if (current !== "inbound" && current !== "outbound") {
-          remove_trade_row_decline_buttons();
-          trade_row_decline_prime_started = false;
-        }
-        if (current === "inbound" || current === "outbound") {
-          trade_row_decline_enabled && prime_trade_row_decline();
-        }
-        schedule_trade_daily_limit_refresh(0, true);
+        setTimeout(unlock_trade_page_pointer_trap, 0);
+        setTimeout(unlock_trade_page_pointer_trap, 300);
+        setTimeout(() => {
+          unlock_trade_page_pointer_trap();
+          reset_ownership_check_state();
+          if (current !== "inbound" && current !== "outbound") {
+            remove_trade_row_decline_buttons();
+            trade_row_decline_prime_started = false;
+          } else if (trade_row_decline_enabled) {
+            prime_trade_row_decline();
+          }
+          schedule_trade_daily_limit_refresh(0, true);
+          // Refresh is scheduled by soft-mode end — do not kick N()/L() early.
+        }, 500);
       }
     }
-    new MutationObserver(check_tab_switch).observe(
-      document.querySelector(".trade-tab-group") ||
-        document.querySelector(".tab-nav") ||
-        e,
-      {
-        childList: true,
-        subtree: true,
-        attributes: true,
-      },
-    );
-    setInterval(check_tab_switch, 1500);
+    // New trades UI uses a Category <select>, not .trade-tab-group. Observing
+    // the whole trades tree (attributes+subtree) for tab switches thrashed the
+    // main thread on Inbound remount. Poll URL + popstate only.
+    setInterval(check_tab_switch, 500);
+    window.addEventListener("popstate", () => setTimeout(check_tab_switch, 0));
     let trade_page_visibility_last = document.hidden;
     document.addEventListener("visibilitychange", () => {
       let hidden = document.hidden;
@@ -12740,9 +15662,6 @@
       trade_page_visibility_last = hidden;
       if (hidden) {
         cancel_background_trade_fetch();
-        try {
-          document.dispatchEvent(new CustomEvent("nru_trade_thumb_clear"));
-        } catch {}
       } else {
         schedule_trade_ui_refresh(0, !1);
       }
@@ -12762,12 +15681,22 @@
         if (!host) return;
         bound = true;
         let debounce = 0;
-        let observer = new MutationObserver(() => {
+        let on_mut = (mutations) => {
+          if (
+            trade_ui_refresh_muted ||
+            trade_category_soft_mode() ||
+            trade_row_mut_observer_paused() ||
+            mutation_is_extension_only(mutations)
+          )
+            return;
           clearTimeout(debounce);
           debounce = setTimeout(() => {
-            schedule_trade_ui_refresh(0, true);
-          }, 120);
-        });
+            if (trade_category_soft_mode() || trade_row_mut_observer_paused())
+              return;
+            schedule_trade_ui_refresh(0, false);
+          }, 180);
+        };
+        let observer = new MutationObserver(on_mut);
         observer.observe(host, { childList: true, subtree: true });
         // Also watch the detail pane area when it shows up.
         let detail_observer_bound = false;
@@ -12777,12 +15706,7 @@
           );
           if (!detail || detail_observer_bound) return;
           detail_observer_bound = true;
-          let dob = new MutationObserver(() => {
-            clearTimeout(debounce);
-            debounce = setTimeout(() => {
-              schedule_trade_ui_refresh(0, true);
-            }, 140);
-          });
+          let dob = new MutationObserver(on_mut);
           dob.observe(detail, { childList: true, subtree: true });
         }, 1500);
         setTimeout(() => clearInterval(detail_check), 30000);
@@ -12851,16 +15775,42 @@
     });
   } catch {}
   try {
-    let keepalive_port = chrome.runtime.connect({ name: "nte-keepalive" });
-    setInterval(() => {
+    let keepalive_port = null,
+      keepalive_timer = 0;
+    function stop_keepalive() {
+      clearInterval(keepalive_timer);
+      keepalive_timer = 0;
       try {
-        keepalive_port.postMessage({ type: "ping" });
+        keepalive_port?.disconnect?.();
+      } catch {}
+      keepalive_port = null;
+    }
+    function start_keepalive() {
+      if (!nte_extension_alive()) return stop_keepalive();
+      try {
+        keepalive_port = chrome.runtime.connect({ name: "nte-keepalive" });
+        keepalive_port.onDisconnect.addListener(() => {
+          if (!nte_extension_alive()) stop_keepalive();
+        });
       } catch {
-        try {
-          keepalive_port = chrome.runtime.connect({ name: "nte-keepalive" });
-        } catch {}
+        return stop_keepalive();
       }
-    }, 25000);
+      clearInterval(keepalive_timer);
+      keepalive_timer = setInterval(() => {
+        if (!nte_extension_alive()) return stop_keepalive();
+        try {
+          keepalive_port.postMessage({ type: "ping" });
+        } catch {
+          try {
+            if (!nte_extension_alive()) return stop_keepalive();
+            keepalive_port = chrome.runtime.connect({ name: "nte-keepalive" });
+          } catch {
+            stop_keepalive();
+          }
+        }
+      }, 25000);
+    }
+    start_keepalive();
   } catch {}
 
   const trade_daily_limit_max = 100;
@@ -13382,16 +16332,24 @@
   }
 
   function is_duplicate_trade_warning_modal(el) {
+    if (!(el instanceof Element) || el.classList.contains("ng-hide"))
+      return false;
+    if (!el.getClientRects().length) return false;
+    if (el.getAttribute?.("aria-hidden") === "true") return false;
+    if (el.dataset?.state === "closed") return false;
+    let text = el.textContent || "";
     return (
-      el instanceof Element &&
-      !el.classList.contains("ng-hide") &&
-      el.getClientRects().length > 0 &&
-      /send a trade request/i.test(el.textContent || "")
+      /send a trade request/i.test(text) ||
+      (/send request/i.test(text) && /review|trade|offer/i.test(text))
     );
   }
 
   function find_duplicate_trade_warning_modal() {
     let selectors = [
+      ".foundation-web-dialog-content[data-state='open']",
+      ".foundation-web-dialog-content",
+      '[role="dialog"][data-state="open"]',
+      '[role="dialog"][aria-modal="true"]',
       ".modal-dialog",
       ".modal-content",
       ".modal-body",
@@ -13409,20 +16367,41 @@
     return null;
   }
 
-  function find_duplicate_trade_warning_anchor(modal) {
-    let body = modal.matches(".modal-body")
+  function find_duplicate_trade_warning_body(modal) {
+    return modal.matches(
+      ".modal-body, .foundation-web-dialog-content, [role='dialog']",
+    )
       ? modal
-      : modal.querySelector(".modal-body") || modal;
-    let candidates = Array.from(body.querySelectorAll("div, p, span, h4, h5"));
-    return (
-      candidates.find(
-        (el) =>
-          /send a trade request/i.test(el.textContent || "") &&
-          el.children.length <= 3,
-      ) ||
-      body.firstElementChild ||
-      body
+      : modal.querySelector(
+          ".modal-body, .foundation-web-dialog-content, [class*='dialog-body']",
+        ) || modal;
+  }
+
+  function find_duplicate_trade_warning_insert_target(modal) {
+    let miss = modal.querySelector(".nte-miss-send-warning");
+    if (miss) return { node: miss, place: "before" };
+    let body = find_duplicate_trade_warning_body(modal);
+    let footer =
+      body?.querySelector(
+        ".modal-buttons, [class*='dialog-footer'], [class*='DialogFooter']",
+      ) || null;
+    if (footer) return { node: footer, place: "before" };
+    let send_btn = [...(body?.querySelectorAll("button") || [])].find((btn) =>
+      /^\s*send(\s+request)?\s*$/i.test(btn.textContent || ""),
     );
+    if (send_btn?.parentElement)
+      return { node: send_btn.parentElement, place: "before" };
+    let candidates = Array.from(
+      body?.querySelectorAll("div, p, span, h4, h5") || [],
+    );
+    let title = candidates.find(
+      (el) =>
+        (/send a trade request/i.test(el.textContent || "") ||
+          /send request/i.test(el.textContent || "")) &&
+        el.children.length <= 3,
+    );
+    if (title) return { node: title, place: "after" };
+    return { node: body?.firstElementChild || body || modal, place: "after" };
   }
 
   function is_duplicate_trade_warning_relevant_page() {
@@ -13458,11 +16437,17 @@
     duplicate_trade_warning_styles_injected = true;
     let style = document.createElement("style");
     style.textContent = `
-      .nte-duplicate-trade-warning{margin-top:10px;padding:8px 12px;border-radius:8px;display:flex;align-items:flex-start;gap:9px;background:rgba(245,158,11,.14);border:1px solid rgba(245,158,11,.38);color:#fbbf24;font-size:13px;font-weight:700;line-height:1.4}
-      .nte-duplicate-trade-warning-copy{display:flex;flex-direction:column;gap:1px;min-width:0}
-      .nte-duplicate-trade-warning strong{color:inherit}
-      .nte-duplicate-trade-warning-icon{flex:0 0 auto;line-height:1}
-      .light-theme .nte-duplicate-trade-warning{background:rgba(254,243,199,.96);border-color:rgba(217,119,6,.32);color:#92400e}
+      .nte-duplicate-trade-warning{margin:12px 0 0;padding:10px 12px;border-radius:8px;display:flex;align-items:flex-start;gap:10px;width:100%;box-sizing:border-box;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.34);color:#fbbf24;font-size:13px;font-weight:600;line-height:1.4}
+      .nte-duplicate-trade-warning-icon{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-top:1px;line-height:1;font-size:15px}
+      .nte-duplicate-trade-warning-icon img{width:16px;height:16px;display:block}
+      .nte-duplicate-trade-warning-copy{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1 1 auto}
+      .nte-duplicate-trade-warning-lead{font-weight:700}
+      .nte-duplicate-trade-warning-ask{font-size:12px;font-weight:500;opacity:.88;line-height:1.35}
+      .nte-duplicate-trade-warning strong{color:inherit;font-weight:800}
+      .nte-duplicate-trade-warning+.nte-miss-send-warning{margin-top:10px}
+      .foundation-web-dialog-content .nte-duplicate-trade-warning,[role="dialog"] .nte-duplicate-trade-warning{margin:12px 0}
+      .light-theme .nte-duplicate-trade-warning{background:rgba(254,243,199,.96);border-color:rgba(217,119,6,.28);color:#92400e}
+      .light-theme .nte-duplicate-trade-warning-ask{opacity:.82}
     `;
     document.head.appendChild(style);
   }
@@ -13481,7 +16466,7 @@
     let warning = document.createElement("div");
     warning.className = "nte-duplicate-trade-warning";
     warning.dataset.createdAt = String(created_at || 0);
-    warning.innerHTML = `<span class="nte-duplicate-trade-warning-icon">&#9888;</span><span class="nte-duplicate-trade-warning-copy"><span>You already sent this person a trade <strong>${format_duplicate_trade_warning_age(created_at)}</strong>.</span><span>Are you sure you want to send another?</span></span>`;
+    warning.innerHTML = `<span class="nte-duplicate-trade-warning-icon" aria-hidden="true">&#9888;</span><span class="nte-duplicate-trade-warning-copy"><span class="nte-duplicate-trade-warning-lead">You already sent this person a trade <strong>${format_duplicate_trade_warning_age(created_at)}</strong>.</span><span class="nte-duplicate-trade-warning-ask">Are you sure you want to send another?</span></span>`;
     return warning;
   }
 
@@ -13617,9 +16602,14 @@
     let warning = build_duplicate_trade_warning(recent_trade);
     if (existing) existing.replaceWith(warning);
     else {
-      let anchor = find_duplicate_trade_warning_anchor(modal);
-      if (anchor?.parentElement)
-        anchor.insertAdjacentElement("afterend", warning);
+      let target = find_duplicate_trade_warning_insert_target(modal);
+      let node = target?.node;
+      if (node?.parentElement && target.place === "before")
+        node.parentElement.insertBefore(warning, node);
+      else if (node?.parentElement && target.place === "after")
+        node.insertAdjacentElement("afterend", warning);
+      else if (node instanceof Element)
+        node.insertAdjacentElement("afterbegin", warning);
       else modal.insertBefore(warning, modal.firstChild);
     }
   }
@@ -13733,7 +16723,7 @@
   function get_miss_send_warning_modal_root(modal) {
     return (
       modal?.closest?.(
-        ".modal-dialog, .modal-content, .rbx-modal, .modal-container",
+        ".foundation-web-dialog-content, [role='dialog'], .modal-dialog, .modal-content, .rbx-modal, .modal-container",
       ) || modal
     );
   }
@@ -13741,15 +16731,30 @@
   function get_miss_send_warning_send_button(modal) {
     let root = get_miss_send_warning_modal_root(modal);
     if (!root) return null;
-    return root.querySelector(
+    let direct = root.querySelector(
       '#modal-action-button, .modal-buttons button.btn-growth-md, .modal-buttons button[type="submit"]',
+    );
+    if (direct) return direct;
+    return (
+      [...root.querySelectorAll("button")].find((btn) =>
+        /^\s*send(\s+request)?\s*$/i.test(btn.textContent || ""),
+      ) || null
     );
   }
 
   function find_miss_send_warning_insert_point(modal) {
     let root = get_miss_send_warning_modal_root(modal);
-    let body = root?.querySelector(".modal-body") || modal;
-    return body?.querySelector(".modal-buttons") || body;
+    let body =
+      root?.querySelector(
+        ".modal-body, [class*='dialog-body'], .foundation-web-dialog-content",
+      ) || modal;
+    let footer =
+      body?.querySelector(
+        ".modal-buttons, [class*='dialog-footer'], [class*='DialogFooter']",
+      ) || null;
+    if (footer) return footer;
+    let send_btn = get_miss_send_warning_send_button(root);
+    return send_btn?.parentElement || body;
   }
 
   function ensure_miss_send_warning_styles() {
@@ -13758,6 +16763,7 @@
     let style = document.createElement("style");
     style.textContent = `
       .nte-miss-send-warning{margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid rgba(128,128,128,.28);background:rgba(128,128,128,.08);font-size:13px;line-height:1.35}
+      .nte-miss-send-warning:has(.nte-miss-send-warning-confirm){margin-bottom:12px}
       .nte-miss-send-warning-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
       .nte-miss-send-warning-side{min-width:0;padding:8px 9px;border-radius:7px;background:rgba(0,0,0,.14);border:1px solid rgba(255,255,255,.06)}
       .nte-miss-send-warning-side-label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;opacity:.78;margin-bottom:6px}
@@ -13884,7 +16890,7 @@
   function remove_miss_send_warning() {
     for (let panel of document.querySelectorAll(".nte-miss-send-warning")) {
       let modal = panel.closest(
-        ".modal-dialog, .modal-content, .modal-body, [role='dialog'], .rbx-overlay, .rbx-modal, .modal-container",
+        ".foundation-web-dialog-content, .modal-dialog, .modal-content, .modal-body, [role='dialog'], .rbx-overlay, .rbx-modal, .modal-container",
       );
       let send_btn = get_miss_send_warning_send_button(modal);
       panel.remove();
@@ -14551,8 +17557,8 @@
 
   function get_offer_collectible_cards(offer_el) {
     if (!(offer_el instanceof Element)) return [];
-    // Detail trades get data-collectibleiteminstanceid from the bridge.
-    // React send/counter tiles never do — fall back to the filled item nodes.
+    // Prefer Roblox/native attrs when present; otherwise use bridge-stamped
+    // JS props / filled item nodes (we no longer write data-* onto React cards).
     let with_attr = Array.from(
       offer_el.querySelectorAll(
         ".item-card-container[data-collectibleiteminstanceid], .trade-request-item[data-collectibleiteminstanceid]",
@@ -14565,6 +17571,7 @@
       ),
     ).filter(
       (card) =>
+        !!card.__nte_react_item?.collectibleItemInstanceId ||
         !!card.querySelector(
           'a[href*="/catalog/"], a[href*="/bundles/"], .item-name, .item-card-name',
         ),
@@ -14580,7 +17587,9 @@
       card.querySelector(".item-name");
     return {
       instance_id: (
-        card.getAttribute("data-collectibleiteminstanceid") || ""
+        card.getAttribute("data-collectibleiteminstanceid") ||
+        card.__nte_react_item?.collectibleItemInstanceId ||
+        ""
       ).toLowerCase(),
       target_id: String(
         c.getItemIdFromElement(card) ||
@@ -14667,7 +17676,12 @@
     if (!partner_id || !offer_el || !cards.length) return;
 
     let card_signature = cards
-      .map((card) => card.getAttribute("data-collectibleiteminstanceid") || "")
+      .map(
+        (card) =>
+          card.getAttribute("data-collectibleiteminstanceid") ||
+          card.__nte_react_item?.collectibleItemInstanceId ||
+          "",
+      )
       .join("|");
     let check_key = `${trade_id || "detail"}:${partner_id}:${card_signature}`;
     if (check_key === ownership_last_trade_id) return;
@@ -14740,7 +17754,7 @@
       .trade-request-window-offers > button.btn-full-width + .nte-trade-request-analyze-row{margin-top:14px!important;padding-top:0!important}
       .nte-trade-request-analyze-row{display:flex;flex-direction:column;gap:0;margin:0!important;padding:0!important;width:100%}
       .nte-trade-request-analyze-row .nte-analyze-trade-btn{width:100%;min-height:0;margin:0!important}
-      .nte-history-btn,.nte-analyze-trade-btn{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+      .nte-history-btn,.nte-analyze-trade-btn{position:static;display:inline-flex;align-items:center;justify-content:center;gap:8px}
       .nte-history-btn .nte-history-btn-inner,.nte-analyze-trade-btn .nte-history-btn-inner{display:inline-flex;align-items:center;justify-content:center;gap:8px}
       .nte-history-btn.nte-history-btn--loading,.nte-analyze-trade-btn.nte-analyze-trade-btn--loading{pointer-events:none}
       .nte-history-btn.nte-history-btn--active{box-shadow:0 0 0 1px rgba(96,165,250,.38) inset}
@@ -15997,7 +19011,8 @@
 
     for (let card of cards) {
       let ciiid = normalize_history_instance_id(
-        card.getAttribute("data-collectibleiteminstanceid"),
+        card.getAttribute("data-collectibleiteminstanceid") ||
+          card.__nte_react_item?.collectibleItemInstanceId,
       );
       let cached_item =
         get_cached_search_item_from_el(card) || card.__nte_sales_item || null;
@@ -16474,19 +19489,20 @@
     }
 
     let by_ciiid = new Map();
+    let by_asset_counts = new Map();
+    let by_asset_uaid = new Map();
     for (let entry of flat) {
       let ciiid = normalize_history_instance_id(
         entry.collectibleItemInstanceId ||
           entry.collectibleItemInstance?.collectibleItemInstanceId,
       );
-      if (!ciiid) continue;
       let user_asset_id =
         parseInt(entry.userAssetId, 10) ||
         parseInt(entry.userAsset?.id, 10) ||
         parseInt(entry.userAsset?.userAssetId, 10) ||
         parseInt(entry.id, 10) ||
         0;
-      let current = by_ciiid.get(String(ciiid)) || {};
+      let current = ciiid ? by_ciiid.get(String(ciiid)) || {} : {};
       let asset_id = resolve_history_asset_id_from_trade_item(
         entry,
         entry?.itemName || entry?.name || "",
@@ -16498,12 +19514,20 @@
         entry?.item?.itemTarget?.itemType ||
         "";
       let is_bundle = item_type === "Bundle" || current.isBundle === true;
-      if (user_asset_id > 0 || asset_id > 0 || is_bundle) {
+      if (ciiid && (user_asset_id > 0 || asset_id > 0 || is_bundle)) {
         by_ciiid.set(String(ciiid), {
           userAssetId: user_asset_id || current.userAssetId || 0,
           assetId: asset_id || current.assetId || 0,
           isBundle: is_bundle,
         });
+      }
+      if (asset_id > 0) {
+        by_asset_counts.set(
+          String(asset_id),
+          (by_asset_counts.get(String(asset_id)) || 0) + 1,
+        );
+        if (user_asset_id > 0 && !by_asset_uaid.has(String(asset_id)))
+          by_asset_uaid.set(String(asset_id), user_asset_id);
       }
     }
 
@@ -16511,9 +19535,15 @@
       let bridge = item.ciiid
         ? by_ciiid.get(normalize_history_instance_id(item.ciiid))
         : null;
+      let asset_key = String(item.assetId || bridge?.assetId || "");
+      let asset_uaid =
+        asset_key && by_asset_counts.get(asset_key) === 1
+          ? by_asset_uaid.get(asset_key) || 0
+          : 0;
       return {
         ...item,
-        userAssetId: item.userAssetId || bridge?.userAssetId || 0,
+        userAssetId:
+          item.userAssetId || bridge?.userAssetId || asset_uaid || 0,
         assetId: item.assetId || bridge?.assetId || 0,
         isBundle: item.isBundle === true || bridge?.isBundle === true,
       };
@@ -16539,6 +19569,7 @@
       .map(
         (card) =>
           card.getAttribute("data-collectibleiteminstanceid") ||
+          card.__nte_react_item?.collectibleItemInstanceId ||
           card.querySelector("a")?.getAttribute("href") ||
           card.querySelector(".item-name, .item-card-name")?.textContent?.trim() ||
           "?",
@@ -16550,6 +19581,7 @@
       .map(
         (card) =>
           card.getAttribute("data-collectibleiteminstanceid") ||
+          card.__nte_react_item?.collectibleItemInstanceId ||
           card.querySelector("a")?.getAttribute("href") ||
           card.querySelector(".item-name, .item-card-name")?.textContent?.trim() ||
           "?",
@@ -16936,14 +19968,18 @@
         ? item.assetId
           ? `<div class="nte-history-item-link"><a href="${nte_history_esc(c.getRolimonsProfileUrl(item.assetId))}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>`
           : ""
-        : item.uaid
-          ? `<div class="nte-history-item-link"><a href="https://www.rolimons.com/uaid/${nte_history_esc(item.uaid)}" target="_blank" rel="noopener noreferrer">Open UAID on Rolimons</a></div>`
+        : item.uaid || item.ciiid
+          ? `<div class="nte-history-item-link"><a href="${nte_history_esc(
+              ownership_link_url(item.uaid || item.ciiid),
+            )}" target="_blank" rel="noopener noreferrer">Open UAID on Rolimons</a></div>`
           : "";
     let body_html = "";
     if (mode === "asset" && item.missingAssetId) {
       body_html =
         '<div class="nte-history-empty">Could not resolve this item asset id from Roblox trade data yet, so all-copy history cannot be searched.</div>';
-    } else if (mode !== "asset" && item.missingUaid) {
+    } else if (mode !== "asset" && item.missingUaid && !(trade_count > 0)) {
+      // Only block when we truly have nothing. History is fetched at asset
+      // level now, so UAID-less rows can still have usable match lists.
       body_html =
         '<div class="nte-history-empty">Could not resolve this item instance from Roblox trade data, so there is nothing reliable to search yet.</div>';
     } else if (!trade_count) {
@@ -17418,7 +20454,6 @@
         .nte-counter-prompt-btn:hover{transform:translateY(-1px);background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.14)}
         .nte-counter-prompt-btn.is-primary{background:linear-gradient(180deg,#8576f9,#6c5ce7);border-color:transparent;color:#fff;box-shadow:0 6px 18px rgba(108,92,231,.22)}
         .nte-counter-prompt-btn.is-primary:hover{box-shadow:0 10px 26px rgba(108,92,231,.32)}
-        .nte-counter-send-btn{margin-left:8px}
         @keyframes ntePromptIn{from{opacity:0}to{opacity:1}}
         @keyframes ntePromptCardIn{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
       `;
@@ -17573,8 +20608,9 @@
     }
 
     function on_doc_click(event) {
-      let btn = event.target?.closest?.('button[ng-click*="counterTrade"]');
-      if (!btn) return;
+      let btn = event.target?.closest?.("button");
+      if (!btn || !btn.closest?.(".trade-buttons")) return;
+      if (!is_counter_action_button(btn)) return;
       if (btn.__nte_counter_bypass) {
         btn.__nte_counter_bypass = false;
         return;
@@ -17622,12 +20658,19 @@
       }, 80);
     }
     // Counter visibility toggles via class (ng-hide), not childList.
-    new MutationObserver(schedule_counter_send_sync).observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ["class"],
-    });
+    // Scope to trade chrome only — watching all of document.body for every
+    // React class tweak was enough to starve the main thread on trades pages.
+    let counter_observe_root =
+      document.querySelector(".trades-container") || document.body;
+    new MutationObserver(schedule_counter_send_sync).observe(
+      counter_observe_root,
+      {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ["class"],
+      },
+    );
     schedule_counter_send_sync();
     refresh_counter_choice_state().catch(() => {});
   })();

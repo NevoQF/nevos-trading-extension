@@ -68,31 +68,6 @@
       return document.documentElement?.getAttribute("data-nru-trade-list-request-patch-loaded") || "";
     }
 
-    function normalize_thumb_request_type(type) {
-      let normalized = String(type || "").trim().toLowerCase();
-      return "bundlethumbnail" === normalized || "bundle" === normalized ? "BundleThumbnail" : "Asset";
-    }
-
-    function get_thumb_cache_key(target_id, type = "Asset") {
-      let parsed = parseInt(target_id, 10);
-      if (!(parsed > 0)) return "";
-      return `${normalize_thumb_request_type(type)}:${parsed}`;
-    }
-
-    function make_thumb_request_id(target_id, request_id = "", type = "Asset") {
-      let parsed = parseInt(target_id, 10);
-      if (!(parsed > 0)) return "";
-      let normalized_type = normalize_thumb_request_type(type);
-      return request_id || `${parsed}:undefined:${normalized_type}:150x150:webp:regular:0:`;
-    }
-
-    function get_thumb_cache_candidates(target_id, type = "Asset") {
-      let parsed = parseInt(target_id, 10);
-      if (!(parsed > 0)) return [];
-      let candidates = [get_thumb_cache_key(parsed, type), String(parsed)];
-      return candidates.filter((value, index) => value && candidates.indexOf(value) === index);
-    }
-
     function inject_trade_patch() {
       if ("1" === get_trade_patch_marker()) return Promise.resolve(true);
       let target = document.head || document.documentElement;
@@ -127,53 +102,6 @@
       let normalized_trade = null == trade.tradeId ? { ...trade, tradeId: parseInt(key, 10) || key } : trade;
       trade_detail_cache_set(key, normalized_trade);
       return normalized_trade;
-    }
-
-    function normalize_thumb_cache_request(request) {
-      if (!request || "object" != typeof request) return null;
-      let type = normalize_thumb_request_type(request.type || ""),
-        size = String(request.size || "").trim(),
-        format = String(request.format || "").trim().toLowerCase(),
-        target_id = String(request.targetId || "").trim();
-      return "150x150" !== size || "webp" !== format || !target_id
-        ? null
-        : {
-            requestId: String(request.requestId || ""),
-            targetId: target_id,
-            type,
-            key: get_thumb_cache_key(target_id, type),
-          };
-    }
-
-    function get_live_trade_thumbs(requests) {
-      if (!Array.isArray(requests) || !requests.length) return null;
-      let cache = window.__nte_trade_thumb_meta_cache;
-      if (!cache || "object" != typeof cache) return null;
-      let thumbs = [];
-      for (let raw_request of requests) {
-        let request = normalize_thumb_cache_request(raw_request);
-        if (!request) return null;
-        let cached = null;
-        for (let key of get_thumb_cache_candidates(request.targetId, request.type)) {
-          let entry = cache[key];
-          if (entry && "object" == typeof entry && entry.imageUrl) {
-            cached = entry;
-            break;
-          }
-        }
-        if (!cached || "object" != typeof cached || !cached.imageUrl) return null;
-        thumbs.push({
-          requestId: make_thumb_request_id(request.targetId, request.requestId, request.type),
-          errorCode: Number(cached.errorCode) || 0,
-          errorMessage: String(cached.errorMessage || ""),
-          targetId: parseInt(request.targetId, 10) || request.targetId,
-          type: normalize_thumb_request_type(cached.type || request.type),
-          state: String(cached.state || "Completed"),
-          imageUrl: String(cached.imageUrl || ""),
-          version: String(cached.version || ""),
-        });
-      }
-      return thumbs;
     }
 
     function get_cached_trade_detail(trade_id) {
@@ -224,19 +152,16 @@
         });
     });
 
-    document.addEventListener("nru_trade_thumb_cache_request", (event) => {
-      let detail = parse_bridge_detail(event.detail),
-        request_id = String(detail?.request_id || "").trim(),
-        requests = Array.isArray(detail?.requests) ? detail.requests : null,
-        thumbs = get_live_trade_thumbs(requests);
-      if (!request_id) return;
-      document.dispatchEvent(
-        new CustomEvent("nru_trade_thumb_cache_response", {
-          detail: JSON.stringify({ request_id, thumbs: thumbs || null }),
-        }),
-      );
-    });
-
     inject_trade_patch().catch(() => {});
+    // New React trades UI can boot late; retry so limit=100 still hooks.
+    let patch_tries = 0;
+    let patch_retry = setInterval(() => {
+      patch_tries += 1;
+      if ("1" === get_trade_patch_marker() || patch_tries >= 8) {
+        clearInterval(patch_retry);
+        return;
+      }
+      inject_trade_patch().catch(() => {});
+    }, 1000);
   }
 })();

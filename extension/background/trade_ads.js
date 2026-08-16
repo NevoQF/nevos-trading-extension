@@ -511,11 +511,25 @@ async function trade_ads_update_roblox_bio(description) {
 
 async function trade_ads_auto_verify(user_id) {
   let phrase = await trade_ads_fetch_phrase(user_id);
-  let original_bio = await trade_ads_get_roblox_bio(user_id);
-  let new_bio = original_bio ? `${original_bio}\n${phrase}` : phrase;
-  await trade_ads_update_roblox_bio(new_bio);
-  await trade_ads_verify_via_api(user_id);
-  await trade_ads_update_roblox_bio(original_bio);
+  let original_bio = "";
+  try {
+    original_bio = await trade_ads_get_roblox_bio(user_id);
+    let already = original_bio.includes(phrase);
+    if (!already) {
+      await trade_ads_update_roblox_bio(
+        original_bio ? `${original_bio}\n${phrase}` : phrase,
+      );
+    }
+    await trade_ads_verify_via_api(user_id);
+    let restored = already
+      ? original_bio.split(phrase).join("").replace(/\n{2,}/g, "\n").trimEnd()
+      : original_bio;
+    await trade_ads_update_roblox_bio(restored);
+  } catch (err) {
+    let e = err instanceof Error ? err : new Error(String(err));
+    e.phrase = phrase;
+    throw e;
+  }
 }
 
 async function trade_ads_fetch_inventory_collectibles(user_id) {
@@ -1579,7 +1593,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         await trade_ads_auto_verify(me.id);
         respond({ ok: true });
       } catch (err) {
-        respond({ ok: false, error: err?.message || String(err) });
+        respond({
+          ok: false,
+          error: err?.message || String(err),
+          phrase: String(err?.phrase || ""),
+        });
       }
     })();
     return true;

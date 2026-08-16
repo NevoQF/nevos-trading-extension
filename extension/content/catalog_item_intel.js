@@ -227,7 +227,47 @@
     return bundle_id || pid;
   }
 
+  function is_rolimons_host() {
+    return /(^|\.)rolimons\.com$/i.test(location.hostname);
+  }
+
+  function find_rolimons_action_row() {
+    let links = [...document.querySelectorAll("a.btn")].filter((a) =>
+      /Trade Ads|Sales|Value Changes/i.test(a.textContent || ""),
+    );
+    return (
+      links[0]?.closest(".d-flex.justify-content-between") ||
+      links[0]?.parentElement ||
+      null
+    );
+  }
+
   function get_dom_context() {
+    if (is_rolimons_host()) {
+      let match = location.pathname.match(/\/(item|bundle)\/(\d+)(?:\/|$)/i);
+      if (!match) return null;
+      let row = find_rolimons_action_row();
+      let title = document.querySelector("h1");
+      if (!row || !title) return null;
+      let item_name = String(title.textContent || "").trim();
+      if (!item_name) return null;
+      let thumb =
+        String(document.querySelector('meta[property="og:image"]')?.getAttribute("content") || "").trim() ||
+        String(document.querySelector("img[src*='rbxcdn']")?.src || "").trim();
+      let is_bundle = String(match[1] || "").toLowerCase() === "bundle";
+      return {
+        kind: is_bundle ? "bundles" : "catalog",
+        page_id: match[2],
+        page_key: `rolimons:${match[1]}:${match[2]}`,
+        asset_id: match[2],
+        item_name,
+        thumb,
+        section: row.parentElement,
+        price_row: row,
+        is_rolimons: true,
+        is_bundle,
+      };
+    }
     let match = location.pathname.match(/\/(catalog|bundles)\/(\d+)(?:\/|$)/i);
     if (!match) return null;
     let price_row =
@@ -264,6 +304,7 @@
   async function get_context() {
     let context = get_dom_context();
     if (!context) return null;
+    if (context.is_rolimons) return context;
     if (context.kind !== "bundles") return (await is_roblox_limited(context.asset_id)) ? context : null;
     let detail = await get_bundle_detail(context.page_id);
     if (!is_roblox_limited_bundle(detail)) return null;
@@ -303,6 +344,7 @@
       root.className = "nte-item-intel-root";
       context.price_row.insertAdjacentElement("afterend", root);
     }
+    if (context.is_rolimons) root.classList.add("mx-3");
     root.dataset.assetId = context.asset_id;
     return root;
   }
@@ -333,6 +375,7 @@
   }
 
   function render_toolbar() {
+    if (get_dom_context()?.is_rolimons) return "";
     return `
       <div class="nte-item-intel-bar">
         <div class="nte-item-intel-controls">
@@ -529,7 +572,7 @@
                 <span class="nte-history-pill">${trade_count} trade${trade_count === 1 ? "" : "s"}</span>
                 <span class="nte-history-pill is-note">All copies</span>
               </div>
-              <div class="nte-history-card-link"><a href="${attr_esc(rolimons_profile_href(item.assetId || context.asset_id, { isBundle: context.is_bundle === true || context.kind === "bundles" }))}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>
+              ${context.is_rolimons ? "" : `<div class="nte-history-card-link"><a href="${attr_esc(rolimons_profile_href(item.assetId || context.asset_id, { isBundle: context.is_bundle === true || context.kind === "bundles" }))}" target="_blank" rel="noopener noreferrer">Open item on Rolimons</a></div>`}
             </div>
           </div>
           ${trade_count ? `<div class="nte-history-list">${item.history.map((entry, index) => render_history_entry(entry, index, context)).join("")}</div>` : '<div class="nte-history-empty">No recent trade history found for this item yet.</div>'}
@@ -689,7 +732,22 @@
     });
   }
 
+  function sync_rolimons_history_button() {
+    let btn = document.querySelector(".nte-ih-btn");
+    if (!btn) return;
+    let open = state.active_view === "history";
+    btn.classList.toggle("is-active", open);
+    btn.classList.toggle("is-busy", !!state.history_loading);
+    btn.setAttribute("aria-expanded", open ? "true" : "false");
+    btn.setAttribute("aria-busy", state.history_loading ? "true" : "false");
+  }
+
   function render_root(context) {
+    if (context?.is_rolimons && !state.active_view) {
+      document.getElementById(root_id)?.remove();
+      sync_rolimons_history_button();
+      return;
+    }
     let root = get_root(context);
     if (!root) return;
     let panel = "";
@@ -716,6 +774,7 @@
     if (state.active_view === "history") attach_history_trade_buttons(root);
     if (state.active_view === "proofs") attach_proof_buttons(root);
     root.dataset.nteRendered = "1";
+    sync_rolimons_history_button();
   }
 
   async function load_history(context) {
@@ -879,7 +938,7 @@
       .nte-history-trade-empty-card{padding:10px;border-radius:10px;background:rgba(15,23,42,.24);border:1px dashed rgba(148,163,184,.16);font-size:11px;font-weight:700;line-height:1.4;opacity:.76}
       .light-theme .nte-history-trade-empty-card{background:rgba(241,245,249,.88)}
       .nte-history-proofs-grid{display:grid;gap:8px}
-      ${window.__nte_history_proof_styles()}
+      ${typeof window.__nte_history_proof_styles === "function" ? window.__nte_history_proof_styles() : ""}
       @media (max-width:700px){
         .nte-item-intel-controls{width:100%}
         .nte-item-intel-btn{flex:1}
@@ -904,6 +963,7 @@
     }
     reset_state(context);
     inject_styles();
+    if (context.is_rolimons && !state.active_view) return;
     let root = get_root(context);
     if (!root) return;
     if (force || root.dataset.nteRendered !== "1" || root.dataset.assetId !== context.asset_id) render_root(context);
@@ -917,6 +977,10 @@
   let page_observer = null;
 
   function should_watch_page() {
+    if (is_rolimons_host()) {
+      if (typeof nte_is_lite === "function" && nte_is_lite()) return false;
+      return /\/(?:item|bundle)\/\d+(?:\/|$)/i.test(location.pathname);
+    }
     return /\/(?:catalog|bundles)\/\d+(?:\/|$)/i.test(location.pathname);
   }
 
@@ -933,6 +997,11 @@
     }
     queue_sync(true);
   }
+
+  window.addEventListener("nte-item-intel-toggle", (event) => {
+    let view = String(event?.detail?.view || "history");
+    toggle_view(view).catch(() => {});
+  });
 
   sync_observer();
   setInterval(() => {

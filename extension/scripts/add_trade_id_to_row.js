@@ -8,7 +8,52 @@ function resolve_trade_from_row(row) {
       angular?.element(row)?.isolateScope?.();
   } catch {}
 
-  return scope?.trade || scope?.$parent?.trade || scope?.$parent?.$parent?.trade || null;
+  let angular_trade =
+    scope?.trade || scope?.$parent?.trade || scope?.$parent?.$parent?.trade || null;
+  if (angular_trade?.id) return angular_trade;
+
+  return resolve_trade_from_react(row);
+}
+
+function resolve_trade_from_react(row) {
+  if (!(row instanceof Element)) return null;
+  try {
+    let key = Object.keys(row).find((k) => k.startsWith("__reactFiber$"));
+    let fiber = key ? row[key] : null;
+    for (let i = 0; i < 30 && fiber; i++) {
+      let props = fiber.memoizedProps || {};
+      let candidates = [
+        props.trade,
+        props.tradeData,
+        props.tradeInfo,
+        props.data,
+        props.item,
+        props.value,
+        props.children?.props?.trade,
+      ];
+      for (let trade of candidates) {
+        if (!trade || "object" != typeof trade) continue;
+        let id = trade.id ?? trade.tradeId ?? trade.trade_id;
+        if (null == id || "" === id) continue;
+        if (
+          trade.user ||
+          trade.status ||
+          trade.offers ||
+          trade.participantAOffer ||
+          trade.created ||
+          trade.createdAt
+        ) {
+          return trade;
+        }
+      }
+      let direct_id = props.tradeId ?? props.trade_id;
+      if (null != direct_id && "" !== direct_id) {
+        return { id: direct_id };
+      }
+      fiber = fiber.return;
+    }
+  } catch {}
+  return null;
 }
 
 function parse_trade_time_value(value) {

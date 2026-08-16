@@ -1,5 +1,6 @@
 (() => {
-  const option_name = "Quick People Search";
+  const option_name = "Quick User Search";
+  const legacy_option_name = "Quick People Search";
   const item_class = "nte-people-search-item";
   const container_id = "nte-people-search-container";
   const style_id = "nte-people-search-style";
@@ -44,6 +45,7 @@
   async function is_enabled() {
     if (Date.now() - enabled_cache_at < 5000) return enabled_cache;
     let v = await get_option_value(option_name);
+    if (v === undefined) v = await get_option_value(legacy_option_name);
     enabled_cache = v === undefined ? true : v === true;
     enabled_cache_at = Date.now();
     return enabled_cache;
@@ -62,9 +64,15 @@
         resolve(value);
       };
       try {
+        if (typeof globalThis.nte_extension_alive === "function" && !globalThis.nte_extension_alive())
+          return finish(null);
         let r = chrome.runtime.sendMessage(message, (response) => {
-          if (chrome.runtime.lastError) finish(null);
-          else finish(response);
+          try {
+            if (chrome.runtime.lastError) finish(null);
+            else finish(response);
+          } catch {
+            finish(null);
+          }
         });
         if (r && typeof r.then === "function")
           r.then((v) => finish(v), () => finish(null));
@@ -1000,6 +1008,18 @@
   }
 
   is_enabled().catch(() => {});
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      if (!changes[option_name] && !changes[legacy_option_name]) return;
+      enabled_cache_at = 0;
+      is_enabled().then((on) => {
+        if (on) return;
+        last_results = [];
+        clear_injected();
+      });
+    });
+  } catch {}
   read_stored_friends().then((stored) => {
     if (stored?.length && !friends_cache) {
       friends_cache = stored;

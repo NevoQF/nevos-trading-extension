@@ -419,7 +419,14 @@
     if (!input || !input.isConnected || in_flight) return;
     if (String(input.value || "").replace(/\D/g, "").length > 0) return;
 
-    const st = await chrome.storage.local.get([STORAGE_ENABLED, STORAGE_SECRET, STORAGE_MODE, STORAGE_ENC]);
+    let st;
+    try {
+      if (typeof globalThis.nte_extension_alive === "function" && !globalThis.nte_extension_alive())
+        return;
+      st = await chrome.storage.local.get([STORAGE_ENABLED, STORAGE_SECRET, STORAGE_MODE, STORAGE_ENC]);
+    } catch {
+      return;
+    }
     if (st[STORAGE_ENABLED] === false) return;
 
     const plain_stored = typeof st[STORAGE_SECRET] === "string" ? st[STORAGE_SECRET].trim() : "";
@@ -512,24 +519,28 @@
     start();
   }
 
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local") return;
-    if (!changes[STORAGE_ENABLED] && !changes[STORAGE_SECRET] && !changes[STORAGE_MODE] && !changes[STORAGE_ENC]) return;
-    clear_session_secret();
-    unlock_declined_at = 0;
-    const unlock_dlg = document.getElementById("nte-totp-unlock-dialog");
-    if (unlock_dlg) {
-      try {
-        unlock_dlg.close();
-      } catch {
+  try {
+    if (typeof globalThis.nte_extension_alive !== "function" || globalThis.nte_extension_alive()) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== "local") return;
+        if (!changes[STORAGE_ENABLED] && !changes[STORAGE_SECRET] && !changes[STORAGE_MODE] && !changes[STORAGE_ENC]) return;
+        clear_session_secret();
+        unlock_declined_at = 0;
+        const unlock_dlg = document.getElementById("nte-totp-unlock-dialog");
+        if (unlock_dlg) {
+          try {
+            unlock_dlg.close();
+          } catch {
 
-      }
-      unlock_dlg.remove();
+          }
+          unlock_dlg.remove();
+        }
+        document.getElementById("nte-totp-unlock-style")?.remove();
+        cached_input = null;
+        last_deep_find_at = 0;
+        const el = find_totp_input();
+        if (el) void try_fill(el);
+      });
     }
-    document.getElementById("nte-totp-unlock-style")?.remove();
-    cached_input = null;
-    last_deep_find_at = 0;
-    const el = find_totp_input();
-    if (el) void try_fill(el);
-  });
+  } catch {}
 })();

@@ -1,5 +1,6 @@
 const trade_ad_notif_state_key = "trade_ad_notifications_state";
 const trade_ad_notif_api_url = "https://nevos-extension.com/api/tradeads/recent";
+const trade_ad_notif_alarm_name = "tradeAdNotifPollAlarm";
 const trade_ad_notif_poll_ms = 60000;
 const trade_ad_notif_min_poll_ms = 60000;
 const trade_ad_notif_inventory_ttl_ms = 900000;
@@ -10,10 +11,9 @@ const trade_ad_notif_catchup_limit = 1000;
 const trade_ad_notif_since_overlap_seconds = 300;
 const trade_ad_notif_max_catchup_pages = 10;
 const trade_ad_notif_page_gap_ms = 3200;
-const trade_ad_notif_want_ids_query_max = 80;
+const trade_ad_notif_want_ids_query_max = 150;
 const trade_ad_notif_feed_429_retries = 4;
 
-let trade_ad_notif_poll_timer = null;
 let trade_ad_notif_poll_in_flight = false;
 let trade_ad_notif_inventory_cache = {
   userId: null,
@@ -626,7 +626,11 @@ async function trade_ad_notif_fetch_tradable_inventory(user_id) {
     }
 
     if (!res) {
-      if (items.length) break;
+      if (items.length) {
+        throw new Error(
+          "Tradable inventory fetch incomplete (network). Retrying next scan.",
+        );
+      }
       throw new Error("Could not load your tradable inventory.");
     }
     if (res.status === 401 || res.status === 403) {
@@ -636,16 +640,25 @@ async function trade_ad_notif_fetch_tradable_inventory(user_id) {
     }
     if (res.status === 500 && limit === "100") {
       limit = "50";
+      page -= 1;
       continue;
     }
     if (!res.ok) {
-      if (items.length) break;
+      if (items.length) {
+        throw new Error(
+          `Tradable inventory fetch incomplete (${res.status}). Retrying next scan.`,
+        );
+      }
       throw new Error(`Tradable inventory unavailable (${res.status}).`);
     }
 
     let data = await res.json().catch(() => null);
     if (!data) {
-      if (items.length) break;
+      if (items.length) {
+        throw new Error(
+          "Tradable inventory fetch incomplete (parse). Retrying next scan.",
+        );
+      }
       throw new Error("Tradable inventory returned invalid data.");
     }
 
@@ -779,10 +792,26 @@ async function trade_ad_notif_fetch_feed(options) {
 
   let res = null;
   for (let attempt = 0; attempt <= trade_ad_notif_feed_429_retries; attempt++) {
+    let controller =
+      typeof AbortController === "function" ? new AbortController() : null;
+    let abort_timer = 0;
+    if (controller) {
+      abort_timer = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch {}
+      }, 12000);
+    }
     try {
-      res = await fetch(url, { headers, cache: "no-store" });
+      res = await fetch(url, {
+        headers,
+        cache: "no-store",
+        signal: controller?.signal,
+      });
     } catch {
       res = null;
+    } finally {
+      if (abort_timer) clearTimeout(abort_timer);
     }
     if (res && res.status !== 429 && res.status < 500) break;
     if (attempt >= trade_ad_notif_feed_429_retries) break;
@@ -801,6 +830,10 @@ async function trade_ad_notif_fetch_feed(options) {
   let body = await res.json();
   if (!body || body.ok === false) {
     throw new Error(body?.error || "Trade ads feed returned an error.");
+  }
+  // Nginx scraper decoy is `{ok:true, source:"edge-cache", items:[]}` with no ads.
+  if (!Array.isArray(body.ads) || body.source === "edge-cache") {
+    throw new Error("Trade ads feed unavailable (bad response).");
   }
   return body;
 }
@@ -847,26 +880,9 @@ async function trade_ad_notif_load_more_once() {
   let batch = Array.isArray(feed.ads) ? feed.ads : [];
   let total = trade_ad_notif_feed_total(feed, batch);
   state.feedAdCount = total;
-  let fetched_at = Number(feed.fetchedAt) || Date.now();
-  if (fetched_at !== Number(state.feedScanFetchedAt || 0)) {
-    state.feedScanFetchedAt = fetched_at;
-    state.feedScanOffset = 0;
-    state.feedExhausted = false;
-    state.feedAdsChecked = 0;
-    offset = 0;
-    if (Number(feed.offset) > 0) {
-      await trade_ad_notif_sleep(trade_ad_notif_page_gap_ms);
-      feed = await trade_ad_notif_fetch_feed({
-        since: 0,
-        offset: 0,
-        limit: trade_ad_notif_load_more_batch,
-        wantIds: want_ids,
-      });
-      batch = Array.isArray(feed.ads) ? feed.ads : [];
-      total = trade_ad_notif_feed_total(feed, batch);
-      state.feedAdCount = total;
-    }
-  }
+  // Track server refresh time for UI only. Do NOT reset offset on every
+  // cache refresh — that rewound backfill every ~2 minutes and never finished.
+  state.feedScanFetchedAt = Number(feed.fetchedAt) || Date.now();
 
   if (!batch.length) {
     state.feedExhausted = true;
@@ -944,8 +960,8 @@ async function trade_ad_notif_poll_once(options) {
     );
     let offset = 0;
     let max_created = Math.max(0, Number(state.lastScannedCreatedAt) || 0);
-    let caught_up = true;
     let had_fresh = false;
+    let scanned_any = false;
 
     for (let page = 0; page < trade_ad_notif_max_catchup_pages; page++) {
       let feed;
@@ -968,15 +984,9 @@ async function trade_ad_notif_poll_once(options) {
       let total = trade_ad_notif_feed_total(feed, ads);
       state.feedAdCount = total;
       state.lastFeedFetchedAt = Number(feed.fetchedAt) || Date.now();
-      if (
-        Number(state.feedScanFetchedAt || 0) !== Number(state.lastFeedFetchedAt)
-      ) {
-        state.feedScanFetchedAt = Number(state.lastFeedFetchedAt);
-        state.feedScanOffset = 0;
-        state.feedExhausted = false;
-        state.feedAdsChecked = 0;
-      }
+      state.feedScanFetchedAt = Number(state.lastFeedFetchedAt);
 
+      if (ads.length) scanned_any = true;
       max_created = Math.max(max_created, trade_ad_notif_max_created_at(ads));
       let fresh_ads = ads.filter(
         (ad) => ad?.id != null && !seen.has(String(ad.id)),
@@ -999,7 +1009,6 @@ async function trade_ad_notif_poll_once(options) {
 
       if (!feed.hasMore || !ads.length) break;
       offset += ads.length;
-      if (page === trade_ad_notif_max_catchup_pages - 1) caught_up = false;
       if (page + 1 < trade_ad_notif_max_catchup_pages) {
         await trade_ad_notif_sleep(trade_ad_notif_page_gap_ms);
       }
@@ -1020,7 +1029,10 @@ async function trade_ad_notif_poll_once(options) {
         state.dismissedTrades,
       );
     }
-    if (caught_up && max_created > Number(state.lastScannedCreatedAt || 0)) {
+    // Feed is newest-first. Always advance the watermark after a successful
+    // scan so the next poll uses `since` instead of re-walking the whole feed.
+    // (Previously required full catch-up, which never happened on large feeds.)
+    if (scanned_any && max_created > Number(state.lastScannedCreatedAt || 0)) {
       state.lastScannedCreatedAt = max_created;
     }
     state.lastPollAt = Date.now();
@@ -1031,22 +1043,24 @@ async function trade_ad_notif_poll_once(options) {
   }
 }
 
-function trade_ad_notif_schedule_poll() {
-  if (trade_ad_notif_poll_timer != null) {
-    clearTimeout(trade_ad_notif_poll_timer);
-  }
-  trade_ad_notif_poll_timer = setTimeout(async () => {
-    try {
-      await trade_ad_notif_poll_once();
-    } catch {}
-    trade_ad_notif_schedule_poll();
-  }, trade_ad_notif_poll_ms);
+async function trade_ad_notif_ensure_alarm() {
+  try {
+    await chrome.alarms.clear(trade_ad_notif_alarm_name);
+    await chrome.alarms.create(trade_ad_notif_alarm_name, {
+      delayInMinutes: 0.1,
+      periodInMinutes: 1,
+    });
+  } catch {}
 }
 
 function trade_ad_notif_init_monitor() {
   if (globalThis.__trade_ad_notif_monitor_started) return;
   globalThis.__trade_ad_notif_monitor_started = true;
-  trade_ad_notif_schedule_poll();
+  trade_ad_notif_ensure_alarm().catch(() => {});
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm?.name !== trade_ad_notif_alarm_name) return;
+    trade_ad_notif_poll_once().catch(() => {});
+  });
   setTimeout(() => {
     trade_ad_notif_poll_once().catch(() => {});
   }, 4000);
@@ -1125,10 +1139,14 @@ function trade_ad_notif_handle_message(message, respond) {
       }
       await trade_ad_notif_save_state(next);
       if (next_enabled) {
+        trade_ad_notif_ensure_alarm().catch(() => {});
         let state = await trade_ad_notif_backfill_feed(next);
         respond({ ok: true, state: trade_ad_notif_state_for_ui(state) });
         return;
       }
+      try {
+        await chrome.alarms.clear(trade_ad_notif_alarm_name);
+      } catch {}
       respond({ ok: true, state: trade_ad_notif_state_for_ui(next) });
     })().catch((err) => {
       respond({ ok: false, error: err?.message || String(err) });

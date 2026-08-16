@@ -14,7 +14,7 @@ If you choose to save a 2FA secret, it is stored in your browser extension stora
 
 ## Remote requests
 
-The extension contacts Roblox, Rolimons, Routility, roautotrade.com, and nevos-extension.com APIs over HTTPS to provide item values, trade analysis, item proof lookup, trade history features, update checks, and related extension functionality.
+The extension contacts Roblox, Rolimons, Routility, and nevos-extension.com APIs over HTTPS to provide item values, trade analysis, item proof lookup, trade history features, update checks, and related extension functionality.
 
 ## Trade history and analysis
 

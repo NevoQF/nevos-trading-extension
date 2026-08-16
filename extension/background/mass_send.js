@@ -10,6 +10,9 @@ const ms_totp_enc_key = "roblox_totp_encrypted_blob";
 const ms_totp_enc_version = 1;
 const ms_totp_pbkdf2_iters = 210000;
 
+const ms_2fa_notification_id = "nte_ms_2fa_prompt";
+const ms_2fa_focus_key = "nte_ms_focus_2fa";
+
 let ms_state = {
   running: false,
   phase: "",
@@ -21,11 +24,14 @@ let ms_state = {
   error: "",
   wait_until: 0,
   status: "",
+  prompt: null,
 };
 let ms_abort = false;
 let ms_wake = null;
 let ms_session_secret = null;
 let ms_last_used_totp = null;
+let ms_2fa_waiters = [];
+let ms_2fa_click_bound = false;
 
 function ms_default_state() {
   return {
@@ -39,6 +45,7 @@ function ms_default_state() {
     error: "",
     wait_until: 0,
     status: "",
+    prompt: null,
   };
 }
 
@@ -76,6 +83,7 @@ function ms_stop_now() {
     ms_wake();
     ms_wake = null;
   }
+  ms_finish_2fa_wait(null);
 }
 
 function ms_normalize_asset_ids(slots) {
@@ -894,16 +902,34 @@ async function ms_inventory_for_picker() {
   let item_data =
     typeof get_cached_item_data === "function" ? await get_cached_item_data() : null;
   let enriched = [];
-  let seen = new Set();
+  let by_asset = new Map();
   for (let row of raw || []) {
     let asset_id = ms_tradable_target_id(row);
-    if (!(asset_id > 0) || seen.has(asset_id)) continue;
+    if (!(asset_id > 0)) continue;
     let free_ids = ms_collect_instance_ids(row);
     let on_hold_count = ms_item_hold_count(row);
     let copy_count = ms_item_copy_count(row);
+    let prev = by_asset.get(asset_id);
+    if (prev) {
+      let seen_free = new Set(prev.free_ids);
+      for (let id of free_ids) {
+        if (!seen_free.has(id)) prev.free_ids.push(id);
+      }
+      prev.on_hold_count += on_hold_count;
+      prev.copy_count += copy_count;
+      continue;
+    }
+    by_asset.set(asset_id, {
+      row,
+      free_ids,
+      on_hold_count,
+      copy_count,
+    });
+  }
+  for (let [asset_id, entry] of by_asset) {
+    let { row, free_ids, on_hold_count, copy_count } = entry;
     // Keep fully held copies visible with a hold badge, but not selectable.
     if (!free_ids.length && !on_hold_count) continue;
-    seen.add(asset_id);
     let name =
       row?.itemName ||
       row?.name ||
@@ -1054,7 +1080,7 @@ function ms_trade_error_message(data) {
 }
 
 function ms_2fa_required_error() {
-  return "Could not solve 2FA. Enable authenticator autofill, or enter the code when prompted.";
+  return "Could not solve 2FA. Enter the code in Mass Sending, or set up Roblox 2FA Autofill.";
 }
 
 function ms_2fa_failed_error(detail) {
@@ -1129,6 +1155,23 @@ function ms_is_totp_already_used_error(err) {
   );
 }
 
+function ms_is_totp_invalid_code_error(err) {
+  let msg = String(err?.message || err || "").toLowerCase();
+  return (
+    msg.includes("challenge code is invalid") ||
+    msg.includes("code is invalid") ||
+    msg.includes('"code":10') ||
+    msg.includes("code\":10") ||
+    msg.includes("code:10")
+  );
+}
+
+function ms_is_totp_retryable_code_error(err) {
+  return (
+    ms_is_totp_already_used_error(err) || ms_is_totp_invalid_code_error(err)
+  );
+}
+
 async function ms_wait_for_fresh_totp(secret, avoid_code, step_sec = 30) {
   let avoid = String(avoid_code || "").replace(/\D/g, "");
   while (!ms_abort) {
@@ -1187,63 +1230,137 @@ async function ms_decrypt_totp_secret(blob, password) {
   return new TextDecoder().decode(pt).trim();
 }
 
-function ms_challenge_stats() {
-  return {
-    sent: ms_state.sent || 0,
-    failed: ms_state.failed || 0,
-    skipped: ms_state.skipped || 0,
-    remaining: ms_state.remaining || 0,
-    total: ms_state.total || 0,
-  };
-}
-
-async function ms_find_roblox_tab() {
-  let tabs = await chrome.tabs.query({
-    url: ["*://www.roblox.com/*", "*://roblox.com/*"],
-  });
-  if (!tabs?.length) {
-    let created = await chrome.tabs.create({
-      url: "https://www.roblox.com/trades",
-      active: true,
-    });
-    await ms_sleep(1800);
-    return created;
-  }
-  let active = tabs.find((t) => t.active && t.id != null);
-  return active || tabs.find((t) => t.id != null) || null;
-}
-
-async function ms_ask_page(message) {
-  let tab = await ms_find_roblox_tab();
-  if (!tab?.id) throw new Error("Open a Roblox tab to continue 2FA.");
+function ms_clear_2fa_badge() {
   try {
-    return await chrome.tabs.sendMessage(tab.id, message);
-  } catch {
-    await ms_sleep(1200);
-    return await chrome.tabs.sendMessage(tab.id, message);
+    chrome.action?.setBadgeText?.({ text: "" });
+  } catch {}
+}
+
+function ms_resolve_2fa_waiters(value) {
+  let waiters = ms_2fa_waiters;
+  ms_2fa_waiters = [];
+  for (let w of waiters) {
+    try {
+      w(value);
+    } catch {}
   }
 }
 
-async function ms_prompt_2fa_code() {
-  ms_state.status = "Waiting for 2FA code…";
-  ms_state.phase = "awaiting_2fa";
-  let res = await ms_ask_page({
-    type: "ms_2fa_code_prompt",
-    stats: ms_challenge_stats(),
+function ms_clear_2fa_prompt() {
+  ms_state.prompt = null;
+  try {
+    chrome.notifications?.clear?.(ms_2fa_notification_id);
+  } catch {}
+  ms_clear_2fa_badge();
+}
+
+function ms_finish_2fa_wait(value) {
+  ms_resolve_2fa_waiters(value);
+  if (value == null) ms_clear_2fa_prompt();
+}
+
+function ms_wait_for_popup_value() {
+  return new Promise((resolve) => {
+    if (ms_abort) {
+      resolve(null);
+      return;
+    }
+    ms_2fa_waiters.push(resolve);
   });
-  if (!res?.ok || !res.code) return null;
-  return String(res.code).replace(/\D/g, "");
+}
+
+function ms_ensure_2fa_click_handler() {
+  if (ms_2fa_click_bound) return;
+  ms_2fa_click_bound = true;
+  if (typeof ensure_notification_click_handler === "function") {
+    ensure_notification_click_handler();
+  }
+  try {
+    chrome.notifications?.onClicked?.addListener((id) => {
+      if (String(id || "") !== ms_2fa_notification_id) return;
+      try {
+        chrome.storage.local.set({ [ms_2fa_focus_key]: true });
+      } catch {}
+      try {
+        chrome.action?.openPopup?.();
+      } catch {}
+    });
+  } catch {}
+}
+
+async function ms_notify_2fa(kind) {
+  ms_ensure_2fa_click_handler();
+  let unlock = kind === "unlock";
+  try {
+    chrome.storage.local.set({ [ms_2fa_focus_key]: true });
+  } catch {}
+  try {
+    chrome.action?.setBadgeText?.({ text: "2FA" });
+    chrome.action?.setBadgeBackgroundColor?.({ color: "#6c5ce7" });
+  } catch {}
+  try {
+    await chrome.action?.openPopup?.();
+  } catch {}
+  try {
+    chrome.runtime.sendMessage({ type: "ms_2fa_needed" }, () => {
+      chrome.runtime.lastError;
+    });
+  } catch {}
+  if (!chrome.notifications?.create) return;
+  let iconUrl =
+    typeof extension_notification_icon_url === "function"
+      ? extension_notification_icon_url("assets/icons/logo128.png")
+      : chrome.runtime.getURL("assets/icons/logo128.png");
+  await new Promise((resolve) => {
+    chrome.notifications.create(
+      ms_2fa_notification_id,
+      {
+        type: "basic",
+        iconUrl,
+        title: unlock
+          ? "Mass send needs 2FA unlock"
+          : "Mass send needs a 2FA code",
+        message: unlock
+          ? "Open the extension → Actions → Mass Sending and enter your 2FA lock password."
+          : "Open the extension → Actions → Mass Sending and enter your authenticator code.",
+        contextMessage: "Tap to open the extension",
+        requireInteraction: true,
+        priority: 2,
+      },
+      () => {
+        chrome.runtime.lastError;
+        resolve();
+      },
+    );
+  });
+}
+
+async function ms_prompt_2fa_code(opts = {}) {
+  let error = String(opts.error || "");
+  ms_state.status = error || "Waiting for 2FA code…";
+  ms_state.phase = "awaiting_2fa";
+  ms_state.prompt = { kind: "code", error, busy: false };
+  if (!opts.quiet) await ms_notify_2fa("code");
+  else {
+    try {
+      chrome.runtime.sendMessage({ type: "ms_2fa_needed" }, () => {
+        chrome.runtime.lastError;
+      });
+    } catch {}
+  }
+  let value = await ms_wait_for_popup_value();
+  if (!value) return null;
+  return String(value).replace(/\D/g, "");
 }
 
 async function ms_prompt_unlock_password() {
   ms_state.status = "Unlock 2FA secret…";
   ms_state.phase = "awaiting_2fa";
-  let res = await ms_ask_page({
-    type: "ms_2fa_unlock_prompt",
-    stats: ms_challenge_stats(),
-  });
-  if (!res?.ok || !res.password) return null;
-  return String(res.password);
+  ms_state.prompt = { kind: "unlock", error: "" };
+  await ms_notify_2fa("unlock");
+  let value = await ms_wait_for_popup_value();
+  if (!value) return null;
+  return String(value);
 }
 
 async function ms_resolve_session_secret() {
@@ -1304,8 +1421,10 @@ async function ms_get_2fa_code(avoid_code = null) {
   let manual = await ms_prompt_2fa_code();
   if (!manual) return null;
   if (avoid && manual === avoid) {
-    ms_state.status = "That 2FA code was already used. Enter the next one…";
-    manual = await ms_prompt_2fa_code();
+    manual = await ms_prompt_2fa_code({
+      quiet: true,
+      error: "That 2FA code was already used. Enter the next one.",
+    });
     if (!manual) return null;
   }
   return { code: manual, source: "manual", secret: null };
@@ -1384,8 +1503,25 @@ async function ms_verify_2fa({
   }
   if (!verify_resp.ok) {
     let err_text = await verify_resp.text().catch(() => "");
+    let parsed = null;
+    try {
+      parsed = JSON.parse(err_text);
+    } catch {}
+    let api_msg = String(parsed?.errors?.[0]?.message || "").trim();
+    let api_code = Number(parsed?.errors?.[0]?.code);
+    if (
+      api_code === 10 ||
+      /challenge code is invalid/i.test(api_msg)
+    ) {
+      throw new Error("The two step verification challenge code is invalid.");
+    }
+    if (api_code === 18 || /already used/i.test(api_msg)) {
+      throw new Error("This 2FA code was already used.");
+    }
     throw new Error(
-      `2FA verify failed (${verify_resp.status})${err_text ? `: ${err_text.slice(0, 120)}` : ""}`,
+      api_msg
+        ? `2FA verify failed (${verify_resp.status}): ${api_msg}`
+        : `2FA verify failed (${verify_resp.status})${err_text ? `: ${err_text.slice(0, 120)}` : ""}`,
     );
   }
   let verify_data = await verify_resp.json().catch(() => ({}));
@@ -1521,7 +1657,7 @@ async function ms_send_trade(
     let verified = null;
     let code = String(code_info.code || "").replace(/\D/g, "");
     let secret = code_info.secret || ms_session_secret || null;
-    for (let attempt = 0; attempt < 4; attempt++) {
+    while (!verified) {
       if (ms_abort) {
         return {
           resp,
@@ -1531,7 +1667,7 @@ async function ms_send_trade(
         };
       }
       try {
-        ms_state.status = "Solving 2FA…";
+        ms_state.status = "Checking 2FA…";
         ms_last_used_totp = code;
         verified = await ms_verify_2fa({
           user_id: self_id,
@@ -1543,23 +1679,18 @@ async function ms_send_trade(
         });
         break;
       } catch (err) {
-        if (ms_is_totp_already_used_error(err) && attempt < 3) {
-          if (secret) {
-            code = await ms_wait_for_fresh_totp(secret, code);
-            if (!code) {
-              return {
-                resp,
-                data,
-                csrf: challenge_csrf,
-                error: ms_2fa_required_error(),
-              };
-            }
-            continue;
-          }
-          ms_state.status =
-            "That 2FA code was already used. Enter the next one…";
-          let next = await ms_prompt_2fa_code();
-          if (!next) {
+        if (!ms_is_totp_retryable_code_error(err)) {
+          return {
+            resp,
+            data,
+            csrf: challenge_csrf,
+            error: ms_2fa_failed_error(err?.message || "2FA verification failed."),
+          };
+        }
+        let invalid = ms_is_totp_invalid_code_error(err);
+        if (secret && ms_is_totp_already_used_error(err)) {
+          code = await ms_wait_for_fresh_totp(secret, code);
+          if (!code) {
             return {
               resp,
               data,
@@ -1567,15 +1698,24 @@ async function ms_send_trade(
               error: ms_2fa_required_error(),
             };
           }
-          code = String(next).replace(/\D/g, "");
           continue;
         }
-        return {
-          resp,
-          data,
-          csrf: challenge_csrf,
-          error: ms_2fa_failed_error(err?.message || "2FA verification failed."),
-        };
+        secret = null;
+        let next = await ms_prompt_2fa_code({
+          quiet: true,
+          error: invalid
+            ? "That 2FA code is invalid. Enter a new one."
+            : "That 2FA code was already used. Enter the next one.",
+        });
+        if (!next) {
+          return {
+            resp,
+            data,
+            csrf: challenge_csrf,
+            error: ms_2fa_required_error(),
+          };
+        }
+        code = String(next).replace(/\D/g, "");
       }
     }
     if (!verified) {
@@ -1586,6 +1726,8 @@ async function ms_send_trade(
         error: ms_2fa_failed_error("verification failed"),
       };
     }
+    ms_clear_2fa_prompt();
+    ms_state.phase = "sending";
     csrf = verified.csrf || challenge_csrf;
     // Challenge headers only on the immediate retry of this request (Essentials-style).
     resp = await do_send(csrf, {
@@ -1872,6 +2014,7 @@ async function ms_run(config) {
   ms_state.running = false;
   ms_state.wait_until = 0;
   ms_state.remaining = 0;
+  ms_finish_2fa_wait(null);
 }
 
 function mass_send_handle_message(message, respond) {
@@ -1904,6 +2047,43 @@ function mass_send_handle_message(message, respond) {
       }
     })();
     return true;
+  }
+  if (message.type === "ms_2fa_submit") {
+    let kind = message.kind === "unlock" ? "unlock" : "code";
+    let value = String(message.value || "");
+    if (kind === "code") value = value.replace(/\D/g, "");
+    else value = value.trim();
+    if (!ms_state.running || ms_state.phase !== "awaiting_2fa") {
+      respond({ ok: false, error: "Not waiting for 2FA." });
+      return false;
+    }
+    if (ms_state.prompt?.kind && ms_state.prompt.kind !== kind) {
+      respond({ ok: false, error: "Wrong 2FA step." });
+      return false;
+    }
+    if (ms_state.prompt?.busy) {
+      respond({ ok: false, error: "Checking that code…" });
+      return false;
+    }
+    if (kind === "code" && value.length !== 6) {
+      respond({ ok: false, error: "Enter the 6-digit authenticator code." });
+      return false;
+    }
+    if (kind === "unlock" && !value) {
+      respond({ ok: false, error: "Enter your password." });
+      return false;
+    }
+    ms_state.status = "Checking 2FA…";
+    if (ms_state.prompt) {
+      ms_state.prompt = {
+        ...ms_state.prompt,
+        busy: true,
+        error: "",
+      };
+    }
+    ms_resolve_2fa_waiters(value);
+    respond({ ok: true });
+    return false;
   }
   if (message.type === "ms_progress") {
     respond({ ...ms_state });

@@ -1,6 +1,8 @@
 (() => {
   if (typeof nte_is_lite === "function" && nte_is_lite()) return;
 
+  const HISTORY_BTN_CLASS =
+    "btn btn-flat-light-blue-sm shadow rounded-pill mt-2 mt-sm-1 mr-2 nte-ih-btn";
   const BTN_CLASS =
     "btn btn-flat-light-blue-sm shadow rounded-pill mt-2 mt-sm-1 nte-rp-btn";
   const ROOT_ID = "nte-rp-root";
@@ -51,7 +53,9 @@
   }
 
   function asset_id_from_path() {
-    let match = String(location.pathname || "").match(/\/item\/(\d+)/i);
+    let match = String(location.pathname || "").match(
+      /\/(?:item|bundle)\/(\d+)/i,
+    );
     return match ? match[1] : "";
   }
 
@@ -77,22 +81,12 @@
     let style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      .nte-rp-btn{
+      .nte-rp-btn,
+      .nte-ih-btn{
         max-height:32px;
       }
-      .nte-rp-btn .button_icon_svg{
-        display:inline-block !important;
-        line-height:inherit;
-        margin-right:5px !important;
-        vertical-align:baseline;
-      }
-      .nte-rp-btn .button_icon_svg svg{
-        width:20px;
-        height:20px;
-        display:inline-block;
-        vertical-align:middle;
-      }
-      .nte-rp-btn.is-busy{opacity:.72;pointer-events:none}
+      .nte-rp-btn.is-busy,
+      .nte-ih-btn.is-busy{opacity:.72;pointer-events:none}
 
       #${ROOT_ID}{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));background:rgba(4,8,14,.72);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);opacity:0;pointer-events:none;transition:opacity .34s cubic-bezier(.32,.72,0,1)}
       #${ROOT_ID}.is-open{opacity:1;pointer-events:auto}
@@ -155,11 +149,6 @@
       }
     `;
     document.documentElement.appendChild(style);
-  }
-
-  function proof_icon_svg() {
-    // Stacked photo frames — reads as proof images, filled like Trade Ads.
-    return `<span class="d-inline-block text-nowrap button_icon_svg" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" transform="rotate(360)"><path fill="currentColor" d="M5.2 5.8h10.2c.9 0 1.6.7 1.6 1.6v8.1c0 .9-.7 1.6-1.6 1.6H5.2c-.9 0-1.6-.7-1.6-1.6V7.4c0-.9.7-1.6 1.6-1.6zm1.1 2.1a1.15 1.15 0 1 0 0 2.3 1.15 1.15 0 0 0 0-2.3zm-.35 7.1h8.9l-2.55-3.35a.55.55 0 0 0-.88 0l-1.55 2.05-1.05-1.2a.55.55 0 0 0-.86.03L5.95 15z"/><path fill="currentColor" d="M4.1 3.4h9.4c.55 0 1 .4 1.1.92H5.2A2.7 2.7 0 0 0 2.5 7v7.35c-.55-.12-.95-.6-.95-1.18V5c0-.88.72-1.6 1.6-1.6h.95z"/></svg></span>`;
   }
 
   function find_action_host() {
@@ -515,30 +504,54 @@
     await render_slide();
   }
 
+  function inject_history_button(host) {
+    if (document.querySelector(".nte-ih-btn")) return;
+    let btn = document.createElement("a");
+    btn.href = "#";
+    btn.className = HISTORY_BTN_CLASS;
+    btn.setAttribute("role", "button");
+    btn.setAttribute("aria-expanded", "false");
+    btn.style.maxHeight = "32px";
+    btn.innerHTML = `<span class="text-nowrap">History</span>`;
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      window.dispatchEvent(
+        new CustomEvent("nte-item-intel-toggle", { detail: { view: "history" } }),
+      );
+    });
+    let proofs = host.querySelector(".nte-rp-btn");
+    if (proofs) proofs.before(btn);
+    else host.appendChild(btn);
+  }
+
   function inject_button() {
-    if (document.querySelector(".nte-rp-btn")) return true;
     let host = find_action_host();
     if (!host) return false;
 
     for (let link of host.querySelectorAll("a.btn")) {
-      if (!link.classList.contains("mr-2")) link.classList.add("mr-2");
+      if (!link.classList.contains("mr-2") && !link.classList.contains("nte-rp-btn"))
+        link.classList.add("mr-2");
     }
 
-    let btn = document.createElement("a");
-    btn.href = "#";
-    btn.className = BTN_CLASS;
-    btn.setAttribute("role", "button");
-    btn.style.maxHeight = "32px";
-    btn.innerHTML = `${proof_icon_svg()}<span class="text-nowrap">View Proofs</span>`;
-    btn.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      open_proofs().catch(() => {
-        set_busy_button(false);
-        show_status("error", "Could not load proofs right now.");
+    if (!document.querySelector(".nte-rp-btn")) {
+      let btn = document.createElement("a");
+      btn.href = "#";
+      btn.className = BTN_CLASS;
+      btn.setAttribute("role", "button");
+      btn.style.maxHeight = "32px";
+      btn.innerHTML = `<span class="text-nowrap">View Proofs</span>`;
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        open_proofs().catch(() => {
+          set_busy_button(false);
+          show_status("error", "Could not load proofs right now.");
+        });
       });
-    });
-    host.appendChild(btn);
+      host.appendChild(btn);
+    }
+    inject_history_button(host);
     return true;
   }
 

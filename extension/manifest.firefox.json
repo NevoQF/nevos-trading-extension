@@ -152,8 +152,7 @@
       "all_frames": true,
       "js": [
         "shared/browser_compat.js",
-        "content/roblox_totp_autofill.js",
-        "content/mass_send_2fa.js"
+        "content/roblox_totp_autofill.js"
       ],
       "matches": [
         "https://www.roblox.com/*",
@@ -186,7 +185,21 @@
         "https://www.rolimons.com/tradecalculator",
         "https://www.rolimons.com/tradecalculator*",
         "https://rolimons.com/tradecalculator",
-        "https://rolimons.com/tradecalculator*"
+        "https://rolimons.com/tradecalculator*",
+        "https://www.rolimons.com/trades",
+        "https://www.rolimons.com/trades*",
+        "https://rolimons.com/trades",
+        "https://rolimons.com/trades*",
+        "https://www.rolimons.com/tradead/*",
+        "https://rolimons.com/tradead/*",
+        "https://www.rolimons.com/playertrades",
+        "https://www.rolimons.com/playertrades*",
+        "https://rolimons.com/playertrades",
+        "https://rolimons.com/playertrades*",
+        "https://www.rolimons.com/itemtrades",
+        "https://www.rolimons.com/itemtrades*",
+        "https://rolimons.com/itemtrades",
+        "https://rolimons.com/itemtrades*"
       ],
       "run_at": "document_idle"
     },
@@ -194,11 +207,15 @@
       "js": [
         "shared/browser_compat.js",
         "shared/build_variant.js",
+        "shared/nte_history_proof_styles.js",
+        "content/catalog_item_intel.js",
         "content/rolimons_item_page.js"
       ],
       "matches": [
         "https://www.rolimons.com/item/*",
-        "https://rolimons.com/item/*"
+        "https://rolimons.com/item/*",
+        "https://www.rolimons.com/bundle/*",
+        "https://rolimons.com/bundle/*"
       ],
       "run_at": "document_idle"
     }
@@ -209,7 +226,6 @@
     "https://www.rolimons.com/*",
     "https://rolimons.com/*",
     "https://routility.io/*",
-    "https://roautotrade.com/*",
     "https://nevos-extension.com/*",
     "https://www.nevos-extension.com/*",
     "https://www.roblox.com/*",
@@ -250,7 +266,7 @@
     "cookies"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.46",
+  "version": "3.10.47",
   "web_accessible_resources": [
     {
       "matches": [
@@ -259,6 +275,7 @@
       ],
       "resources": [
         "scripts/rolimons_trade_calc_inventory_patch.js",
+        "assets/routility.png",
         "assets/icons/logo.png",
         "assets/icons/logo32.png",
         "assets/icons/logo48.png"

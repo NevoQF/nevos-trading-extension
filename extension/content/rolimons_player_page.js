@@ -222,6 +222,9 @@
         let name = String(
           (roli && roli[0]) || item.itemName || item.name || "Bundle",
         ).trim();
+        let serials = unique_sorted_serials(
+          instances.map((inst) => inst?.serialNumber ?? item?.serialNumber),
+        );
         return {
           bundle_id,
           face_id,
@@ -229,7 +232,8 @@
           rap,
           value,
           demand,
-          serial: instances[0]?.serialNumber || null,
+          serial: serials[0] ?? instances[0]?.serialNumber ?? null,
+          serials,
           ciiid,
           quantity: Math.max(1, instances.length || 1),
           held,
@@ -333,7 +337,14 @@
   }
 
   function append_native_footer(details, face, href) {
-    let serial = face.serial ? `#${face.serial}` : "N/A";
+    let serials = unique_sorted_serials(
+      face.serials?.length ? face.serials : [face.serial],
+    );
+    let serial = serials.length
+      ? `#${serials[0]}`
+      : face.serial
+        ? `#${face.serial}`
+        : "N/A";
 
     let serial_row = document.createElement("div");
     serial_row.className = "d-flex justify-content-between";
@@ -341,6 +352,10 @@
       `<a href="${href}"><div class="item_card_stat_header">Serial</div></a>` +
       `<div><span class="text-warning text-truncate">${serial}</span></div>`;
     details.appendChild(serial_row);
+    if (serials.length > 1) {
+      let serial_el = serial_row.querySelector(".text-warning");
+      if (serial_el) bind_serials_tip(serial_el, serials);
+    }
 
     let since_wrap = document.createElement("a");
     since_wrap.href = href;
@@ -534,6 +549,12 @@
       }
     }
 
+    let hold_map = hold_map_from_tradable(
+      tradable,
+      face_to_bundle,
+      bundle_to_face,
+    );
+
     let missing_bundles = tradable.filter((item) => {
       let target = item?.itemTarget;
       if (!target || target.itemType !== "Bundle") return false;
@@ -541,61 +562,72 @@
       if (!id) return false;
       return !set_has_related(shown_ids, id, face_to_bundle, bundle_to_face);
     });
-    if (!missing_bundles.length) return;
+    if (missing_bundles.length) {
+      let bundle_ids = [
+        ...new Set(
+          missing_bundles
+            .map((item) => String(item?.itemTarget?.targetId || ""))
+            .filter(Boolean),
+        ),
+      ];
+      let thumbs = await fetch_thumbs(bundle_ids, true);
+      let missing_thumbs = bundle_ids.filter((id) => !thumbs[id]);
+      if (missing_thumbs.length) {
+        Object.assign(thumbs, await fetch_thumbs(missing_thumbs, false));
+      }
 
-    let bundle_ids = [
-      ...new Set(
-        missing_bundles
-          .map((item) => String(item?.itemTarget?.targetId || ""))
-          .filter(Boolean),
-      ),
-    ];
-    let thumbs = await fetch_thumbs(bundle_ids, true);
-    let missing_thumbs = bundle_ids.filter((id) => !thumbs[id]);
-    if (missing_thumbs.length) {
-      Object.assign(thumbs, await fetch_thumbs(missing_thumbs, false));
-    }
-
-    let enriched = enrich_missing_bundles(
-      missing_bundles,
-      bundle_to_face,
-      roli_items,
-      thumbs,
-    );
-    if (!enriched.length) return;
-
-    let template = pick_template(grid);
-    if (!template) return;
-    for (let item of enriched) {
-      inject_bundle_card(grid, template, item);
-    }
-
-    let total_bundle_value = enriched.reduce(
-      (sum, item) => sum + item_value_for_total(item) * item.quantity,
-      0,
-    );
-    let total_bundle_rap = enriched.reduce(
-      (sum, item) => sum + (item.rap || 0) * item.quantity,
-      0,
-    );
-    if (total_bundle_value > 0) {
-      adjust_sidebar_stat(
-        "player_value",
-        total_bundle_value,
-        `+${total_bundle_value.toLocaleString()} from ${enriched.length} unlisted bundle(s)`,
+      let enriched = enrich_missing_bundles(
+        missing_bundles,
+        bundle_to_face,
+        roli_items,
+        thumbs,
       );
+      let template = enriched.length ? pick_template(grid) : null;
+      if (template) {
+        for (let item of enriched) {
+          inject_bundle_card(grid, template, item);
+        }
+
+        let total_bundle_value = enriched.reduce(
+          (sum, item) => sum + item_value_for_total(item) * item.quantity,
+          0,
+        );
+        let total_bundle_rap = enriched.reduce(
+          (sum, item) => sum + (item.rap || 0) * item.quantity,
+          0,
+        );
+        if (total_bundle_value > 0) {
+          adjust_sidebar_stat(
+            "player_value",
+            total_bundle_value,
+            `+${total_bundle_value.toLocaleString()} from ${enriched.length} unlisted bundle(s)`,
+          );
+        }
+        if (total_bundle_rap > 0) {
+          adjust_sidebar_stat(
+            "player_rap",
+            total_bundle_rap,
+            `+${total_bundle_rap.toLocaleString()} RAP from ${enriched.length} unlisted bundle(s)`,
+          );
+        }
+      }
     }
-    if (total_bundle_rap > 0) {
-      adjust_sidebar_stat(
-        "player_rap",
-        total_bundle_rap,
-        `+${total_bundle_rap.toLocaleString()} RAP from ${enriched.length} unlisted bundle(s)`,
-      );
-    }
+
+    paint_player_serial_tips(grid, hold_map);
   }
 
  function is_trade_calculator() {
     return /\/tradecalculator\/?$/i.test(location.pathname || "");
+  }
+
+  function is_trade_ads_page() {
+    let path = location.pathname || "";
+    return (
+      /^\/trades\/?$/i.test(path) ||
+      /^\/tradead\/\d+\/?$/i.test(path) ||
+      /^\/playertrades(?:\/\d+)?\/?$/i.test(path) ||
+      /^\/itemtrades(?:\/\d+)?\/?$/i.test(path)
+    );
   }
 
   const TRADE_CALC_BRIDGE_ID = "nte-roli-tc-bridge";
@@ -666,10 +698,11 @@
     );
   }
 
-  function apply_trade_calc_owned_ids(ids) {
-    return call_trade_calc_page({ type: "apply", ids }, "applied").then(
-      (data) => !!data?.ok,
-    );
+  function apply_trade_calc_owned_ids(ids, mode = "replace") {
+    return call_trade_calc_page(
+      { type: "apply", ids, mode },
+      "applied",
+    ).then((data) => !!data?.ok);
   }
 
   async function fetch_authenticated_user_id() {
@@ -697,15 +730,152 @@
     return [...ids];
   }
 
+  function parse_serial_number(raw) {
+    if (raw == null || raw === "") return null;
+    let n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return null;
+    return Math.floor(n);
+  }
+
+  function unique_sorted_serials(list) {
+    let out = [];
+    for (let raw of Array.isArray(list) ? list : []) {
+      let n = parse_serial_number(raw);
+      if (n == null || out.includes(n)) continue;
+      out.push(n);
+    }
+    out.sort((a, b) => a - b);
+    return out;
+  }
+
+  function empty_hold_row() {
+    return { count: 0, held: 0, serial: null, serials: [] };
+  }
+
+  function add_hold_serial(row, serial) {
+    serial = parse_serial_number(serial);
+    if (serial == null) return;
+    if (!row.serials.includes(serial)) {
+      row.serials = [...row.serials, serial].sort((a, b) => a - b);
+    }
+    if (row.serial == null || serial < row.serial) row.serial = serial;
+  }
+
+  let serials_tip_el = null;
+  let serials_tip_listening = false;
+
+  function hide_serials_tip() {
+    serials_tip_el?.remove();
+    serials_tip_el = null;
+  }
+
+  function ensure_serials_tip_style() {
+    if (document.getElementById("nte-serials-tip-style")) return;
+    let style = document.createElement("style");
+    style.id = "nte-serials-tip-style";
+    style.textContent = `
+.nte-serials-tip{
+  position:fixed;z-index:2147483646;
+  max-width:min(260px,calc(100vw - 16px));
+  max-height:min(220px,calc(100vh - 16px));
+  overflow:auto;padding:8px 10px;border-radius:10px;
+  background:rgba(15,23,42,.96);
+  border:1px solid rgba(248,250,252,.16);
+  box-shadow:0 10px 28px rgba(0,0,0,.45);
+  color:#f8fafc;font-size:12px;font-weight:700;line-height:1.35;
+  letter-spacing:.01em;font-variant-numeric:tabular-nums;
+  pointer-events:none;white-space:normal;
+}
+.mix_item .nte-tc-serial-tag.nte-serials-more{
+  pointer-events:auto;cursor:help;
+}
+.mix_item .nte-serials-more{cursor:help}
+`;
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function format_serials_tip(serials) {
+    return unique_sorted_serials(serials)
+      .map((n) => `#${n}`)
+      .join(", ");
+  }
+
+  function show_serials_tip(anchor, serials) {
+    hide_serials_tip();
+    let text = format_serials_tip(serials);
+    if (!anchor || !text) return;
+    ensure_serials_tip_style();
+    let tip = document.createElement("div");
+    tip.className = "nte-serials-tip";
+    tip.textContent = text;
+    document.body.appendChild(tip);
+    serials_tip_el = tip;
+    let r = anchor.getBoundingClientRect();
+    let tw = tip.offsetWidth;
+    let th = tip.offsetHeight;
+    let left = Math.min(
+      Math.max(8, r.right - tw),
+      window.innerWidth - tw - 8,
+    );
+    let top = r.top - th - 8;
+    if (top < 8) top = Math.min(r.bottom + 8, window.innerHeight - th - 8);
+    if (top < 8) top = 8;
+    tip.style.left = `${Math.round(left)}px`;
+    tip.style.top = `${Math.round(top)}px`;
+  }
+
+  function bind_serials_tip(el, serials) {
+    let list = unique_sorted_serials(serials);
+    if (!el || list.length <= 1) return;
+    if (el.getAttribute("data-nte-serials-bound") === "1") return;
+    el.setAttribute("data-nte-serials-bound", "1");
+    el.classList.add("nte-serials-more");
+    el.setAttribute("aria-label", `Serials ${format_serials_tip(list)}`);
+    el.removeAttribute("title");
+    if (!serials_tip_listening) {
+      serials_tip_listening = true;
+      window.addEventListener("scroll", hide_serials_tip, true);
+      window.addEventListener("resize", hide_serials_tip);
+    }
+    el.addEventListener("mouseenter", () => show_serials_tip(el, list));
+    el.addEventListener("mouseleave", hide_serials_tip);
+  }
+
+  function serial_value_el(card) {
+    for (let row of card.querySelectorAll(".d-flex.justify-content-between")) {
+      let header = row.querySelector(".item_card_stat_header");
+      if (header?.textContent.trim() !== "Serial") continue;
+      return (
+        row.querySelector(".text-warning, .text-info, .text-light") ||
+        row.lastElementChild
+      );
+    }
+    return null;
+  }
+
+  function paint_player_serial_tips(grid, map) {
+    ensure_serials_tip_style();
+    if (!grid || !map) return;
+    for (let card of grid.querySelectorAll(".mix_item")) {
+      let id = card_item_id(card);
+      let serials = id && map[id] ? map[id].serials : null;
+      if (!serials || serials.length <= 1) continue;
+      let el = serial_value_el(card);
+      if (el) bind_serials_tip(el, serials);
+    }
+  }
+
+  function bump_hold_row(map, id, held, serial) {
+    id = String(id || "").trim();
+    if (!/^\d+$/.test(id)) return;
+    let row = map[id] || (map[id] = empty_hold_row());
+    row.count += 1;
+    if (held) row.held += 1;
+    add_hold_serial(row, serial);
+  }
+
   function hold_map_from_tradable(tradable, face_to_bundle, bundle_to_face) {
     let map = Object.create(null);
-    function bump(id, held) {
-      id = String(id || "").trim();
-      if (!/^\d+$/.test(id)) return;
-      let row = map[id] || (map[id] = { count: 0, held: 0 });
-      row.count += 1;
-      if (held) row.held += 1;
-    }
     for (let item of tradable) {
       let target = item?.itemTarget || {};
       let base_id = String(target.targetId || "").trim();
@@ -720,17 +890,61 @@
         ).trim();
         let type = String(inst?.itemTarget?.itemType || item_type || "");
         let held = !!(inst?.isOnHold ?? item?.isOnHold);
-        bump(id, held);
+        let serial = parse_serial_number(
+          inst?.serialNumber ?? item?.serialNumber,
+        );
+        bump_hold_row(map, id, held, serial);
         if (type === "Bundle") {
           let face = bundle_to_face[id];
-          if (face) bump(face, held);
+          if (face) bump_hold_row(map, face, held, serial);
         } else {
           let bundle = face_to_bundle[id];
-          if (bundle) bump(bundle, held);
+          if (bundle) bump_hold_row(map, bundle, held, serial);
         }
       }
     }
     return map;
+  }
+
+  function hold_map_from_asset_qty(asset_qty, face_to_bundle, bundle_to_face) {
+    let map = Object.create(null);
+    if (!asset_qty || typeof asset_qty !== "object") return map;
+    function set_count(id, count) {
+      id = String(id || "").trim();
+      if (!/^\d+$/.test(id)) return;
+      count = Math.max(1, Math.floor(Number(count) || 0));
+      let row = map[id] || (map[id] = empty_hold_row());
+      if (count > row.count) row.count = count;
+    }
+    for (let [raw_id, raw_count] of Object.entries(asset_qty)) {
+      let id = String(raw_id || "").trim();
+      let count = Math.max(1, Math.floor(Number(raw_count) || 0));
+      set_count(id, count);
+      let face = bundle_to_face[id];
+      if (face) set_count(face, count);
+      let bundle = face_to_bundle[id];
+      if (bundle) set_count(bundle, count);
+    }
+    return map;
+  }
+
+  function merge_hold_maps(base, overlay) {
+    let out = Object.create(null);
+    for (let src of [base, overlay]) {
+      if (!src) continue;
+      for (let [id, info] of Object.entries(src)) {
+        let row = out[id] || (out[id] = empty_hold_row());
+        let count = Math.max(0, Math.floor(Number(info?.count) || 0));
+        let held = Math.max(0, Math.floor(Number(info?.held) || 0));
+        if (count > row.count) row.count = count;
+        if (held > row.held) row.held = held;
+        add_hold_serial(row, info?.serial);
+        for (let serial of unique_sorted_serials(info?.serials)) {
+          add_hold_serial(row, serial);
+        }
+      }
+    }
+    return out;
   }
 
   let trade_calc_hold_by_id = Object.create(null);
@@ -755,6 +969,26 @@
 .mix_item .nte-tc-hold-count{
   font-size:9px;font-weight:800;letter-spacing:.02em;
   text-shadow:0 2px 8px rgba(0,0,0,.65);
+}
+.mix_item .nte-tc-meta-row{
+  position:absolute;bottom:4px;right:4px;z-index:3;
+  display:inline-flex;align-items:center;gap:4px;
+  pointer-events:none;
+}
+.mix_item .nte-tc-serial-tag.nte-serials-more{
+  pointer-events:auto;cursor:help;
+}
+.mix_item .nte-tc-qty-tag,
+.mix_item .nte-tc-serial-tag{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:20px;height:18px;padding:0 6px;
+  border-radius:999px;
+  background:rgba(15,23,42,.82);
+  border:1px solid rgba(248,250,252,.18);
+  box-shadow:0 2px 8px rgba(0,0,0,.35);
+  color:#f8fafc;
+  font-size:10px;font-weight:800;letter-spacing:.02em;line-height:1;
+  font-variant-numeric:tabular-nums;
 }
 .mix_item.nte-tc-is-hold{opacity:.72}
 .mix_item.nte-tc-is-hold .item_thumbnail{filter:grayscale(.28)}
@@ -784,8 +1018,39 @@
     return tag;
   }
 
+  function build_trade_calc_qty_tag(count) {
+    count = Math.max(0, Math.floor(Number(count) || 0));
+    if (!(count > 1)) return null;
+    let tag = document.createElement("div");
+    tag.className = "nte-tc-qty-tag";
+    tag.setAttribute("aria-label", `${count} owned`);
+    tag.title = `${count} owned`;
+    tag.textContent = `x${count}`;
+    return tag;
+  }
+
+  function build_trade_calc_serial_tag(serial, serials) {
+    let list = unique_sorted_serials(
+      serials?.length ? serials : [serial],
+    );
+    serial = parse_serial_number(serial);
+    if (serial == null) serial = list[0] ?? null;
+    if (serial == null) return null;
+    let tag = document.createElement("div");
+    tag.className = "nte-tc-serial-tag";
+    tag.setAttribute("aria-label", `Serial #${serial}`);
+    tag.title = `Serial #${serial}`;
+    tag.textContent = `#${serial}`;
+    if (list.length > 1) bind_serials_tip(tag, list);
+    return tag;
+  }
+
   function clear_trade_calc_hold_badges() {
-    for (let tag of document.querySelectorAll(".nte-tc-hold-tag")) tag.remove();
+    hide_serials_tip();
+    for (let tag of document.querySelectorAll(
+      ".nte-tc-hold-tag, .nte-tc-meta-row, .nte-tc-qty-tag, .nte-tc-serial-tag",
+    ))
+      tag.remove();
     for (let card of document.querySelectorAll(".mix_item.nte-tc-is-hold"))
       card.classList.remove("nte-tc-is-hold");
   }
@@ -800,13 +1065,25 @@
       for (let card of document.querySelectorAll(".mix_item")) {
         let asset_id = trade_calc_card_asset_id(card);
         let info = asset_id ? ids[asset_id] : null;
-        if (!info || !(info.held > 0)) continue;
+        if (!info) continue;
         let wrap = card.querySelector(".position-relative");
         if (!wrap) continue;
-        let tag = build_trade_calc_hold_tag(info.held, info.count);
-        if (!tag) continue;
-        wrap.appendChild(tag);
-        if (info.held >= info.count) card.classList.add("nte-tc-is-hold");
+        if (info.held > 0) {
+          let tag = build_trade_calc_hold_tag(info.held, info.count);
+          if (tag) {
+            wrap.appendChild(tag);
+            if (info.held >= info.count) card.classList.add("nte-tc-is-hold");
+          }
+        }
+        let serial = build_trade_calc_serial_tag(info.serial, info.serials);
+        let qty = build_trade_calc_qty_tag(info.count);
+        if (serial || qty) {
+          let row = document.createElement("div");
+          row.className = "nte-tc-meta-row";
+          if (serial) row.appendChild(serial);
+          if (qty) row.appendChild(qty);
+          wrap.appendChild(row);
+        }
       }
     } finally {
       trade_calc_hold_painting = false;
@@ -846,10 +1123,14 @@
 
   let trade_calc_ran_for = "";
   let trade_calc_inflight = false;
+  let trade_calc_pending = false;
   let trade_calc_retry_after = 0;
 
   async function run_trade_calculator_fix(force = false) {
-    if (trade_calc_inflight) return;
+    if (trade_calc_inflight) {
+      trade_calc_pending = true;
+      return;
+    }
     if (!force && Date.now() < trade_calc_retry_after) return;
     let state = await query_trade_calc_state();
     if (!state?.ready) return;
@@ -861,10 +1142,16 @@
       return;
     }
     let user_id = String(state.player_id || "").trim();
+    // Other Player: wait until Rolimons finishes the scan and sets playerId.
+    // Do not fall back to the logged-in user — that overwrites the scan.
     if (!/^\d+$/.test(user_id) && source === "mine") {
       user_id = await fetch_authenticated_user_id();
     }
     if (!/^\d+$/.test(user_id)) return;
+    let asset_qty =
+      state.asset_qty && typeof state.asset_qty === "object"
+        ? state.asset_qty
+        : Object.create(null);
     let token = `${source}:${user_id}:${state.asset_count}`;
     if (!force && trade_calc_ran_for === token) {
       schedule_trade_calc_hold_paint();
@@ -873,34 +1160,71 @@
 
     trade_calc_inflight = true;
     try {
-      let [tradable_res, face_map] = await Promise.all([
-        fetch_tradable(user_id),
-        fetch_face_map(),
-      ]);
+      let face_map = await fetch_face_map();
+      let { face_to_bundle, bundle_to_face } = build_face_maps(face_map);
+      let roli_map = hold_map_from_asset_qty(
+        asset_qty,
+        face_to_bundle,
+        bundle_to_face,
+      );
+
+      let tradable_res = await fetch_tradable(user_id);
       // Never overwrite Rolimons inventory with a partial fetch. VPN users often
       // hit 429 mid-pagination; applying that list drops missing items.
       if (!tradable_res?.complete) {
+        if (source === "other" && Object.keys(roli_map).length) {
+          // Keep Rolimons scan assets; expand face keys + force hide/filter.
+          await apply_trade_calc_owned_ids([], "merge");
+          set_trade_calc_hold_map(roli_map);
+          trade_calc_ran_for = token;
+          schedule_trade_calc_hold_paint();
+          setTimeout(() => schedule_trade_calc_hold_paint(), 400);
+          setTimeout(() => schedule_trade_calc_hold_paint(), 1200);
+          let wait_ms = tradable_res?.status === 429 ? 30000 : 15000;
+          trade_calc_retry_after = Date.now() + wait_ms;
+          return;
+        }
         let wait_ms = tradable_res?.status === 429 ? 30000 : 15000;
         trade_calc_retry_after = Date.now() + wait_ms;
         return;
       }
       trade_calc_retry_after = 0;
       let tradable = tradable_res.items;
-      if (!tradable.length) return;
-      let { face_to_bundle, bundle_to_face } = build_face_maps(face_map);
+      if (!tradable.length) {
+        if (source === "other" && Object.keys(roli_map).length) {
+          await apply_trade_calc_owned_ids([], "merge");
+          set_trade_calc_hold_map(roli_map);
+          trade_calc_ran_for = token;
+          schedule_trade_calc_hold_paint();
+        }
+        return;
+      }
       let ids = owned_ids_from_tradable(
         tradable,
         face_to_bundle,
         bundle_to_face,
       );
-      if (!ids.length) return;
-      let hold_map = hold_map_from_tradable(
-        tradable,
-        face_to_bundle,
-        bundle_to_face,
+      if (!ids.length) {
+        if (source === "other" && Object.keys(roli_map).length) {
+          await apply_trade_calc_owned_ids([], "merge");
+          set_trade_calc_hold_map(roli_map);
+          trade_calc_ran_for = token;
+          schedule_trade_calc_hold_paint();
+        }
+        return;
+      }
+      let hold_map = merge_hold_maps(
+        roli_map,
+        hold_map_from_tradable(tradable, face_to_bundle, bundle_to_face),
       );
       set_trade_calc_hold_map(hold_map);
-      let ok = await apply_trade_calc_owned_ids(ids);
+      // Other Player: merge into Rolimons scan assets (preserve UAIDs / hold
+      // copies) and expand face keys so Mix filters to real owned items.
+      // My Inventory: replace with the full tradable set.
+      let ok = await apply_trade_calc_owned_ids(
+        ids,
+        source === "other" ? "merge" : "replace",
+      );
       if (ok) {
         let after = await query_trade_calc_state();
         trade_calc_ran_for = `${source}:${user_id}:${after?.asset_count || ids.length}`;
@@ -910,6 +1234,12 @@
       setTimeout(() => schedule_trade_calc_hold_paint(), 1200);
     } finally {
       trade_calc_inflight = false;
+      if (trade_calc_pending) {
+        trade_calc_pending = false;
+        setTimeout(() => {
+          run_trade_calculator_fix(true).catch(() => {});
+        }, 250);
+      }
     }
   }
 
@@ -917,16 +1247,30 @@
     let select = document.getElementById("inventory-source-select");
     let status = document.getElementById("inventory-filter-status-message");
     let scan = document.getElementById("hide-player-items-scan");
-    let kick = () => {
+    let kick = (delay_ms = 600) => {
       trade_calc_ran_for = "";
       setTimeout(() => {
         run_trade_calculator_fix(true).catch(() => {});
-      }, 600);
+      }, delay_ms);
     };
-    if (select) select.addEventListener("change", kick);
-    if (scan) scan.addEventListener("click", kick);
+    if (select) select.addEventListener("change", () => kick(400));
+    // Scan is async — don't race at 600ms. Status text / mix grid updates
+    // are the real completion signals; a long fallback covers slow scans.
+    if (scan)
+      scan.addEventListener("click", () => {
+        trade_calc_ran_for = "";
+        kick(2500);
+      });
     if (status) {
-      let obs = new MutationObserver(kick);
+      let last_status = String(status.textContent || "").trim();
+      let obs = new MutationObserver(() => {
+        let next = String(status.textContent || "").trim();
+        if (next === last_status) return;
+        last_status = next;
+        // Inventory is ready when status shows mine/other player inventory.
+        if (/showing .+inventory/i.test(next)) kick(300);
+        else kick(800);
+      });
       obs.observe(status, {
         childList: true,
         subtree: true,
@@ -942,6 +1286,455 @@
     setInterval(() => {
       run_trade_calculator_fix(false).catch(() => {});
     }, 1500);
+  }
+
+  const TC_USD_OPTION = "Show Routility USD Values";
+  const TC_TRADE_STAMP_ID = "nte-roli-tc-trade";
+  let tc_usd_roli = null;
+  let tc_usd_routility = null;
+  let tc_usd_enabled = false;
+  let tc_usd_timer = 0;
+  let tc_usd_observer = null;
+  let tc_usd_last_key = "";
+  let ad_usd_timer = 0;
+  let ad_usd_observer = null;
+  let usd_storage_hooked = false;
+
+  function tc_normalize_label(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[#,()\-:'`"]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function tc_get_usd(item_id, name) {
+    let item = tc_usd_routility?.items?.[String(item_id)];
+    if (item && typeof item.usd === "number") return item.usd;
+    let labels = [];
+    let from_name = tc_normalize_label(name);
+    if (from_name) labels.push(from_name);
+    let row = tc_usd_roli?.items?.[String(item_id)];
+    if (Array.isArray(row)) {
+      let row_name = tc_normalize_label(row[0]);
+      let row_acr = tc_normalize_label(row[1]);
+      if (row_name) labels.push(row_name);
+      if (row_acr) labels.push(row_acr);
+    }
+    if (!labels.length || !tc_usd_routility?.items) return 0;
+    if (!tc_usd_routility.__nte_by_name) {
+      let map = Object.create(null);
+      for (let entry of Object.values(tc_usd_routility.items)) {
+        if (!entry || typeof entry.usd !== "number" || !(entry.usd > 0))
+          continue;
+        for (let raw of [entry.name, entry.acr]) {
+          let key = tc_normalize_label(raw);
+          if (!key || map[key] != null) continue;
+          map[key] = entry.usd;
+        }
+      }
+      tc_usd_routility.__nte_by_name = map;
+    }
+    for (let label of labels) {
+      if (tc_usd_routility.__nte_by_name[label] != null)
+        return tc_usd_routility.__nte_by_name[label];
+    }
+    return 0;
+  }
+
+  function format_tc_usd(value) {
+    let numeric = Number(value) || 0;
+    let whole = Math.abs(numeric - Math.round(numeric)) < 0.005;
+    return `$${numeric.toLocaleString(undefined, {
+      minimumFractionDigits: whole ? 0 : 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  function read_stamped_trade() {
+    let el = document.getElementById(TC_TRADE_STAMP_ID);
+    if (!el) return { offer: [], request: [] };
+    try {
+      let data = JSON.parse(el.textContent || "null");
+      if (!data || !Array.isArray(data.offer) || !Array.isArray(data.request))
+        return { offer: [], request: [] };
+      return data;
+    } catch {
+      return { offer: [], request: [] };
+    }
+  }
+
+  function sum_side_usd(items) {
+    let total = 0;
+    for (let item of items || []) {
+      total += Number(tc_get_usd(item?.id, item?.name) || 0);
+    }
+    return total;
+  }
+
+  function ensure_tc_usd_styles() {
+    let style = document.getElementById("nte-tc-usd-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "nte-tc-usd-style";
+      (document.head || document.documentElement).appendChild(style);
+    }
+    if (style.dataset.nteVer === "usd-tc-4") return;
+    style.dataset.nteVer = "usd-tc-4";
+    style.textContent = `
+.nte-tc-usd-label{
+  padding-top:11px;
+  color:#e8c36a;
+}
+.nte-tc-usd-number{
+  color:#e8c36a;
+  font-weight:600;
+  font-size:19px;
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.trade-delta-card.nte-has-usd-delta,
+.trade-delta-card:has(#usd_delta_row:not([style*="display: none"])){
+  grid-template-columns:1fr 1fr 1fr!important;
+  max-width:760px!important;
+}
+#usd_delta_row.trade-delta-segment{
+  min-width:0;
+}
+.trade-delta-card.nte-has-usd-delta .trade-delta-amount,
+.trade-delta-card.nte-has-usd-delta .trade-delta-value{
+  white-space:nowrap;
+}
+#usd_delta_row .nte-tc-usd-delta-icon,
+.nte-tc-usd-number img{
+  display:none!important;
+}
+`;
+  }
+
+  function ensure_side_usd_row(prefix) {
+    let num = document.getElementById(prefix + "_usd_total_textbox");
+    if (num) {
+      num.querySelectorAll("img").forEach((el) => el.remove());
+      return num;
+    }
+    let rap = document.getElementById(prefix + "_rap_total_textbox");
+    if (!rap) return null;
+    let num_col = rap.parentElement;
+    let label_col = num_col?.previousElementSibling;
+    if (!(num_col instanceof Element) || !(label_col instanceof Element))
+      return null;
+    let label = document.createElement("span");
+    label.className = "trade-total-label mr-2 text-right d-block nte-tc-usd-label";
+    label.textContent = "USD";
+    label_col.appendChild(label);
+    num = document.createElement("span");
+    num.id = prefix + "_usd_total_textbox";
+    num.className = "trade-total-number d-block nte-tc-usd-number";
+    num.textContent = "$0";
+    num_col.appendChild(num);
+    return num;
+  }
+
+  function sync_usd_delta_arrow(row, even) {
+    let arrow = row.querySelector(".trade-delta-arrow");
+    if (!arrow) return;
+    if (even) {
+      arrow.innerHTML = "";
+      return;
+    }
+    let source =
+      document.querySelector("#rap_delta_row .trade-delta-arrow") ||
+      document.querySelector("#value_delta_row .trade-delta-arrow");
+    if (source && source.innerHTML.trim()) arrow.innerHTML = source.innerHTML;
+  }
+
+  function ensure_usd_delta_row() {
+    let row = document.getElementById("usd_delta_row");
+    if (!row) {
+      let rap = document.getElementById("rap_delta_row");
+      if (!rap) return null;
+      row = rap.cloneNode(true);
+      row.id = "usd_delta_row";
+      row.classList.remove("trade-delta-even");
+      let label = row.querySelector(".trade-delta-label");
+      if (label) label.textContent = "USD";
+      let badge = row.querySelector(".trade-delta-badge");
+      if (badge) badge.id = "usd_delta_badge";
+      let amount = row.querySelector(".trade-delta-amount");
+      if (amount) amount.id = "usd_delta_amount";
+      rap.after(row);
+    }
+    row.querySelectorAll(".nte-tc-usd-delta-icon").forEach((el) => el.remove());
+    let value = row.querySelector(".trade-delta-value");
+    if (value) {
+      value.id = "usd_delta_value";
+      value.style.removeProperty("display");
+      value.style.removeProperty("gap");
+      value.style.removeProperty("color");
+      value.querySelectorAll("img, .nte-tc-usd-text").forEach((el) => el.remove());
+    }
+    return row;
+  }
+
+  function set_side_usd_row(prefix, amount, show) {
+    let num = ensure_side_usd_row(prefix);
+    if (!num) return;
+    let label = num.parentElement?.previousElementSibling?.querySelector(
+      ".nte-tc-usd-label",
+    );
+    num.querySelectorAll("img, .nte-tc-usd-text").forEach((el) => el.remove());
+    num.textContent = format_tc_usd(amount);
+    num.classList.add("d-block");
+    num.style.removeProperty("display");
+    num.style.display = show ? "" : "none";
+    if (label) label.style.display = show ? "" : "none";
+  }
+
+  function paint_trade_calculator_usd() {
+    ensure_tc_usd_styles();
+    let show = tc_usd_enabled && !!tc_usd_routility?.items;
+    let trade = show ? read_stamped_trade() : { offer: [], request: [] };
+    let offer = sum_side_usd(trade.offer);
+    let request = sum_side_usd(trade.request);
+    let has_items = !!(trade.offer.length || trade.request.length);
+    let rap_row = document.getElementById("rap_delta_row");
+    let rap_visible =
+      rap_row instanceof Element &&
+      getComputedStyle(rap_row).display !== "none";
+    let show_delta = show && has_items && rap_visible;
+    let key = `${show ? 1 : 0}|${has_items ? 1 : 0}|${show_delta ? 1 : 0}|${offer}|${request}`;
+    if (key === tc_usd_last_key) return;
+    set_side_usd_row("offer", offer, show && has_items);
+    set_side_usd_row("request", request, show && has_items);
+    let delta_row = ensure_usd_delta_row();
+    if (!delta_row) return;
+    tc_usd_last_key = key;
+    delta_row.style.display = show_delta ? "" : "none";
+    let card = document.getElementById("trade_delta_card");
+    if (card) card.classList.toggle("nte-has-usd-delta", show_delta);
+    if (!show_delta) return;
+    let diff = request - offer;
+    let gain = diff > 0;
+    let even = Math.abs(diff) < 0.005;
+    delta_row.classList.toggle("trade-delta-even", even);
+    delta_row.classList.toggle("trade-delta-underpay", gain && !even);
+    delta_row.classList.toggle("trade-delta-overpay", !gain && !even);
+    sync_usd_delta_arrow(delta_row, even);
+    let badge = document.getElementById("usd_delta_badge");
+    if (badge) badge.textContent = even ? "Even" : gain ? "You Gain" : "You Lose";
+    let value = document.getElementById("usd_delta_value");
+    if (!value) return;
+    value.querySelectorAll("img, .nte-tc-usd-text").forEach((el) => el.remove());
+    value.textContent = format_tc_usd(Math.abs(diff));
+  }
+
+  function schedule_trade_calculator_usd() {
+    clearTimeout(tc_usd_timer);
+    tc_usd_timer = setTimeout(() => {
+      paint_trade_calculator_usd();
+    }, 60);
+  }
+
+  async function refresh_tc_usd_data() {
+    tc_usd_enabled = (await get_option(TC_USD_OPTION)) === true;
+    if (!tc_usd_enabled) {
+      tc_usd_last_key = "";
+      paint_usd_for_current_page();
+      return;
+    }
+    try {
+      tc_usd_routility = await send_message("getRoutilityData");
+    } catch {
+      tc_usd_routility = null;
+    }
+    try {
+      tc_usd_roli =
+        (await send_message("getDataPeriodic")) ||
+        (await send_message("getData"));
+    } catch {
+      tc_usd_roli = null;
+    }
+    tc_usd_last_key = "";
+    paint_usd_for_current_page();
+  }
+
+  function watch_trade_stamp_el() {
+    let stamp = document.getElementById(TC_TRADE_STAMP_ID);
+    if (!stamp || stamp.dataset.nteUsdObs === "1") return;
+    stamp.dataset.nteUsdObs = "1";
+    new MutationObserver(() => schedule_trade_calculator_usd()).observe(stamp, {
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    schedule_trade_calculator_usd();
+  }
+
+  function watch_trade_calculator_usd() {
+    if (tc_usd_observer) return;
+    let root =
+      document.querySelector(".trade-totals-grid") ||
+      document.querySelector(".trade_container_grid") ||
+      document.body;
+    tc_usd_observer = new MutationObserver(() => {
+      watch_trade_stamp_el();
+      schedule_trade_calculator_usd();
+    });
+    tc_usd_observer.observe(root, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    watch_trade_stamp_el();
+    watch_usd_storage();
+    setInterval(() => {
+      watch_trade_stamp_el();
+      schedule_trade_calculator_usd();
+    }, 400);
+  }
+
+  function watch_usd_storage() {
+    if (usd_storage_hooked) return;
+    usd_storage_hooked = true;
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      if (changes[TC_USD_OPTION] || changes.data || changes.routility_data)
+        refresh_tc_usd_data().catch(() => {});
+    });
+  }
+
+  function paint_usd_for_current_page() {
+    if (is_trade_calculator()) paint_trade_calculator_usd();
+    else if (is_trade_ads_page()) paint_trade_ads_usd();
+  }
+
+  function ad_side_items(side) {
+    let items = [];
+    if (!side) return items;
+    for (let img of side.querySelectorAll("img.ad_item_img")) {
+      let onclick = img.getAttribute("onclick") || "";
+      let match = onclick.match(/item_select_handler\s*\(\s*(\d+)/);
+      if (!match) continue;
+      let title = img.getAttribute("data-original-title") || "";
+      let name = title.split(/<br\s*\/?>/i)[0].replace(/<[^>]+>/g, "").trim();
+      items.push({ id: match[1], name });
+    }
+    return items;
+  }
+
+  function ensure_ad_usd_styles() {
+    let style = document.getElementById("nte-ad-usd-style");
+    if (!style) {
+      style = document.createElement("style");
+      style.id = "nte-ad-usd-style";
+      (document.head || document.documentElement).appendChild(style);
+    }
+    if (style.dataset.nteVer === "usd-ad-2") return;
+    style.dataset.nteVer = "usd-ad-2";
+    style.textContent = `
+.nte-ad-usd-label{
+  color:#e8c36a;
+}
+.stat_value.nte-ad-usd-value{
+  color:#e8c36a;
+}
+`;
+  }
+
+  function ensure_ad_side_usd(details) {
+    let label = details.querySelector(":scope > .nte-ad-usd-label");
+    let num = details.querySelector(":scope > .nte-ad-usd-value");
+    if (!label) {
+      label = document.createElement("div");
+      label.textContent = "USD";
+    }
+    if (!num) {
+      num = document.createElement("div");
+    }
+    label.className = "stat_title nte-ad-usd-label";
+    num.className = "stat_value nte-ad-usd-value";
+    let rap = details.querySelector(":scope > .stat_rap");
+    if (rap) {
+      rap.after(label);
+      label.after(num);
+    } else if (!label.isConnected) {
+      details.appendChild(label);
+      details.appendChild(num);
+    }
+    return { label, num };
+  }
+
+  function paint_ad_side_usd(side, show) {
+    let details = side?.querySelector(".ad_side_details");
+    if (!details) return;
+    if (!show) {
+      details.querySelector(":scope > .nte-ad-usd-label")?.remove();
+      details.querySelector(":scope > .nte-ad-usd-value")?.remove();
+      return;
+    }
+    let items = ad_side_items(side);
+    let row = ensure_ad_side_usd(details);
+    row.num.textContent = items.length
+      ? format_tc_usd(sum_side_usd(items))
+      : "-";
+  }
+
+  function paint_trade_ads_usd() {
+    ensure_ad_usd_styles();
+    let show = tc_usd_enabled && !!tc_usd_routility?.items;
+    for (let card of document.querySelectorAll(".mix_item")) {
+      paint_ad_side_usd(card.querySelector(".ad_side_left"), show);
+      paint_ad_side_usd(card.querySelector(".ad_side_right"), show);
+    }
+  }
+
+  function schedule_trade_ads_usd() {
+    clearTimeout(ad_usd_timer);
+    ad_usd_timer = setTimeout(() => {
+      paint_trade_ads_usd();
+    }, 80);
+  }
+
+  function watch_trade_ads_usd() {
+    if (ad_usd_observer) return;
+    let root =
+      document.querySelector(".mix_container") ||
+      document.querySelector(".trade_ads_container") ||
+      document.body;
+    ad_usd_observer = new MutationObserver(() => schedule_trade_ads_usd());
+    ad_usd_observer.observe(root, {
+      childList: true,
+      subtree: true,
+    });
+    watch_usd_storage();
+    window.addEventListener("hashchange", schedule_trade_ads_usd);
+  }
+
+  async function boot_trade_ads_usd() {
+    try {
+      await wait_for(".mix_item .ad_side_details, .ad_side_details", 20000);
+    } catch {
+      return;
+    }
+    watch_trade_ads_usd();
+    await refresh_tc_usd_data();
+    setTimeout(() => schedule_trade_ads_usd(), 500);
+    setTimeout(() => schedule_trade_ads_usd(), 1500);
+  }
+
+  async function boot_trade_calculator_usd() {
+    try {
+      await wait_for(".trade-totals-grid, #offer_rap_total_textbox", 20000);
+    } catch {
+      return;
+    }
+    ensure_trade_calc_bridge();
+    await inject_trade_calc_page_script();
+    watch_trade_calculator_usd();
+    await refresh_tc_usd_data();
+    setTimeout(() => schedule_trade_calculator_usd(), 500);
+    setTimeout(() => schedule_trade_calculator_usd(), 1500);
   }
 
   async function boot_trade_calculator() {
@@ -960,11 +1753,16 @@
   }
 
   async function boot() {
-    if (!(await is_enabled())) return;
     if (is_trade_calculator()) {
-      await boot_trade_calculator();
+      boot_trade_calculator_usd().catch(() => {});
+      if (await is_enabled()) await boot_trade_calculator();
       return;
     }
+    if (is_trade_ads_page()) {
+      boot_trade_ads_usd().catch(() => {});
+      return;
+    }
+    if (!(await is_enabled())) return;
     let user_id = player_id_from_path();
     if (!user_id) return;
     await run_for_player(user_id);

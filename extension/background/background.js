@@ -64,7 +64,7 @@ if (typeof importScripts === "function") {
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick People Search","enabledByDefault":true,"path":"quick-people-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
@@ -2295,7 +2295,7 @@ const trade_history_cache_max_entries = 256;
 const trade_history_user_cache_max_entries = 512;
 const trade_history_ciiid_cache_max_entries = 1024;
 const trade_history_thumb_cache_max_entries = 2048;
-const item_proofs_api_url = "https://roautotrade.com/api/messages/search";
+const item_proofs_api_url = "https://nevos-extension.com/api/proofs/search";
 const item_proofs_cache_ttl_ms = 10 * 60 * 1000;
 const item_proofs_cache_max_entries = 256;
 const item_proofs_max_results = 12;
@@ -2408,7 +2408,9 @@ function normalize_item_proof_result(raw) {
         .map((entry) => String(entry || "").trim())
         .filter((entry) => /^https:\/\/[^ ]+/i.test(entry))
     : [];
+  let api_timestamp = Number(raw?.timestamp || 0);
   let timestamp =
+    (Number.isFinite(api_timestamp) && api_timestamp > 0 ? api_timestamp : 0) ||
     parse_item_proof_timestamp_from_id(raw?.id) ||
     parse_item_proof_timestamp_from_content(raw?.content);
   return {
@@ -2422,7 +2424,9 @@ function normalize_item_proof_result(raw) {
 
 function normalize_item_proof_image_url(value) {
   let url = String(value || "").trim();
-  return /^https:\/\/roautotrade\.com\/api\/images\/[^ ]+/i.test(url)
+  return /^https:\/\/nevos-extension\.com\/api\/proofs\/images\/[0-9]{5,32}$/i.test(
+    url,
+  )
     ? url
     : "";
 }
@@ -2460,10 +2464,7 @@ async function fetch_item_proofs_api(search_term) {
     `${item_proofs_api_url}/${encodeURIComponent(normalized_term)}`,
     {
       method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
+      headers: nte_api_headers({ "Content-Type": "application/json" }),
     },
   );
 
@@ -2498,6 +2499,11 @@ async function fetch_item_proofs_api(search_term) {
   let results = Array.isArray(data.results)
     ? data.results.map(normalize_item_proof_result)
     : [];
+  results.sort(
+    (a, b) =>
+      (Number(b?.timestamp) || 0) - (Number(a?.timestamp) || 0) ||
+      String(b?.id || "").localeCompare(String(a?.id || "")),
+  );
   normalized = {
     searchTerm: String(data.search_term || normalized_term),
     itemId: normalize_trade_history_asset_id(data.item_id),
@@ -2521,9 +2527,10 @@ async function get_item_proofs(message) {
   let asset_id = normalize_trade_history_asset_id(message?.assetId);
   let candidates = [];
 
-  if (item_name) candidates.push({ term: item_name, mode: "name" });
-  if (asset_id && asset_id !== item_name)
-    candidates.push({ term: asset_id, mode: "asset" });
+  // Prefer asset id so Rolimons meta resolves to the canonical name + acronym.
+  if (asset_id) candidates.push({ term: asset_id, mode: "asset" });
+  if (item_name && item_name !== asset_id)
+    candidates.push({ term: item_name, mode: "name" });
   if (!candidates.length) {
     return {
       success: false,
@@ -2539,7 +2546,7 @@ async function get_item_proofs(message) {
       let data = await fetch_item_proofs_api(candidate.term);
       let response = {
         success: true,
-        source: "roautotrade",
+        source: "nevos-extension",
         searchMode: candidate.mode,
         searchTerm: data.searchTerm || candidate.term,
         itemId: data.itemId || asset_id,
@@ -2550,6 +2557,13 @@ async function get_item_proofs(message) {
       };
       if (response.results.length > 0) return response;
       if (!best_empty) best_empty = response;
+      // Asset id already resolved to the same name/acronym tokens — don't
+      // burn another search request for an identical empty result.
+      if (
+        candidate.mode === "asset" &&
+        (data.itemName || data.acronym || data.itemId)
+      )
+        break;
     } catch (err) {
       last_error = err?.message || "Proofs could not be loaded right now.";
     }
@@ -2576,9 +2590,9 @@ async function fetch_item_proof_image_data(url) {
   if (cached !== null) return cached;
 
   let response = await fetch(normalized_url, {
-    headers: {
+    headers: nte_api_headers({
       Accept: "image/*,*/*;q=0.8",
-    },
+    }),
   });
 
   if (!response.ok) {
@@ -2697,7 +2711,11 @@ function normalize_trade_history_items(raw_items) {
   let items = [];
   let seen = new Set();
   for (let item of Array.isArray(raw_items) ? raw_items : []) {
-    let uaid = normalize_trade_history_uaid(item?.userAssetId);
+    let uaid =
+      normalize_trade_history_uaid(item?.userAssetId) ||
+      normalize_trade_history_uaid(item?.uaid) ||
+      normalize_trade_history_uaid(item?.userAsset?.userAssetId) ||
+      normalize_trade_history_uaid(item?.userAsset?.id);
     let ciiid = normalize_trade_history_ciiid(item?.ciiid);
     let asset_id = resolve_trade_history_item_asset_id(item);
     let dedupe_key = ciiid
@@ -2752,6 +2770,7 @@ function merge_trade_history_items_by_asset(items) {
 async function resolve_trade_history_items_uaids(items) {
   return Promise.all(
     (Array.isArray(items) ? items : []).map(async (item) => {
+      if (item?.uaid) return item;
       if (!item?.ciiid) return item;
       let resolved_uaid = await resolve_trade_history_uaid_from_ciiid(
         item.ciiid,
@@ -2783,6 +2802,61 @@ function get_trade_history_item_name(item_data, asset_id) {
   return Array.isArray(row) && row[0] ? String(row[0]) : `Asset ${asset_id}`;
 }
 
+function is_usable_trade_history_thumb_url(url) {
+  let image_url = String(url || "").trim();
+  return (
+    !!image_url && !/\/(BrokenImage|UnknownImage)\//i.test(image_url)
+  );
+}
+
+function classify_trade_history_thumb_id(asset_id, item_data, face_map) {
+  let key = String(asset_id || "").trim();
+  let target =
+    typeof RolimonsItemDetails !== "undefined" &&
+    RolimonsItemDetails.resolve_roblox_catalog_target
+      ? RolimonsItemDetails.resolve_roblox_catalog_target(
+          item_data,
+          key,
+          face_map,
+        )
+      : null;
+  if (target?.isBundle && target.id)
+    return { original: key, fetchId: String(target.id), isBundle: true };
+  if (item_data?.bundleIds?.[key])
+    return { original: key, fetchId: key, isBundle: true };
+  return { original: key, fetchId: key, isBundle: false };
+}
+
+async function fetch_trade_history_thumb_chunk(ids, is_bundle) {
+  let out = {};
+  let chunk = [
+    ...new Set((ids || []).map(normalize_trade_history_asset_id).filter(Boolean)),
+  ];
+  if (!chunk.length) return out;
+  try {
+    let response = await fetch(
+      is_bundle
+        ? `https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=${chunk.join(",")}&size=150x150&format=Png&isCircular=false`
+        : `https://thumbnails.roblox.com/v1/assets?assetIds=${chunk.join(",")}&size=150x150&format=Png&isCircular=false`,
+      {
+        cache: "no-store",
+        credentials: "omit",
+      },
+    );
+    let payload = await parse_json_response_safe(
+      response,
+      is_bundle ? "Roblox bundle thumbnails" : "Roblox asset thumbnails",
+    );
+    for (let row of payload?.data || []) {
+      let target_id = normalize_trade_history_asset_id(row?.targetId);
+      let image_url = String(row?.imageUrl || "").trim();
+      if (!target_id || !is_usable_trade_history_thumb_url(image_url)) continue;
+      out[target_id] = image_url;
+    }
+  } catch {}
+  return out;
+}
+
 async function fetch_trade_history_asset_thumbnails(asset_ids) {
   let out = {};
   let wanted = [
@@ -2797,40 +2871,85 @@ async function fetch_trade_history_asset_thumbnails(asset_ids) {
       trade_history_thumb_cache,
       asset_id,
     );
-    if (cached) out[asset_id] = cached;
+    if (is_usable_trade_history_thumb_url(cached)) out[asset_id] = cached;
     else missing.push(asset_id);
   }
+  if (!missing.length) return out;
 
-  for (let i = 0; i < missing.length; i += 50) {
-    let chunk = missing.slice(i, i + 50);
-    if (!chunk.length) continue;
+  let item_data = await get_cached_item_data(600000).catch(() => null);
+  let face_map = await fetch_rolimons_player_face_map().catch(() => ({}));
+  let classified = missing.map((id) =>
+    classify_trade_history_thumb_id(id, item_data, face_map),
+  );
+  let fetch_to_originals = {};
+  let asset_fetch_ids = [];
+  let bundle_fetch_ids = [];
+  for (let row of classified) {
+    (row.isBundle ? bundle_fetch_ids : asset_fetch_ids).push(row.fetchId);
+    if (!fetch_to_originals[row.fetchId]) fetch_to_originals[row.fetchId] = [];
+    if (!fetch_to_originals[row.fetchId].includes(row.original))
+      fetch_to_originals[row.fetchId].push(row.original);
+  }
 
-    try {
-      let response = await fetch(
-        `https://thumbnails.roblox.com/v1/assets?assetIds=${chunk.join(",")}&size=150x150&format=Png&isCircular=false`,
-        {
-          cache: "no-store",
-          credentials: "omit",
-        },
+  function remember_thumb(original, image_url) {
+    if (!original || !is_usable_trade_history_thumb_url(image_url)) return;
+    if (out[original]) return;
+    out[original] = image_url;
+    set_trade_history_cached_value(
+      trade_history_thumb_cache,
+      original,
+      image_url,
+      trade_history_thumb_cache_ttl_ms,
+      trade_history_thumb_cache_max_entries,
+    );
+  }
+
+  async function apply_fetched(fetched) {
+    for (let [fetch_id, image_url] of Object.entries(fetched || {})) {
+      let originals = fetch_to_originals[fetch_id] || [fetch_id];
+      for (let original of originals) remember_thumb(original, image_url);
+    }
+  }
+
+  async function fetch_kind(ids, is_bundle) {
+    let list = [
+      ...new Set((ids || []).map(normalize_trade_history_asset_id).filter(Boolean)),
+    ];
+    for (let i = 0; i < list.length; i += 50) {
+      await apply_fetched(
+        await fetch_trade_history_thumb_chunk(list.slice(i, i + 50), is_bundle),
       );
-      let payload = await parse_json_response_safe(
-        response,
-        "Roblox asset thumbnails",
-      );
-      for (let row of payload?.data || []) {
-        let asset_id = normalize_trade_history_asset_id(row?.targetId);
-        let image_url = String(row?.imageUrl || "").trim();
-        if (!asset_id || !image_url) continue;
-        out[asset_id] = image_url;
-        set_trade_history_cached_value(
-          trade_history_thumb_cache,
-          asset_id,
-          image_url,
-          trade_history_thumb_cache_ttl_ms,
-          trade_history_thumb_cache_max_entries,
-        );
+    }
+  }
+
+  await Promise.all([
+    fetch_kind(asset_fetch_ids, false),
+    fetch_kind(bundle_fetch_ids, true),
+  ]);
+
+  let leftover = missing.filter(
+    (id) => !is_usable_trade_history_thumb_url(out[id]),
+  );
+  if (leftover.length) {
+    let retry_assets = [];
+    let retry_bundles = [];
+    for (let id of leftover) {
+      let row = classified.find((entry) => entry.original === id);
+      let fetch_id = row?.fetchId || id;
+      if (!fetch_to_originals[id]) fetch_to_originals[id] = [];
+      if (!fetch_to_originals[id].includes(id)) fetch_to_originals[id].push(id);
+      if (row?.isBundle) retry_assets.push(id);
+      else retry_bundles.push(fetch_id === id ? id : fetch_id);
+      if (fetch_id !== id) {
+        if (!fetch_to_originals[fetch_id]) fetch_to_originals[fetch_id] = [];
+        if (!fetch_to_originals[fetch_id].includes(id))
+          fetch_to_originals[fetch_id].push(id);
       }
-    } catch {}
+    }
+    await Promise.all([
+      fetch_kind(retry_assets, false),
+      fetch_kind(retry_bundles, true),
+    ]);
   }
 
   return out;

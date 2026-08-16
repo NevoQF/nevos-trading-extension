@@ -72,6 +72,8 @@
   function send_message(message) {
     return new Promise((resolve) => {
       try {
+        if (typeof globalThis.nte_extension_alive === "function" && !globalThis.nte_extension_alive())
+          return resolve(null);
         const result = chrome.runtime.sendMessage(message, (response) => {
           resolve(response);
         });

@@ -3,6 +3,18 @@
     globalThis.chrome = globalThis.browser;
   }
 
+  // Chrome invalidates old content-script contexts after reload/update/disable.
+  // Call sites should check this before chrome.runtime / chrome.storage use.
+  if (typeof globalThis.nte_extension_alive !== "function") {
+    globalThis.nte_extension_alive = function nte_extension_alive() {
+      try {
+        return !!(globalThis.chrome && chrome.runtime && chrome.runtime.id);
+      } catch {
+        return false;
+      }
+    };
+  }
+
   function nte_mark_roblox_request_url(value) {
     try {
       let url = new URL(String(value), globalThis.location?.href || "https://www.roblox.com/");

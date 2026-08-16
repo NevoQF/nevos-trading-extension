@@ -23,7 +23,7 @@ const chevron_svg =
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 
@@ -2487,6 +2487,15 @@ function trade_ads_attach_picker(root, opts) {
     thumb_wrap.appendChild(img);
     let hold_badge = pick_hold_badge_el(item);
     if (hold_badge) thumb_wrap.appendChild(hold_badge);
+    let copies = Math.max(0, Math.floor(Number(item?.copyCount) || 0));
+    if (copies > 1) {
+      let qty = document.createElement("div");
+      qty.className = "ta-pick-copy-count";
+      qty.textContent = `x${copies}`;
+      qty.setAttribute("aria-label", `${copies} copies`);
+      qty.title = `${copies} copies`;
+      thumb_wrap.appendChild(qty);
+    }
     let tradable = item.tradable !== false;
     if (!tradable) {
       cell.classList.add("is-on-hold");
@@ -3684,10 +3693,27 @@ async function render_trade_ads_verify_flow(root, status, vu) {
       chrome.runtime.sendMessage({ type: "trade_ads_auto_verify" }, resolve),
     );
     if (!r?.ok) {
-      await trade_ads_merge_verify_ui({
-        step: "idle",
-        error: r?.error || "Verification failed",
-      });
+      let err = r?.error || "Verification failed";
+      let phrase = String(r?.phrase || "");
+      if (/sign in/i.test(err)) {
+        await trade_ads_merge_verify_ui({
+          step: "idle",
+          error: err,
+          phrase: "",
+        });
+      } else {
+        if (!phrase) {
+          let p = await new Promise((resolve) =>
+            chrome.runtime.sendMessage({ type: "trade_ads_get_phrase" }, resolve),
+          );
+          if (p?.ok) phrase = String(p.phrase || "");
+        }
+        await trade_ads_merge_verify_ui({
+          step: "manual",
+          error: err,
+          phrase,
+        });
+      }
       vu = (await get_storage([trade_ads_verify_storage_key]))[
         trade_ads_verify_storage_key
       ];
@@ -3698,6 +3724,75 @@ async function render_trade_ads_verify_flow(root, status, vu) {
   }
 
   let name = escape_html(status.roblox?.name || "");
+  let phrase = String(vu.phrase || "");
+  if (step === "manual" || (vu.error && phrase)) {
+    panel.innerHTML = `
+      <div class="ta-card">
+        <div class="ta-card-head" style="align-items:center;margin-bottom:14px;">
+          <div class="ta-card-title">Rolimons Trade Ads</div>
+          ${name ? `<div class="ta-user-pill">${name}</div>` : ""}
+        </div>
+        ${vu.error ? `<div class="ta-status-line ta-err" style="margin-bottom:10px">${escape_html(vu.error)}</div>` : ""}
+        <p class="ta-lede">Add this phrase to your Roblox profile About, save, wait a few seconds, then check.</p>
+        ${
+          phrase
+            ? `<div class="ta-phrase-box" id="ta-phrase-text">${escape_html(phrase)}</div>
+        <div class="ta-verify-actions">
+          <button type="button" class="ta-btn ta-btn-secondary" id="ta-copy-phrase">Copy phrase</button>
+          <a class="ta-btn ta-btn-secondary" id="ta-open-profile" href="https://www.roblox.com/users/profile" target="_blank" rel="noopener">Open profile</a>
+        </div>`
+            : ""
+        }
+        <button type="button" class="ta-btn ta-btn-primary" id="ta-verify-now" style="width:100%;margin-top:10px;">I've added it</button>
+        <button type="button" class="ta-btn ta-btn-secondary" id="ta-auto-verify" style="width:100%;margin-top:8px;">Try auto again</button>
+      </div>
+    `;
+    let copy_btn = panel.querySelector("#ta-copy-phrase");
+    if (copy_btn) {
+      copy_btn.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(phrase);
+          copy_btn.textContent = "Copied";
+          setTimeout(() => {
+            copy_btn.textContent = "Copy phrase";
+          }, 1200);
+        } catch {}
+      });
+    }
+    panel.querySelector("#ta-verify-now")?.addEventListener("click", async () => {
+      let btn = panel.querySelector("#ta-verify-now");
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = "Checking…";
+      }
+      let r = await new Promise((resolve) =>
+        chrome.runtime.sendMessage({ type: "trade_ads_verify_now" }, resolve),
+      );
+      if (!r?.ok) {
+        await trade_ads_merge_verify_ui({
+          step: "manual",
+          error: r?.error || "Verification failed",
+          phrase,
+        });
+        vu = (await get_storage([trade_ads_verify_storage_key]))[
+          trade_ads_verify_storage_key
+        ];
+        return render_trade_ads_verify_flow(root, status, vu);
+      }
+      await trade_ads_merge_verify_ui({
+        step: "idle",
+        error: "",
+        phrase: "",
+      });
+      return render_trade_ads_tab();
+    });
+    panel.querySelector("#ta-auto-verify")?.addEventListener("click", async () => {
+      await trade_ads_merge_verify_ui({ step: "loading", error: "" });
+      render_trade_ads_verify_flow(layout_root, status, { step: "loading" });
+    });
+    return;
+  }
+
   panel.innerHTML = `
     <div class="ta-card">
       <div class="ta-card-head" style="align-items:center;margin-bottom:14px;">
@@ -5997,6 +6092,56 @@ async function ms_load_inventory_session() {
   return ms_inventory_session_promise;
 }
 
+function open_totp_autofill_from_mass_send() {
+  let tab = document.querySelector('.tab[data-tab="options"]');
+  tab?.click();
+  requestAnimationFrame(() => {
+    let expand = document.getElementById("nte-totp-expand");
+    if (expand && expand.getAttribute("aria-expanded") !== "true") {
+      expand.click();
+    }
+    document.querySelector(".nte-totp-card")?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  });
+}
+
+async function maybe_focus_mass_send_2fa() {
+  let progress = await ms_send("ms_progress");
+  let st = await get_storage(["nte_ms_focus_2fa"]);
+  let needs =
+    !!(progress?.running && progress?.prompt?.kind) || !!st?.nte_ms_focus_2fa;
+  if (!needs) return;
+  if (st?.nte_ms_focus_2fa) {
+    try {
+      await set_storage({ nte_ms_focus_2fa: false });
+    } catch {}
+  }
+  globalThis.__nte_actions_active_category = "mass";
+  let tab = document.querySelector('.tab[data-tab="tradeactions"]');
+  let actions_root = document.getElementById("trade-actions-root");
+  let on_mass =
+    tab?.classList.contains("active") &&
+    actions_get_active_category(actions_root) === "mass";
+  if (on_mass) {
+    let ms_root = actions_root?.querySelector("#actions-ms-root");
+    if (ms_root) {
+      ms_update_progress_ui(ms_root, progress);
+      if (progress?.running) ms_start_polling(ms_root);
+    }
+    return;
+  }
+  if (tab && !tab.classList.contains("active")) {
+    tab.click();
+    return;
+  }
+  if (!actions_root) return;
+  actions_set_active_category(actions_root, "mass");
+  let ms_root = actions_root.querySelector("#actions-ms-root");
+  if (ms_root) await render_mass_send_panel(ms_root);
+}
+
 function ms_send(type, extra) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage({ type, ...extra }, (r) => {
@@ -6487,6 +6632,12 @@ function ms_progress_text(progress) {
     let status = String(progress.status || "");
     if (/ratelimited waiting \d+s/i.test(status)) return status;
     if (/waiting for new 2fa code/i.test(status)) return status;
+    if (progress.prompt?.kind === "code") {
+      if (progress.prompt.error) return progress.prompt.error;
+      if (progress.prompt.busy) return "Checking 2FA…";
+      return "Waiting for 2FA code…";
+    }
+    if (progress.prompt?.kind === "unlock") return "Unlock 2FA secret…";
     let wait_sec = progress.wait_until
       ? Math.max(0, Math.ceil((progress.wait_until - Date.now()) / 1000))
       : 0;
@@ -6503,6 +6654,72 @@ function ms_progress_text(progress) {
   return progress.status || "Idle";
 }
 
+function ms_sync_2fa_box(root, progress) {
+  let box = root.querySelector("#ms-2fa-box");
+  if (!box) return;
+  let awaiting =
+    !!progress?.running &&
+    progress?.phase === "awaiting_2fa" &&
+    !!progress?.prompt?.kind;
+  let was_hidden = box.hidden;
+  box.hidden = !awaiting;
+  if (!awaiting) {
+    box.dataset.ms2faKind = "";
+    return;
+  }
+  let unlock = progress.prompt.kind === "unlock";
+  box.classList.toggle("is-unlock", unlock);
+  let title = box.querySelector("#ms-2fa-title");
+  let copy = box.querySelector("#ms-2fa-copy");
+  let input = box.querySelector("#ms-2fa-input");
+  let hint = box.querySelector("#ms-2fa-hint");
+  let err = box.querySelector("#ms-2fa-error");
+  let submit = box.querySelector("#ms-2fa-submit");
+  if (title)
+    title.textContent = unlock ? "Unlock 2FA secret" : "Enter 2FA code";
+  if (copy) {
+    copy.textContent = unlock
+      ? "Your saved 2FA secret is password-locked. Enter the lock password so Mass Sending can continue."
+      : "Mass Sending needs your Roblox authenticator code to keep sending.";
+  }
+  if (input) {
+    input.type = unlock ? "password" : "text";
+    input.inputMode = unlock ? "text" : "numeric";
+    input.maxLength = unlock ? 128 : 8;
+    input.placeholder = unlock ? "Lock password" : "6-digit code";
+    input.autocomplete = unlock ? "off" : "one-time-code";
+  }
+  if (hint) hint.hidden = unlock;
+  let prompt_err = String(progress.prompt?.error || "").trim();
+  let busy = progress.prompt?.busy === true;
+  let status_key = `${progress.prompt.kind}:${prompt_err || (busy ? "busy" : "wait")}`;
+  let first = was_hidden || box.dataset.ms2faKey !== status_key;
+  if (err) {
+    if (prompt_err) {
+      err.hidden = false;
+      err.textContent = prompt_err;
+    } else if (first) {
+      err.hidden = true;
+      err.textContent = "";
+    }
+  }
+  if (submit) {
+    submit.disabled = busy;
+    submit.textContent = busy
+      ? "Checking…"
+      : unlock
+        ? "Unlock"
+        : "Continue";
+  }
+  if (input) input.disabled = busy;
+  if (input && first && !busy) {
+    input.value = "";
+    input.focus();
+  }
+  box.dataset.ms2faKey = status_key;
+  box.dataset.ms2faKind = progress.prompt.kind;
+}
+
 function ms_update_progress_ui(root, progress) {
   if (!root) return;
   let line = root.querySelector("#ms-progress-line");
@@ -6517,6 +6734,7 @@ function ms_update_progress_ui(root, progress) {
     let label = run_btn.querySelector(".ms-action-label");
     if (label) label.textContent = running ? "Stop" : "Start";
   }
+  ms_sync_2fa_box(root, progress);
 }
 
 function ms_start_polling(root) {
@@ -6875,6 +7093,14 @@ async function render_mass_send_panel(root) {
           </div>
         </div>
       </div>
+      <div class="ms-2fa-box" id="ms-2fa-box" hidden>
+        <div class="ms-2fa-title" id="ms-2fa-title">Enter 2FA code</div>
+        <p class="ms-2fa-copy" id="ms-2fa-copy">Mass Sending needs your Roblox authenticator code to keep sending.</p>
+        <div class="ms-2fa-error" id="ms-2fa-error" hidden></div>
+        <input id="ms-2fa-input" class="ms-2fa-input" type="text" inputmode="numeric" maxlength="8" autocomplete="one-time-code" spellcheck="false" placeholder="6-digit code" />
+        <button type="button" class="ms-2fa-submit" id="ms-2fa-submit">Continue</button>
+        <p class="ms-2fa-hint" id="ms-2fa-hint">Want this done automatically next time? Set it up in <button type="button" class="ms-2fa-autofill-link" id="ms-2fa-open-autofill">Roblox 2FA Autofill</button>.</p>
+      </div>
       <div class="ms-actions">
         <button type="button" class="ms-action-run" id="ms-run">
           <span class="ms-action-label">Start</span>
@@ -6897,6 +7123,46 @@ async function render_mass_send_panel(root) {
   void ms_fill_user_avatars(root);
   if (typeof init_tap_tooltips === "function") init_tap_tooltips(root);
   bind_popup_external_links();
+
+  async function ms_submit_2fa() {
+    let box = root.querySelector("#ms-2fa-box");
+    let input = root.querySelector("#ms-2fa-input");
+    let err = root.querySelector("#ms-2fa-error");
+    let submit = root.querySelector("#ms-2fa-submit");
+    if (!input || box?.hidden) return;
+    let kind = box.dataset.ms2faKind === "unlock" ? "unlock" : "code";
+    let value = String(input.value || "");
+    if (submit) submit.disabled = true;
+    let res = await ms_send("ms_2fa_submit", { kind, value });
+    if (!res?.ok) {
+      if (submit) submit.disabled = false;
+      if (err) {
+        err.hidden = false;
+        err.textContent = res?.error || "Could not submit 2FA.";
+      }
+      return;
+    }
+    input.value = "";
+    if (err) {
+      err.hidden = true;
+      err.textContent = "";
+    }
+    let next = await ms_send("ms_progress");
+    ms_update_progress_ui(root, next);
+  }
+
+  root.querySelector("#ms-2fa-submit")?.addEventListener("click", () => {
+    void ms_submit_2fa();
+  });
+  root.querySelector("#ms-2fa-input")?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") {
+      ev.preventDefault();
+      void ms_submit_2fa();
+    }
+  });
+  root.querySelector("#ms-2fa-open-autofill")?.addEventListener("click", () => {
+    open_totp_autofill_from_mass_send();
+  });
 
   root.querySelector("#ms-recent-toggle")?.addEventListener("click", () => {
     let list = root.querySelector("#ms-recent-list");
@@ -7448,7 +7714,12 @@ sync_mobile_popup_class();
 init_popup_theme_switcher();
 init_settings_import_export();
 ensure_options_search_bar();
-refresh_all_panels();
+refresh_all_panels().then(() => maybe_focus_mass_send_2fa());
+try {
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message?.type === "ms_2fa_needed") void maybe_focus_mass_send_2fa();
+  });
+} catch {}
 render_permissions_banner();
 document.getElementById("brandImage").src = get_asset_url(
   "assets/icons/logo128.png",

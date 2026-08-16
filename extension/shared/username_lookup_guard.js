@@ -28,14 +28,23 @@
     }
   }
 
+  function is_guard_cache_entry(cached) {
+    return !!(
+      cached &&
+      typeof cached === "object" &&
+      Number(cached.expires_at) > 0 &&
+      Object.prototype.hasOwnProperty.call(cached, "body")
+    );
+  }
   function read_cache(key) {
     let now = Date.now();
     let cached = memory_cache.get(key);
-    if (cached && cached.expires_at > now) return cached;
+    if (cached && cached.expires_at > now && is_guard_cache_entry(cached))
+      return cached;
     if (cached) memory_cache.delete(key);
     try {
       cached = JSON.parse(sessionStorage.getItem(cache_key_prefix + key) || "null");
-      if (cached && cached.expires_at > now) {
+      if (cached && cached.expires_at > now && is_guard_cache_entry(cached)) {
         memory_cache.set(key, cached);
         return cached;
       }

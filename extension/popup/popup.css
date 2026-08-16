@@ -4577,6 +4577,19 @@ body.is-tradeads-tab .popup {
   word-break: break-all;
   margin: 10px 0;
   color: var(--text-primary);
+  user-select: all;
+}
+
+.ta-verify-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ta-verify-actions .ta-btn {
+  flex: 1;
+  text-align: center;
+  text-decoration: none;
 }
 
 .ta-overlay {
@@ -4778,6 +4791,22 @@ body.is-tradeads-tab .popup {
   line-height: 1;
   letter-spacing: 0.02em;
   text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+}
+
+.ta-pick-copy-count {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  z-index: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(10, 12, 16, 0.82);
+  color: #f5f6f8;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  pointer-events: none;
 }
 
 .ta-pick-strip-cell.is-on-hold {
@@ -8276,6 +8305,102 @@ body.is-tradeads-tab .popup {
   display: flex;
   justify-content: center;
   margin: 2px 0 6px;
+}
+
+.ms-2fa-box {
+  margin: 0 0 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent, #6c5ce7) 42%, var(--border));
+  background: color-mix(in srgb, var(--accent, #6c5ce7) 12%, var(--bg-secondary));
+}
+
+.ms-2fa-title {
+  font-size: 13px;
+  font-weight: 800;
+  margin: 0 0 4px;
+}
+
+.ms-2fa-copy {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 10px;
+  line-height: 1.4;
+}
+
+.ms-2fa-error {
+  font-size: 12px;
+  color: #f87171;
+  margin: 0 0 8px;
+}
+
+.ms-2fa-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary, var(--bg-card));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 18px;
+  letter-spacing: 0.18em;
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.ms-2fa-box.is-unlock .ms-2fa-input {
+  letter-spacing: normal;
+  font-size: 14px;
+  text-align: left;
+}
+
+.ms-2fa-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ms-2fa-submit {
+  width: 100%;
+  min-height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent, #3d7eff);
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.ms-2fa-submit:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.ms-2fa-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ms-2fa-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+
+.ms-2fa-autofill-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent, #3d7eff);
+  font: inherit;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.ms-2fa-autofill-link:hover {
+  text-decoration: underline;
 }
 
 .ms-action-run {

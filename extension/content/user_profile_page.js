@@ -1,19 +1,46 @@
 (() => {
-  function nte_send_message(msg, callback) {
+  function extension_alive() {
+    if (typeof globalThis.nte_extension_alive === "function") {
+      try {
+        return !!globalThis.nte_extension_alive();
+      } catch {}
+    }
     try {
-      let result = chrome.runtime.sendMessage(msg);
+      return !!(chrome.runtime && chrome.runtime.id);
+    } catch {
+      return false;
+    }
+  }
+
+  function nte_send_message(msg, callback) {
+    let done = false;
+    let finish = function (value) {
+      if (done) return;
+      done = true;
+      callback(value);
+    };
+    if (!extension_alive()) return finish(undefined);
+    try {
+      let result = chrome.runtime.sendMessage(msg, function (response) {
+        try {
+          if (chrome.runtime.lastError) return finish(undefined);
+        } catch {
+          return finish(undefined);
+        }
+        finish(response);
+      });
       if (result && typeof result.then === "function") {
         result.then(
           function (r) {
-            callback(r);
+            finish(r);
           },
           function () {
-            callback(undefined);
+            finish(undefined);
           },
         );
       }
     } catch (e) {
-      callback(undefined);
+      finish(undefined);
     }
   }
 
@@ -115,7 +142,12 @@
           d = window.__NTE_resolveInlineIcon(path, d);
         return d;
       }
-      return chrome.runtime.getURL(path);
+      try {
+        if (!extension_alive()) return "";
+        return chrome.runtime.getURL(path);
+      } catch {
+        return "";
+      }
     }
 
     function wait_for_elm(selector, parent) {
@@ -150,10 +182,19 @@
 
     function get_option(name) {
       return new Promise((resolve) => {
-        chrome.storage.local.get([name], function (result) {
-          if (chrome.runtime.lastError) console.info(chrome.runtime.lastError);
-          resolve(result[name]);
-        });
+        try {
+          if (!extension_alive()) return resolve(undefined);
+          chrome.storage.local.get([name], function (result) {
+            try {
+              if (chrome.runtime.lastError) return resolve(undefined);
+              resolve(result?.[name]);
+            } catch {
+              resolve(undefined);
+            }
+          });
+        } catch {
+          resolve(undefined);
+        }
       });
     }
 
@@ -380,9 +421,13 @@
     }
 
     function get_extension_title(use_full) {
-      return use_full
-        ? chrome.runtime.getManifest().name
-        : chrome.runtime.getManifest().short_name;
+      try {
+        if (!extension_alive()) return "Extension";
+        let manifest = chrome.runtime.getManifest();
+        return use_full ? manifest.name : manifest.short_name;
+      } catch {
+        return "Extension";
+      }
     }
 
     function get_color_mode() {
@@ -626,7 +671,6 @@
       if (cached !== undefined) return cached;
       if (username_id_pending[key]) return username_id_pending[key];
       username_id_pending[key] = (async () => {
-        set_username_id_cache(key, null, username_id_pending_ttl_ms);
         try {
           let resp = await fetch(
             "https://users.roblox.com/v1/usernames/users",
@@ -664,6 +708,7 @@
       "refreshData",
       () =>
         function refresh_data(callback) {
+          if (!extension_alive()) return;
           let msg = "getData";
           if (rolimons_data !== undefined) msg = "getDataPeriodic";
           let routility_msg =
@@ -674,7 +719,7 @@
             if (data) routility_data = data;
           });
           nte_send_message(msg, function (data) {
-            if (chrome.runtime.lastError) return;
+            if (!extension_alive()) return;
             rolimons_name_cache = undefined;
             rolimons_data = data;
             if (data) callback();
@@ -1709,10 +1754,15 @@
     }
   }
 
-  console.info(
-    `%c${utils.getExtensionTitle()} v${chrome.runtime.getManifest().version} has started!`,
-    "color: #0084DD",
-  );
+  try {
+    let version = extension_alive()
+      ? chrome.runtime.getManifest().version
+      : "?";
+    console.info(
+      `%c${utils.getExtensionTitle()} v${version} has started!`,
+      "color: #0084DD",
+    );
+  } catch {}
   console.info(
     "%cJoin our Discord: discord.gg/4XWE7yy2uE",
     "color: #5865F2; font-weight: bold",
@@ -1737,9 +1787,13 @@
     })();
   }
 
-  chrome.runtime.onMessage.addListener(function (msg) {
-    if (["Values", "Links", "Other"].indexOf(msg) !== -1) init();
-  });
+  try {
+    if (extension_alive()) {
+      chrome.runtime.onMessage.addListener(function (msg) {
+        if (["Values", "Links", "Other"].indexOf(msg) !== -1) init();
+      });
+    }
+  } catch {}
 
   (function () {
     var style = document.createElement("style");
@@ -1825,6 +1879,8 @@
       .nte-thumb-tag.rare+.nte-thumb-tag.proj{left:34px}
       .nte-thumb-tag.serial{right:7px;bottom:7px;padding:4px 8px;font-variant-numeric:tabular-nums;font-size:9.5px;letter-spacing:0;text-transform:none;color:#eceef2;background:rgba(16,18,22,.88);border-color:rgba(255,255,255,.1)}
       .nte-thumb-tag.serial .nte-inv-serial{color:inherit!important}
+      .nte-thumb-tag.serial.nte-serials-more{pointer-events:auto;cursor:help;z-index:2}
+      .nte-serials-tip{position:fixed;z-index:2147483646;max-width:min(260px,calc(100vw - 16px));max-height:min(220px,calc(100vh - 16px));overflow:auto;padding:8px 10px;border-radius:10px;background:rgba(15,23,42,.96);border:1px solid rgba(248,250,252,.16);box-shadow:0 10px 28px rgba(0,0,0,.45);color:#f8fafc;font-size:12px;font-weight:700;line-height:1.35;letter-spacing:.01em;font-variant-numeric:tabular-nums;pointer-events:none;white-space:normal}
       .nte-item-card.is-rare{border-color:rgba(255,255,255,.16);box-shadow:0 0 0 1px rgba(255,255,255,.05),inset 0 1px 0 rgba(255,255,255,.03),0 10px 22px rgba(0,0,0,.24)}
       .nte-item-card.is-rare:hover{border-color:rgba(255,255,255,.28);box-shadow:0 18px 38px rgba(0,0,0,.46),0 0 0 1px rgba(255,255,255,.1),inset 0 1px 0 rgba(255,255,255,.05)}
       .nte-item-card.is-proj:not(.is-rare){border-color:rgba(238,188,98,.18)}
@@ -2103,6 +2159,83 @@
             "'": "&#39;",
           })[ch],
       );
+    }
+
+    function parse_inv_serial(raw) {
+      if (raw == null || raw === "") return null;
+      let n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return null;
+      return Math.floor(n);
+    }
+
+    function add_inv_serial(entry, raw) {
+      let n = parse_inv_serial(raw);
+      if (!entry || n == null) return;
+      let serials = Array.isArray(entry.serials) ? entry.serials : [];
+      if (!serials.includes(n)) {
+        entry.serials = [...serials, n].sort((a, b) => a - b);
+      }
+      if (entry.serial == null || n < entry.serial) entry.serial = n;
+    }
+
+    var inv_serials_tip_el = null;
+    var inv_serials_tip_listening = false;
+
+    function hide_inv_serials_tip() {
+      inv_serials_tip_el?.remove();
+      inv_serials_tip_el = null;
+    }
+
+    function format_inv_serials_tip(serials) {
+      return (Array.isArray(serials) ? serials : [])
+        .map((n) => parse_inv_serial(n))
+        .filter((n) => n != null)
+        .map((n) => "#" + fmt(n))
+        .join(", ");
+    }
+
+    function show_inv_serials_tip(anchor, serials) {
+      hide_inv_serials_tip();
+      if (!anchor || anchor.querySelector?.('[data-nte-blurred="1"]')) return;
+      let text = format_inv_serials_tip(serials);
+      if (!text) return;
+      let tip = document.createElement("div");
+      tip.className = "nte-serials-tip";
+      tip.textContent = text;
+      document.body.appendChild(tip);
+      inv_serials_tip_el = tip;
+      let r = anchor.getBoundingClientRect();
+      let tw = tip.offsetWidth;
+      let th = tip.offsetHeight;
+      let left = Math.min(
+        Math.max(8, r.right - tw),
+        window.innerWidth - tw - 8,
+      );
+      let top = r.top - th - 8;
+      if (top < 8) top = Math.min(r.bottom + 8, window.innerHeight - th - 8);
+      if (top < 8) top = 8;
+      tip.style.left = Math.round(left) + "px";
+      tip.style.top = Math.round(top) + "px";
+    }
+
+    function bind_inv_serials_tip(el, serials) {
+      let list = (Array.isArray(serials) ? serials : [])
+        .map((n) => parse_inv_serial(n))
+        .filter((n) => n != null);
+      if (!el || list.length <= 1) return;
+      if (el.getAttribute("data-nte-serials-bound") === "1") return;
+      el.setAttribute("data-nte-serials-bound", "1");
+      el.classList.add("nte-serials-more");
+      el.setAttribute("aria-label", "Serials " + format_inv_serials_tip(list));
+      if (!inv_serials_tip_listening) {
+        inv_serials_tip_listening = true;
+        window.addEventListener("scroll", hide_inv_serials_tip, true);
+        window.addEventListener("resize", hide_inv_serials_tip);
+      }
+      el.addEventListener("mouseenter", () =>
+        show_inv_serials_tip(el, list),
+      );
+      el.addEventListener("mouseleave", hide_inv_serials_tip);
     }
 
     var inv_image_asset_cache = {};
@@ -3368,6 +3501,7 @@
       requestAnimationFrame(() => overlay.classList.add("active"));
 
       function close_modal() {
+        hide_inv_serials_tip();
         overlay.classList.remove("active");
         setTimeout(() => overlay.remove(), 250);
       }
@@ -3416,12 +3550,7 @@
           seen[item.assetId].total_val += val;
           seen[item.assetId].total_rap += rap;
           if (item.isOnHold) seen[item.assetId].onHoldCount++;
-          if (
-            item.serialNumber &&
-            (!seen[item.assetId].serial ||
-              item.serialNumber < seen[item.assetId].serial)
-          )
-            seen[item.assetId].serial = item.serialNumber;
+          add_inv_serial(seen[item.assetId], item.serialNumber);
           continue;
         }
 
@@ -3451,13 +3580,15 @@
               : rolimons_item
                 ? rolimons_item[5]
                 : -1,
-          serial: item.serialNumber,
+          serial: null,
+          serials: [],
           count: 1,
           total_val: val,
           total_rap: rap,
           onHoldCount: item.isOnHold ? 1 : 0,
         };
         seen[item.assetId] = entry;
+        add_inv_serial(entry, item.serialNumber);
         enriched.push(entry);
       }
 
@@ -3611,6 +3742,7 @@
             : "Blur Serials";
         }
         update_inv_serial_blur = function () {
+          hide_inv_serials_tip();
           overlay.querySelectorAll(".nte-inv-serial").forEach((el) => {
             var original =
               el.getAttribute("data-nte-serial-text") || el.textContent || "";
@@ -3764,6 +3896,7 @@
       }
 
       function render_items(sort_key, query) {
+        hide_inv_serials_tip();
         var filtered = enriched;
         if (query) {
           var q = query.toLowerCase();
@@ -3814,8 +3947,17 @@
             var dr = item.count > 1 ? item.total_rap : item.rap;
             var safe_name = escape_html(item.name);
             var serial_text = item.serial ? "#" + fmt(item.serial) : "";
+            var serials = Array.isArray(item.serials) ? item.serials : [];
             var serial_tag = serial_text
-              ? '<div class="nte-thumb-tag serial"><span class="nte-inv-serial" data-nte-serial-text="' +
+              ? '<div class="nte-thumb-tag serial' +
+                (serials.length > 1 ? " nte-serials-more" : "") +
+                '"' +
+                (serials.length > 1
+                  ? ' data-nte-serials="' +
+                    escape_html(serials.join(",")) +
+                    '"'
+                  : "") +
+                '><span class="nte-inv-serial" data-nte-serial-text="' +
                 escape_html(serial_text) +
                 '">' +
                 escape_html(serial_text) +
@@ -3880,6 +4022,17 @@
             );
           })
           .join("");
+        overlay.querySelectorAll(".nte-thumb-tag.serial[data-nte-serials]").forEach(
+          (el) => {
+            bind_inv_serials_tip(
+              el,
+              String(el.getAttribute("data-nte-serials") || "")
+                .split(",")
+                .map((n) => parse_inv_serial(n))
+                .filter((n) => n != null),
+            );
+          },
+        );
         update_inv_serial_blur();
       }
 
@@ -3895,12 +4048,15 @@
     };
   })();
   try {
+    if (!extension_alive()) return;
     let keepalive_port = chrome.runtime.connect({ name: "nte-keepalive" });
     setInterval(() => {
+      if (!extension_alive()) return;
       try {
         keepalive_port.postMessage({ type: "ping" });
       } catch {
         try {
+          if (!extension_alive()) return;
           keepalive_port = chrome.runtime.connect({ name: "nte-keepalive" });
         } catch {}
       }
