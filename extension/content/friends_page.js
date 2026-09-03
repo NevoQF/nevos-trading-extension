@@ -2,11 +2,15 @@
   const style_id = "nte-friends-value-style";
   const option_name = "Values on User Pages";
   const profile_value_mode_key = "profile_value_display_mode";
+  const values_to_use_key = "values_to_use";
   const inventory_cache = {};
   const inventory_pending = {};
   const totals_cache = {};
   let rolimons_data = null;
   let rolimons_loading = null;
+  let routility_data = null;
+  let routility_loading = null;
+  let values_to_use_cache = "rolimons";
   let enabled = false;
   let sync_timer = null;
   let click_bound = false;
@@ -66,6 +70,37 @@
     return rolimons_loading;
   }
 
+  async function ensure_routility_data() {
+    if (routility_data) return routility_data;
+    if (routility_loading) return routility_loading;
+    routility_loading = send_message(
+      routility_data ? "getRoutilityDataPeriodic" : "getRoutilityData",
+    ).then((data) => {
+      if (data) routility_data = data;
+      routility_loading = null;
+      return routility_data;
+    });
+    return routility_loading;
+  }
+
+  function sync_values_to_use_cache(value) {
+    values_to_use_cache =
+      String(value || "").toLowerCase() === "routility"
+        ? "routility"
+        : "rolimons";
+  }
+
+  try {
+    chrome.storage.local.get([values_to_use_key], (result) => {
+      sync_values_to_use_cache(result?.[values_to_use_key]);
+    });
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local" || !changes[values_to_use_key]) return;
+      sync_values_to_use_cache(changes[values_to_use_key].newValue);
+      Object.keys(totals_cache).forEach((key) => delete totals_cache[key]);
+    });
+  } catch {}
+
   function get_rolimons_item(item_id, item_name) {
     if (
       typeof RolimonsItemDetails !== "undefined" &&
@@ -81,7 +116,59 @@
     return rolimons_data?.items?.[item_id] || null;
   }
 
+  function normalize_routility_label(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[#,()\-:'`"]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function get_routility_value(item_id, item_name) {
+    let item = routility_data?.items?.[String(item_id)];
+    if (item)
+      return typeof item.value === "number" && item.value > 0 ? item.value : 0;
+    let labels = [];
+    let from_name = normalize_routility_label(item_name);
+    if (from_name) labels.push(from_name);
+    let row = get_rolimons_item(item_id, item_name);
+    if (Array.isArray(row)) {
+      let row_name = normalize_routility_label(row[0]);
+      let row_acr = normalize_routility_label(row[1]);
+      if (row_name) labels.push(row_name);
+      if (row_acr) labels.push(row_acr);
+    }
+    if (!labels.length || !routility_data?.items) return 0;
+    if (!routility_data.__nte_by_value_name) {
+      let map = Object.create(null);
+      let entries = Object.values(routility_data.items);
+      for (let entry of entries) {
+        if (!entry || typeof entry.value !== "number" || !(entry.value > 0))
+          continue;
+        let key = normalize_routility_label(entry.name);
+        if (key && map[key] == null) map[key] = entry.value;
+      }
+      for (let entry of entries) {
+        if (!entry || typeof entry.value !== "number" || !(entry.value > 0))
+          continue;
+        let key = normalize_routility_label(entry.acr);
+        if (key && map[key] == null) map[key] = entry.value;
+      }
+      routility_data.__nte_by_value_name = map;
+    }
+    for (let label of labels) {
+      if (routility_data.__nte_by_value_name[label] != null)
+        return routility_data.__nte_by_value_name[label];
+    }
+    return 0;
+  }
+
   function get_value_or_rap(item_id, item_name, fallback_rap) {
+    if (values_to_use_cache === "routility") {
+      let rout = get_routility_value(item_id, item_name);
+      if (rout > 0) return rout;
+      return get_rap(item_id, item_name, fallback_rap);
+    }
     const row = get_rolimons_item(item_id, item_name);
     if (row) return row[4];
     const parsed = parseInt(fallback_rap, 10);
@@ -209,6 +296,7 @@
   async function get_user_totals(user_id) {
     if (totals_cache[user_id]) return totals_cache[user_id];
     await ensure_rolimons_data();
+    if (values_to_use_cache === "routility") await ensure_routility_data();
     const inventory = await fetch_user_inventory(user_id);
     if (inventory === false) {
       totals_cache[user_id] = { private: true };
@@ -391,8 +479,12 @@
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
-      if (option_name in changes || profile_value_mode_key in changes) {
-        if (profile_value_mode_key in changes) {
+      if (
+        option_name in changes ||
+        profile_value_mode_key in changes ||
+        values_to_use_key in changes
+      ) {
+        if (profile_value_mode_key in changes || values_to_use_key in changes) {
           for (const key of Object.keys(totals_cache)) delete totals_cache[key];
         }
         void refresh_enabled();

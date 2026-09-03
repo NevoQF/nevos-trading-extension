@@ -3,6 +3,8 @@
   const DEMAND_LABELS = ["Terrible", "Low", "Normal", "High", "Amazing"];
   const UAID_BTN_CLASS =
     "btn btn-light-blue border-primary btn-sm btn-very-sharp";
+  const OWNED_COPIES_BTN_CLASS =
+    "btn btn-bricky-green border-primary btn-sm btn-very-sharp";
   let ran_for_user = "";
   let player_fix_retry_timer = 0;
 
@@ -213,9 +215,13 @@
             : null;
         let instances = Array.isArray(item.instances) ? item.instances : [];
         if (!instances.length) instances = [item];
-        let ciiid = String(
-          instances[0]?.collectibleItemInstanceId || "",
-        ).trim();
+        let copies = instances
+          .map((inst) => ({
+            ciiid: String(inst?.collectibleItemInstanceId || "").trim(),
+            serial: inst?.serialNumber ?? item?.serialNumber ?? null,
+          }))
+          .filter((copy) => copy.ciiid);
+        let ciiid = copies[0]?.ciiid || "";
         let held = instances.filter((inst) =>
           !!(inst?.isOnHold ?? item?.isOnHold),
         ).length;
@@ -235,7 +241,8 @@
           serial: serials[0] ?? instances[0]?.serialNumber ?? null,
           serials,
           ciiid,
-          quantity: Math.max(1, instances.length || 1),
+          copies,
+          quantity: Math.max(1, copies.length || instances.length || 1),
           held,
           thumb: thumbs[bundle_id] || "",
         };
@@ -268,7 +275,9 @@
     let cards = Array.from(grid.querySelectorAll(".mix_item"));
     return (
       cards.find((card) =>
-        card.querySelector("a.btn[href*='/uaid/'], a.btn[href*='/ciiid/']"),
+        card.querySelector(
+          'a.btn[href*="/uaid/"], a.btn[href*="/ciiid/"], button.btn[data-target^="#modal-div-"]',
+        ),
       ) ||
       cards[0] ||
       null
@@ -336,14 +345,39 @@
     return keep;
   }
 
-  function append_native_footer(details, face, href) {
+  function get_item_copies(item) {
+    if (Array.isArray(item?.copies) && item.copies.length) {
+      return item.copies.filter((copy) => copy?.ciiid);
+    }
+    if (item?.ciiid) {
+      return [{ ciiid: item.ciiid, serial: item.serial ?? null }];
+    }
+    return [];
+  }
+
+  function append_total_stat_rows(details, item, href) {
+    let quantity = Math.max(1, Number(item?.quantity) || 1);
+    if (quantity <= 1) return;
+    let total_rap = (Number(item?.rap) || 0) * quantity;
+    let total_value = (Number(item?.value) || 0) * quantity;
+    let wrap = document.createElement("a");
+    wrap.href = href;
+    wrap.innerHTML =
+      `<div class="d-flex justify-content-between"><div class="item_card_stat_header">Total RAP</div>` +
+      `<div class="text-info text-truncate">${total_rap.toLocaleString()}</div></div>` +
+      `<div class="d-flex justify-content-between"><div class="item_card_stat_header">Total Value</div>` +
+      `<div class="text-info text-truncate">${total_value.toLocaleString()}</div></div>`;
+    details.appendChild(wrap);
+  }
+
+  function append_single_copy_footer(details, item, href) {
     let serials = unique_sorted_serials(
-      face.serials?.length ? face.serials : [face.serial],
+      item.serials?.length ? item.serials : [item.serial],
     );
     let serial = serials.length
       ? `#${serials[0]}`
-      : face.serial
-        ? `#${face.serial}`
+      : item.serial
+        ? `#${item.serial}`
         : "N/A";
 
     let serial_row = document.createElement("div");
@@ -368,9 +402,10 @@
 
     let btn_wrap = document.createElement("div");
     btn_wrap.className = "pt-1 d-flex justify-content-between";
-    if (face.ciiid) {
+    let copy = get_item_copies(item)[0];
+    if (copy?.ciiid) {
       let btn = document.createElement("a");
-      btn.href = `/ciiid/${encodeURIComponent(face.ciiid)}`;
+      btn.href = `/ciiid/${encodeURIComponent(copy.ciiid)}`;
       btn.className = UAID_BTN_CLASS;
       btn.setAttribute("role", "button");
       btn.setAttribute("aria-pressed", "true");
@@ -378,6 +413,86 @@
       btn_wrap.appendChild(btn);
     }
     details.appendChild(btn_wrap);
+  }
+
+  function append_owned_copies_footer(details, item, copies) {
+    let modal_key = String(item.face_id || item.bundle_id || "").trim();
+    if (!modal_key || !copies.length) {
+      append_single_copy_footer(details, item, bundle_href(item));
+      return;
+    }
+
+    let btn_wrap = document.createElement("div");
+    btn_wrap.className = "pt-1 d-flex justify-content-between";
+
+    let btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = OWNED_COPIES_BTN_CLASS;
+    btn.setAttribute("data-toggle", "modal");
+    btn.setAttribute("data-target", `#modal-div-${modal_key}`);
+    btn.textContent = "Owned Copies";
+    btn_wrap.appendChild(btn);
+
+    let modal = document.createElement("div");
+    modal.id = `modal-div-${modal_key}`;
+    modal.className = "modal fade";
+    modal.tabIndex = -1;
+    modal.setAttribute("role", "dialog");
+
+    let dialog = document.createElement("div");
+    dialog.className = "modal-dialog";
+    dialog.setAttribute("role", "document");
+
+    let content = document.createElement("div");
+    content.className = "modal-content";
+
+    let header = document.createElement("div");
+    header.className = "modal-header";
+    header.innerHTML =
+      `<h5 class="modal-title">${item.name || "Owned Copies"}</h5>` +
+      `<button type="button" class="close" data-dismiss="modal" aria-label="Close">` +
+      `<span aria-hidden="true">&times;</span></button>`;
+
+    let body = document.createElement("div");
+    body.className = "modal-body";
+    let body_inner = document.createElement("span");
+    for (let copy of copies) {
+      let wrap = document.createElement("span");
+      let link = document.createElement("a");
+      link.href = `/ciiid/${encodeURIComponent(copy.ciiid)}`;
+      link.className = `${UAID_BTN_CLASS} uaid_list_button`;
+      link.setAttribute("role", "button");
+      let serial = parse_serial_number(copy.serial);
+      link.textContent = serial != null ? `#${serial}` : "Copy";
+      wrap.appendChild(link);
+      body_inner.appendChild(wrap);
+    }
+    body.appendChild(body_inner);
+
+    let footer = document.createElement("div");
+    footer.className = "modal-footer";
+    footer.innerHTML =
+      `<button type="button" class="btn btn-primary btn-very-sharp" data-dismiss="modal">Close</button>`;
+
+    content.append(header, body, footer);
+    dialog.appendChild(content);
+    modal.appendChild(dialog);
+    btn_wrap.appendChild(modal);
+    details.appendChild(btn_wrap);
+  }
+
+  function append_native_footer(details, item, href) {
+    let copies = get_item_copies(item);
+    let quantity = Math.max(
+      1,
+      Number(item?.quantity) || 0,
+      copies.length || 0,
+    );
+    if (quantity > 1 && copies.length) {
+      append_owned_copies_footer(details, item, copies);
+      return;
+    }
+    append_single_copy_footer(details, item, href);
   }
 
   function inject_bundle_card(grid, template, item) {
@@ -438,6 +553,7 @@
           );
         }
       });
+      append_total_stat_rows(details, item, href);
       append_native_footer(details, item, href);
     }
 
@@ -614,6 +730,14 @@
     }
 
     paint_player_serial_tips(grid, hold_map);
+    sync_player_limiteds_count(grid);
+  }
+
+  function sync_player_limiteds_count(grid) {
+    if (!(grid instanceof Element)) return;
+    let count_el = document.getElementById("player_num_limiteds");
+    if (!count_el) return;
+    count_el.textContent = String(grid.querySelectorAll(".mix_item").length);
   }
 
  function is_trade_calculator() {
@@ -648,14 +772,30 @@
     });
   }
 
+  async function ensure_trade_calc_page_script() {
+    if (document.getElementById("nte-roli-tc-inventory-patch")) return true;
+    for (let delay of [0, 400, 1200, 3000, 6000]) {
+      if (delay) await sleep(delay);
+      if (await inject_trade_calc_page_script()) return true;
+    }
+    return false;
+  }
+
   function ensure_trade_calc_bridge() {
     let el = document.getElementById(TRADE_CALC_BRIDGE_ID);
+    if (el && el.tagName === "SCRIPT") {
+      el.remove();
+      el = null;
+    }
     if (el) return el;
-    el = document.createElement("script");
+    el = document.createElement("div");
     el.id = TRADE_CALC_BRIDGE_ID;
-    el.type = "application/json";
+    el.hidden = true;
+    el.setAttribute("aria-hidden", "true");
     el.textContent = "{}";
-    (document.documentElement || document.head).appendChild(el);
+    (document.documentElement || document.head || document.body).appendChild(
+      el,
+    );
     return el;
   }
 
@@ -1310,7 +1450,9 @@
 
   function tc_get_usd(item_id, name) {
     let item = tc_usd_routility?.items?.[String(item_id)];
-    if (item && typeof item.usd === "number") return item.usd;
+    // Known Routility id: never name-fallback to a different item
+    // (e.g. Bling face vs Bling $$ Necklace acronym).
+    if (item) return typeof item.usd === "number" ? item.usd : 0;
     let labels = [];
     let from_name = tc_normalize_label(name);
     if (from_name) labels.push(from_name);
@@ -1324,14 +1466,18 @@
     if (!labels.length || !tc_usd_routility?.items) return 0;
     if (!tc_usd_routility.__nte_by_name) {
       let map = Object.create(null);
-      for (let entry of Object.values(tc_usd_routility.items)) {
+      let entries = Object.values(tc_usd_routility.items);
+      for (let entry of entries) {
         if (!entry || typeof entry.usd !== "number" || !(entry.usd > 0))
           continue;
-        for (let raw of [entry.name, entry.acr]) {
-          let key = tc_normalize_label(raw);
-          if (!key || map[key] != null) continue;
-          map[key] = entry.usd;
-        }
+        let key = tc_normalize_label(entry.name);
+        if (key && map[key] == null) map[key] = entry.usd;
+      }
+      for (let entry of entries) {
+        if (!entry || typeof entry.usd !== "number" || !(entry.usd > 0))
+          continue;
+        let key = tc_normalize_label(entry.acr);
+        if (key && map[key] == null) map[key] = entry.usd;
       }
       tc_usd_routility.__nte_by_name = map;
     }
@@ -1364,6 +1510,107 @@
     }
   }
 
+  function parse_tc_item_from_el(el) {
+    if (!(el instanceof Element)) return null;
+    let onclick = el.getAttribute("onclick") || "";
+    let match = onclick.match(/item_select_handler\s*\(\s*(\d+)/);
+    if (match) {
+      let title = el.getAttribute("data-original-title") || el.getAttribute("title") || "";
+      let name = title.split(/<br\s*\/?>/i)[0].replace(/<[^>]+>/g, "").trim();
+      return { id: match[1], name };
+    }
+    for (let attr of [
+      "data-item-id",
+      "data-itemid",
+      "data-asset-id",
+      "data-assetid",
+    ]) {
+      let id = String(el.getAttribute(attr) || "").trim();
+      if (/^\d+$/.test(id)) return { id, name: "" };
+    }
+    let href =
+      el.getAttribute("href") ||
+      el.querySelector("a[href*='/item/'], a[href*='/bundle/']")?.getAttribute(
+        "href",
+      ) ||
+      "";
+    match = String(href).match(/\/(?:item|bundle)\/(\d+)/i);
+    if (match) return { id: match[1], name: "" };
+    return null;
+  }
+
+  function read_trade_side_from_dom(container_id) {
+    let root = document.getElementById(container_id);
+    if (!root) return [];
+    let items = [];
+    let slots = root.querySelectorAll(".trade-item");
+    if (slots.length) {
+      for (let slot of slots) {
+        let parsed =
+          parse_tc_item_from_el(
+            slot.querySelector("img[onclick*='item_select']"),
+          ) ||
+          parse_tc_item_from_el(slot.querySelector("img")) ||
+          parse_tc_item_from_el(slot);
+        if (parsed?.id) items.push(parsed);
+      }
+      if (items.length) return items;
+    }
+    for (let el of root.querySelectorAll(
+      ".trade-item img, img[onclick*='item_select'], img.ad_item_img, [data-item-id], [data-asset-id]",
+    )) {
+      let parsed = parse_tc_item_from_el(el);
+      if (parsed?.id) items.push(parsed);
+    }
+    return items;
+  }
+
+  function read_trade_from_dom() {
+    let offer = read_trade_side_from_dom("offer_items");
+    let request = read_trade_side_from_dom("request_items");
+    if (!offer.length && !request.length) return null;
+    return { offer, request };
+  }
+
+  function parse_tc_total(id) {
+    return (
+      parseInt(
+        String(document.getElementById(id)?.textContent || "").replace(/,/g, ""),
+        10,
+      ) || 0
+    );
+  }
+
+  function tc_side_has_activity(prefix) {
+    return (
+      parse_tc_total(prefix + "_rap_total_textbox") > 0 ||
+      parse_tc_total(prefix + "_value_total_textbox") > 0 ||
+      parse_tc_total(prefix + "_robux_textbox") > 0
+    );
+  }
+
+  function tc_trade_has_visible_totals() {
+    return tc_side_has_activity("offer") || tc_side_has_activity("request");
+  }
+
+  async function resolve_trade_for_usd() {
+    let trade = read_stamped_trade();
+    if (trade.offer.length || trade.request.length) return trade;
+    let dom_trade = read_trade_from_dom();
+    if (dom_trade) return dom_trade;
+    if (!tc_trade_has_visible_totals()) return trade;
+    try {
+      let state = await query_trade_calc_state();
+      if (
+        state?.trade &&
+        (state.trade.offer?.length || state.trade.request?.length)
+      ) {
+        return state.trade;
+      }
+    } catch {}
+    return trade;
+  }
+
   function sum_side_usd(items) {
     let total = 0;
     for (let item of items || []) {
@@ -1379,22 +1626,17 @@
       style.id = "nte-tc-usd-style";
       (document.head || document.documentElement).appendChild(style);
     }
-    if (style.dataset.nteVer === "usd-tc-4") return;
-    style.dataset.nteVer = "usd-tc-4";
+    if (style.dataset.nteVer === "usd-tc-6") return;
+    style.dataset.nteVer = "usd-tc-6";
     style.textContent = `
 .nte-tc-usd-label{
   padding-top:11px;
-  color:#e8c36a;
 }
 .nte-tc-usd-number{
-  color:#e8c36a;
-  font-weight:600;
-  font-size:19px;
   font-variant-numeric:tabular-nums;
   white-space:nowrap;
 }
-.trade-delta-card.nte-has-usd-delta,
-.trade-delta-card:has(#usd_delta_row:not([style*="display: none"])){
+.trade-delta-card.nte-has-usd-delta{
   grid-template-columns:1fr 1fr 1fr!important;
   max-width:760px!important;
 }
@@ -1416,6 +1658,7 @@
     let num = document.getElementById(prefix + "_usd_total_textbox");
     if (num) {
       num.querySelectorAll("img").forEach((el) => el.remove());
+      num.classList.add("text-success", "d-block", "nte-tc-usd-number");
       return num;
     }
     let rap = document.getElementById(prefix + "_rap_total_textbox");
@@ -1430,7 +1673,7 @@
     label_col.appendChild(label);
     num = document.createElement("span");
     num.id = prefix + "_usd_total_textbox";
-    num.className = "trade-total-number d-block nte-tc-usd-number";
+    num.className = "trade-total-number text-success d-block nte-tc-usd-number";
     num.textContent = "$0";
     num_col.appendChild(num);
     return num;
@@ -1491,22 +1734,24 @@
     if (label) label.style.display = show ? "" : "none";
   }
 
-  function paint_trade_calculator_usd() {
+  async function paint_trade_calculator_usd() {
     ensure_tc_usd_styles();
     let show = tc_usd_enabled && !!tc_usd_routility?.items;
-    let trade = show ? read_stamped_trade() : { offer: [], request: [] };
+    let trade = show ? await resolve_trade_for_usd() : { offer: [], request: [] };
     let offer = sum_side_usd(trade.offer);
     let request = sum_side_usd(trade.request);
     let has_items = !!(trade.offer.length || trade.request.length);
+    let has_totals = tc_trade_has_visible_totals();
+    let show_rows = show && (has_items || has_totals);
     let rap_row = document.getElementById("rap_delta_row");
     let rap_visible =
       rap_row instanceof Element &&
       getComputedStyle(rap_row).display !== "none";
-    let show_delta = show && has_items && rap_visible;
-    let key = `${show ? 1 : 0}|${has_items ? 1 : 0}|${show_delta ? 1 : 0}|${offer}|${request}`;
+    let show_delta = show_rows && (has_items || rap_visible);
+    let key = `${show ? 1 : 0}|${show_rows ? 1 : 0}|${show_delta ? 1 : 0}|${offer}|${request}|${trade.offer.length}|${trade.request.length}`;
     if (key === tc_usd_last_key) return;
-    set_side_usd_row("offer", offer, show && has_items);
-    set_side_usd_row("request", request, show && has_items);
+    set_side_usd_row("offer", offer, show_rows);
+    set_side_usd_row("request", request, show_rows);
     let delta_row = ensure_usd_delta_row();
     if (!delta_row) return;
     tc_usd_last_key = key;
@@ -1532,7 +1777,7 @@
   function schedule_trade_calculator_usd() {
     clearTimeout(tc_usd_timer);
     tc_usd_timer = setTimeout(() => {
-      paint_trade_calculator_usd();
+      paint_trade_calculator_usd().catch(() => {});
     }, 60);
   }
 
@@ -1730,11 +1975,15 @@
       return;
     }
     ensure_trade_calc_bridge();
-    await inject_trade_calc_page_script();
+    await ensure_trade_calc_page_script();
     watch_trade_calculator_usd();
     await refresh_tc_usd_data();
     setTimeout(() => schedule_trade_calculator_usd(), 500);
     setTimeout(() => schedule_trade_calculator_usd(), 1500);
+    setTimeout(async () => {
+      await ensure_trade_calc_page_script();
+      schedule_trade_calculator_usd();
+    }, 3000);
   }
 
   async function boot_trade_calculator() {
@@ -1745,7 +1994,7 @@
       return;
     }
     ensure_trade_calc_bridge();
-    let injected = await inject_trade_calc_page_script();
+    let injected = await ensure_trade_calc_page_script();
     if (!injected) return;
     await sleep(400);
     watch_trade_calculator();

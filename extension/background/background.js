@@ -50,6 +50,14 @@ function nte_api_headers(extra) {
   return headers;
 }
 
+function is_nte_api_decoy_response(body) {
+  return !!(
+    body &&
+    typeof body === "object" &&
+    String(body.source || "").trim() === "edge-cache"
+  );
+}
+
 if (typeof importScripts === "function") {
   importScripts("../shared/build_variant.js");
   importScripts("../shared/rolimons_item_details.js");
@@ -64,7 +72,7 @@ if (typeof importScripts === "function") {
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":false,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
@@ -78,6 +86,10 @@ const legacy_add_item_ownership_uaid_links_option_name =
   "Add Item Ownership History (UAID) Links";
 const ownership_link_provider_key = "ownership_link_provider";
 const ownership_link_provider_default = "rolimons";
+const trade_value_source_key = "trade_value_source";
+const trade_value_source_default = "rolimons";
+const values_to_use_key = "values_to_use";
+const values_to_use_default = "rolimons";
 const counter_trade_choices_option_name = "Counter Trade Choices";
 const legacy_counter_trade_prompt_option_name = "Counter Trade Prompt";
 const counter_trade_choice_mode_key = "counter_trade_choice_mode";
@@ -92,6 +104,20 @@ const colorblind_mode_profiles = [
 ];
 
 function normalize_ownership_link_provider(value) {
+  return String(value || "").toLowerCase() === "routility"
+    ? "routility"
+    : "rolimons";
+}
+
+function normalize_trade_value_source(value) {
+  let mode = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (mode === "routility" || mode === "both") return mode;
+  return "rolimons";
+}
+
+function normalize_values_to_use(value) {
   return String(value || "").toLowerCase() === "routility"
     ? "routility"
     : "rolimons";
@@ -793,7 +819,7 @@ async function sync_item_data_from_server() {
     });
     if (!response.ok) return null;
     let body = await parse_json_response_safe(response, "Server Rolimons items");
-    if (!body?.ok) return null;
+    if (!body?.ok || is_nte_api_decoy_response(body)) return null;
 
     let server_at = Number(body.fetchedAt) || 0;
     let payload = coerce_item_data(body);
@@ -2116,6 +2142,8 @@ function ensure_default_options() {
   option_names.push(legacy_add_item_ownership_uaid_links_option_name);
   option_names.push(legacy_counter_trade_prompt_option_name);
   option_names.push(ownership_link_provider_key);
+  option_names.push(trade_value_source_key);
+  option_names.push(values_to_use_key);
   option_names.push(counter_trade_choice_mode_key);
   option_names.push(colorblind_mode_profile_key);
   option_names.push(inbound_trade_notification_min_gain_key);
@@ -2194,6 +2222,22 @@ function ensure_default_options() {
     if (saved_values[ownership_link_provider_key] !== ownership_provider) {
       chrome.storage.local.set({
         [ownership_link_provider_key]: ownership_provider,
+      });
+    }
+    let value_source = normalize_trade_value_source(
+      saved_values[trade_value_source_key],
+    );
+    if (saved_values[trade_value_source_key] !== value_source) {
+      chrome.storage.local.set({
+        [trade_value_source_key]: value_source,
+      });
+    }
+    let values_to_use = normalize_values_to_use(
+      saved_values[values_to_use_key],
+    );
+    if (saved_values[values_to_use_key] !== values_to_use) {
+      chrome.storage.local.set({
+        [values_to_use_key]: values_to_use,
       });
     }
     let counter_mode = normalize_counter_trade_choice_mode(
@@ -2495,6 +2539,9 @@ async function fetch_item_proofs_api(search_term) {
   if (!data || typeof data !== "object") {
     throw new Error("Proof search returned invalid data.");
   }
+  if (is_nte_api_decoy_response(data)) {
+    throw new Error("Proof search returned an invalid response.");
+  }
 
   let results = Array.isArray(data.results)
     ? data.results.map(normalize_item_proof_result)
@@ -2577,6 +2624,43 @@ async function get_item_proofs(message) {
   );
 }
 
+function sniff_image_mime(bytes) {
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47
+  ) {
+    return "image/png";
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    bytes.length >= 6 &&
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46
+  ) {
+    return "image/gif";
+  }
+  return "";
+}
+
 async function fetch_item_proof_image_data(url) {
   let normalized_url = normalize_item_proof_image_url(url);
   if (!normalized_url) {
@@ -2600,8 +2684,16 @@ async function fetch_item_proof_image_data(url) {
   }
 
   let bytes = new Uint8Array(await response.arrayBuffer());
-  let content_type = String(response.headers.get("content-type") || "").trim();
-  if (!/^image\//i.test(content_type)) content_type = "image/jpeg";
+  let content_type = String(response.headers.get("content-type") || "")
+    .split(";")[0]
+    .trim();
+  let sniffed = sniff_image_mime(bytes);
+  if (!/^image\//i.test(content_type)) {
+    content_type = sniffed || "image/jpeg";
+  } else if (sniffed && content_type !== sniffed) {
+    // Prefer magic-byte type when the CDN lies (e.g. octet-stream / wrong jpeg).
+    content_type = sniffed;
+  }
   let data_url = `data:${content_type};base64,${base64_from_uint8(bytes)}`;
   return set_trade_history_cached_value(
     item_proof_image_cache,
@@ -3066,7 +3158,7 @@ async function fetch_trade_history_api(query, limit = 6) {
       `Trade history is rate limited right now. Try again in about ${wait_seconds}s.`,
     );
   }
-  if (!response.ok || !payload?.ok) {
+  if (!response.ok || !payload?.ok || is_nte_api_decoy_response(payload)) {
     throw new Error(
       payload?.error || `Trade history API returned ${response.status}.`,
     );
@@ -3138,6 +3230,12 @@ async function evaluate_trade_analysis(message) {
     throw new Error(
       `Trade analysis is rate limited right now. Try again in about ${wait_seconds}s.`,
     );
+  }
+  if (
+    is_nte_api_decoy_response(payload) ||
+    (payload?.ok && !payload?.result)
+  ) {
+    throw new Error("Trade analysis is down for a bit and will be back soon.");
   }
   if (!response.ok || !payload?.ok) {
     let api_error = String(payload?.error || "").trim();
@@ -3537,6 +3635,44 @@ async function fetch_rolimons_player_info(user_id) {
 
   let job = (async () => {
     try {
+      try {
+        let api_res = await fetch(
+          `https://api.rolimons.com/players/v1/playerinfo/${id}`,
+          { cache: "no-store" },
+        );
+        if (api_res.ok) {
+          let d = await api_res.json().catch(() => null);
+          if (d && d.success === true) {
+            let value = Number(d.value) || 0;
+            let rap = Number(d.rap) || 0;
+            let name = String(d.name || d.username || "").trim();
+            let privacy_enabled = !!d.privacy_enabled;
+            let terminated = !!d.terminated;
+            let rec = {
+              ok: true,
+              value,
+              rap,
+              rank: Number(d.rank) || 0,
+              privacy_enabled,
+              terminated,
+              premium: !!d.premium,
+              name,
+              data: {
+                success: true,
+                value,
+                rap,
+                name,
+                terminated,
+                privacy_enabled,
+              },
+              at: Date.now(),
+            };
+            rolimons_player_info_cache.set(id, rec);
+            prune_rolimons_player_info_cache();
+            return rec;
+          }
+        }
+      } catch {}
       let res = await fetch(`https://www.rolimons.com/player/${id}`, {
         cache: "no-store",
         credentials: "omit",
@@ -3604,9 +3740,10 @@ async function hydrate_roblox_friend_names(friends) {
   }
 
   let by_id = new Map(list.map((row) => [row.userId, { ...row, isFriend: true }]));
+  // Friends currently return blank names; hydrate via profile API only.
+  // Do not fall back to users.roblox.com/v1/users (shared account rate limit).
   for (let i = 0; i < need.length; i += 100) {
     let ids = need.slice(i, i + 100).map((row) => row.userId);
-    let filled = false;
     try {
       let res = await fetch(
         "https://apis.roblox.com/user-profile-api/v1/user/profiles/get-profiles",
@@ -3623,52 +3760,18 @@ async function hydrate_roblox_friend_names(friends) {
           }),
         },
       );
-      if (res.ok) {
-        let json = await res.json().catch(() => null);
-        for (let profile of json?.profileDetails || []) {
-          let id = Number(profile.userId) || 0;
-          let prev = by_id.get(id);
-          if (!prev) continue;
-          let name = String(profile.names?.username || "");
-          if (!name) continue;
-          by_id.set(id, {
-            ...prev,
-            name,
-            displayName: String(profile.names?.displayName || name),
-            isFriend: true,
-          });
-          filled = true;
-        }
-      }
-    } catch {}
-
-    if (filled) continue;
-
-    try {
-      let res = await fetch("https://users.roblox.com/v1/users", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
-        body: JSON.stringify({
-          userIds: ids,
-          excludeBannedUsers: false,
-        }),
-      });
       if (!res.ok) continue;
       let json = await res.json().catch(() => null);
-      for (let row of json?.data || []) {
-        let id = Number(row.id) || 0;
+      for (let profile of json?.profileDetails || []) {
+        let id = Number(profile.userId) || 0;
         let prev = by_id.get(id);
         if (!prev) continue;
-        let name = String(row.name || "");
+        let name = String(profile.names?.username || "");
         if (!name) continue;
         by_id.set(id, {
           ...prev,
           name,
-          displayName: String(row.displayName || name),
+          displayName: String(profile.names?.displayName || name),
           isFriend: true,
         });
       }

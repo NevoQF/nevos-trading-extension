@@ -289,14 +289,27 @@
     return null;
   }
   function find_react_inventory_click_handler(panel) {
-    let card = panel?.querySelector?.(".item-card-container");
-    if (!card) return null;
-    let key = Object.keys(card).find((k) => k.startsWith("__reactFiber$"));
-    let fiber = key ? card[key] : null;
-    for (let i = 0; i < 28 && fiber; i++) {
-      let props = fiber.memoizedProps || {};
-      if (typeof props.onItemClick === "function") return props.onItemClick;
-      fiber = fiber.return;
+    if (!panel) return null;
+    let starts = [
+      panel.querySelector(".item-card-container"),
+      panel.querySelector(".item-cards"),
+      panel.querySelector(".item-cards-stackable"),
+      panel,
+    ].filter(Boolean);
+    let seen = new Set();
+    for (let el of starts) {
+      let key = Object.keys(el).find((k) => k.startsWith("__reactFiber$"));
+      let fiber = key ? el[key] : null;
+      for (let i = 0; i < 36 && fiber; i++) {
+        if (seen.has(fiber)) {
+          fiber = fiber.return;
+          continue;
+        }
+        seen.add(fiber);
+        let props = fiber.memoizedProps || {};
+        if (typeof props.onItemClick === "function") return props.onItemClick;
+        fiber = fiber.return;
+      }
     }
     return null;
   }
@@ -1143,7 +1156,7 @@
   function get_react_inventory_filter_controls(side_index) {
     let panel = get_react_inventory_panel(side_index);
     let combo = panel?.querySelector(
-      '.inventory-type-dropdown button[role="combobox"]',
+      '.inventory-type-dropdown button[role="combobox"], button.filter-dropdown-chip, .inventory-filter-row button[role="combobox"]',
     );
     if (!panel || !combo) return null;
     let key = Object.keys(combo).find((k) => k.startsWith("__reactFiber$"));

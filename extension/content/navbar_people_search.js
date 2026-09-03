@@ -536,9 +536,10 @@
     if (!need.length) return list.filter((row) => row.userId > 0 && row.name);
 
     let by_id = new Map(list.map((row) => [row.userId, { ...row, isFriend: true }]));
+    // Friends currently return blank names; hydrate via profile API only.
+    // Do not fall back to users.roblox.com/v1/users (shared account rate limit).
     for (let i = 0; i < need.length; i += 100) {
       let ids = need.slice(i, i + 100).map((row) => row.userId);
-      let filled = false;
       try {
         let res = await fetch(
           "https://apis.roblox.com/user-profile-api/v1/user/profiles/get-profiles",
@@ -555,54 +556,18 @@
             }),
           },
         );
-        if (res.ok) {
-          let json = await res.json().catch(() => null);
-          for (let profile of json?.profileDetails || []) {
-            let id = Number(profile.userId) || 0;
-            let prev = by_id.get(id);
-            if (!prev) continue;
-            let name = String(profile.names?.username || "");
-            if (!name) continue;
-            by_id.set(id, {
-              ...prev,
-              name,
-              displayName: String(
-                profile.names?.displayName || name,
-              ),
-              isFriend: true,
-            });
-            filled = true;
-          }
-        }
-      } catch {}
-
-      if (filled) continue;
-
-      try {
-        let res = await fetch("https://users.roblox.com/v1/users", {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            userIds: ids,
-            excludeBannedUsers: false,
-          }),
-        });
         if (!res.ok) continue;
         let json = await res.json().catch(() => null);
-        for (let row of json?.data || []) {
-          let id = Number(row.id) || 0;
+        for (let profile of json?.profileDetails || []) {
+          let id = Number(profile.userId) || 0;
           let prev = by_id.get(id);
           if (!prev) continue;
-          let name = String(row.name || "");
+          let name = String(profile.names?.username || "");
           if (!name) continue;
           by_id.set(id, {
             ...prev,
             name,
-            displayName: String(row.displayName || name),
+            displayName: String(profile.names?.displayName || name),
             isFriend: true,
           });
         }

@@ -23,7 +23,7 @@ const chevron_svg =
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":false,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 
@@ -117,6 +117,20 @@ function normalize_ownership_link_provider(value) {
     : "rolimons";
 }
 
+function normalize_trade_value_source(value) {
+  let mode = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (mode === "routility" || mode === "both") return mode;
+  return "rolimons";
+}
+
+function normalize_values_to_use(value) {
+  return String(value || "").toLowerCase() === "routility"
+    ? "routility"
+    : "rolimons";
+}
+
 function normalize_counter_trade_choice_mode(value) {
   return String(value || "").toLowerCase() === "buttons" ? "buttons" : "prompt";
 }
@@ -155,6 +169,12 @@ const profile_value_display_mode_key = "profile_value_display_mode";
 const profile_value_display_mode_default = "rap";
 const ownership_link_provider_key = "ownership_link_provider";
 const ownership_link_provider_default = "rolimons";
+const trade_value_source_key = "trade_value_source";
+const trade_value_source_default = "rolimons";
+const trade_win_loss_stats_option_name = "Trade Win/Loss Stats";
+const values_to_use_key = "values_to_use";
+const values_to_use_default = "rolimons";
+const values_to_use_option_name = "Values to use";
 const counter_trade_choices_option_name = "Counter Trade Choices";
 const legacy_counter_trade_prompt_option_name = "Counter Trade Prompt";
 const counter_trade_choice_mode_key = "counter_trade_choice_mode";
@@ -1770,6 +1790,27 @@ function create_option_row(option, checked, extra = {}) {
     return row;
   }
 
+  if (option.name === values_to_use_option_name) {
+    row.classList.add("profile-value-option-row");
+    const controls = document.createElement("div");
+    controls.className = "profile-value-option-controls";
+    controls.append(create_values_to_use_toggle(extra.values_to_use));
+    row.append(label_el, controls);
+    return row;
+  }
+
+  if (option.name === trade_win_loss_stats_option_name) {
+    row.classList.add("profile-value-option-row");
+    const controls = document.createElement("div");
+    controls.className = "profile-value-option-controls";
+    controls.append(
+      create_trade_value_source_toggle(extra.trade_value_source),
+      create_toggle(option, checked),
+    );
+    row.append(label_el, controls);
+    return row;
+  }
+
   if (option.name === "Add Item Ownership Buttons") {
     row.classList.add("profile-value-option-row");
     const controls = document.createElement("div");
@@ -1968,6 +2009,40 @@ function create_ownership_link_provider_toggle(mode) {
       await set_option_value(ownership_link_provider_key, value);
       send_option_update("Add Item Ownership Buttons");
       send_option_update(ownership_link_provider_key);
+    },
+  });
+}
+
+function create_trade_value_source_toggle(mode) {
+  return create_option_mode_menu({
+    aria_label: "Trade win/loss value chips",
+    active: normalize_trade_value_source(mode),
+    choices: [
+      { value: "rolimons", label: "Rolimons" },
+      { value: "routility", label: "Routility" },
+      { value: "both", label: "Both" },
+    ],
+    on_change: async (value) => {
+      await set_option_value(trade_value_source_key, value);
+      send_option_update(trade_win_loss_stats_option_name);
+      send_option_update(trade_value_source_key);
+    },
+  });
+}
+
+function create_values_to_use_toggle(mode) {
+  return create_option_mode_menu({
+    aria_label: "Values to use",
+    active: normalize_values_to_use(mode),
+    choices: [
+      { value: "rolimons", label: "Rolimons" },
+      { value: "routility", label: "Routility" },
+    ],
+    on_change: async (value) => {
+      await set_option_value(values_to_use_key, value);
+      send_option_update(values_to_use_option_name);
+      send_option_update(values_to_use_key);
+      send_option_update("Values");
     },
   });
 }
@@ -2323,6 +2398,7 @@ function trade_ads_attach_picker(root, opts) {
     inventoryPromise,
     onPick,
     onInventoryError,
+    reloadInventory,
     requestSlots,
     slotIndex,
     allowTags,
@@ -2552,6 +2628,26 @@ function trade_ads_attach_picker(root, opts) {
   if (side === "offer") {
     let live_inv = Array.isArray(inventory) ? inventory : [];
     let q = "";
+    let reload_inventory_fn =
+      typeof reloadInventory === "function" ? reloadInventory : null;
+
+    function offer_reload_footer(message) {
+      if (!reload_inventory_fn) {
+        set_footer(
+          message
+            ? `<span class="ta-strip-hint">${escape_html(message)}</span>`
+            : "",
+        );
+        return;
+      }
+      set_footer(
+        `<span class="ta-strip-hint">${escape_html(message)}</span> <button type="button" class="ta-strip-reload">Reload</button>`,
+      );
+      footer.querySelector(".ta-strip-reload")?.addEventListener("click", () => {
+        void reload_offer_inventory();
+      });
+    }
+
     function filter_inv() {
       let qq = q.trim().toLowerCase();
       if (!qq) return live_inv;
@@ -2564,6 +2660,41 @@ function trade_ads_attach_picker(root, opts) {
     async function refresh_offer_display() {
       await render_offer_strip_from(filter_inv());
     }
+
+    async function reload_offer_inventory() {
+      if (!reload_inventory_fn) return;
+      strip.textContent = "";
+      let load_msg = document.createElement("div");
+      load_msg.className = "ta-strip-empty";
+      load_msg.textContent = "Loading your items…";
+      strip.appendChild(load_msg);
+      set_footer(`<span class="ta-strip-hint">Loading…</span>`);
+      try {
+        live_inv = await reload_inventory_fn();
+        live_inv = Array.isArray(live_inv) ? live_inv : [];
+        if (!live_inv.length) {
+          strip.textContent = "";
+          let em = document.createElement("div");
+          em.className = "ta-strip-empty";
+          em.textContent = "No tradeable items found.";
+          strip.appendChild(em);
+          offer_reload_footer("Try again if your inventory did not load.");
+          return;
+        }
+        q = input.value;
+        await refresh_offer_display();
+      } catch (e) {
+        let msg = e?.message || String(e);
+        strip.textContent = "";
+        let em = document.createElement("div");
+        em.className = "ta-strip-empty";
+        em.textContent = msg;
+        strip.appendChild(em);
+        offer_reload_footer("Could not load inventory.");
+        if (typeof onInventoryError === "function") onInventoryError(msg);
+      }
+    }
+
     input.addEventListener("input", () => {
       q = input.value;
       void refresh_offer_display();
@@ -2599,7 +2730,7 @@ function trade_ads_attach_picker(root, opts) {
             em.className = "ta-strip-empty";
             em.textContent = "No tradeable items found.";
             strip.appendChild(em);
-            set_footer("");
+            offer_reload_footer("Try again if your inventory did not load.");
             return;
           }
           void refresh_offer_display();
@@ -2611,7 +2742,7 @@ function trade_ads_attach_picker(root, opts) {
           em.className = "ta-strip-empty";
           em.textContent = msg;
           strip.appendChild(em);
-          set_footer("");
+          offer_reload_footer("Could not load inventory.");
           if (typeof onInventoryError === "function") onInventoryError(msg);
         })
         .finally(() => {
@@ -2620,6 +2751,9 @@ function trade_ads_attach_picker(root, opts) {
           } catch {}
         });
     } else {
+      if (!live_inv.length) {
+        offer_reload_footer("Try again if your inventory did not load.");
+      }
       void refresh_offer_display();
     }
   } else {
@@ -3291,6 +3425,10 @@ async function render_trade_ads_composer(root, status) {
               ...fresh,
               last_auto_error: null,
             });
+          },
+          reloadInventory: async () => {
+            trade_ads_reset_inventory_session();
+            return trade_ads_load_inventory_session();
           },
         };
         if (trade_ads_inventory_session_items != null) {
@@ -4040,6 +4178,8 @@ async function render_options() {
     ...get_option_names(),
     profile_value_display_mode_key,
     ownership_link_provider_key,
+    trade_value_source_key,
+    values_to_use_key,
     counter_trade_choice_mode_key,
     legacy_counter_trade_prompt_option_name,
   ];
@@ -4143,6 +4283,8 @@ async function render_options() {
         duplicate_trade_warning_hours: saved[duplicate_trade_warning_hours_key],
         profile_value_display_mode: saved[profile_value_display_mode_key],
         ownership_link_provider: saved[ownership_link_provider_key],
+        trade_value_source: saved[trade_value_source_key],
+        values_to_use: saved[values_to_use_key],
         counter_trade_choice_mode: saved[counter_trade_choice_mode_key],
       }),
     );
@@ -5199,6 +5341,8 @@ function restore_defaults() {
     updates[profile_value_display_mode_key] =
       profile_value_display_mode_default;
     updates[ownership_link_provider_key] = ownership_link_provider_default;
+    updates[trade_value_source_key] = trade_value_source_default;
+    updates[values_to_use_key] = values_to_use_default;
     updates[counter_trade_choice_mode_key] = counter_trade_choice_mode_default;
     updates[legacy_counter_trade_prompt_option_name] = true;
     updates[ROBLOX_TOTP_ENABLED_KEY] = false;
@@ -5233,6 +5377,8 @@ function get_settings_backup_keys() {
     duplicate_trade_warning_hours_key,
     profile_value_display_mode_key,
     ownership_link_provider_key,
+    trade_value_source_key,
+    values_to_use_key,
     counter_trade_choice_mode_key,
     legacy_counter_trade_prompt_option_name,
     popup_theme_storage_key,
@@ -5264,6 +5410,8 @@ function get_settings_backup_defaults() {
     duplicate_trade_warning_hours_default;
   defaults[profile_value_display_mode_key] = profile_value_display_mode_default;
   defaults[ownership_link_provider_key] = ownership_link_provider_default;
+  defaults[trade_value_source_key] = trade_value_source_default;
+  defaults[values_to_use_key] = values_to_use_default;
   defaults[counter_trade_choice_mode_key] = counter_trade_choice_mode_default;
   defaults[popup_theme_storage_key] = popup_theme_default;
   defaults[trade_page_theme_enabled_key] = false;
@@ -5300,6 +5448,8 @@ function normalize_imported_setting(key, value) {
     return normalize_profile_value_display_mode(value);
   if (key === ownership_link_provider_key)
     return normalize_ownership_link_provider(value);
+  if (key === trade_value_source_key) return normalize_trade_value_source(value);
+  if (key === values_to_use_key) return normalize_values_to_use(value);
   if (key === counter_trade_choice_mode_key)
     return normalize_counter_trade_choice_mode(value);
   if (key === legacy_counter_trade_prompt_option_name) return value === true;
@@ -5382,6 +5532,15 @@ async function import_settings_backup(file) {
   )
     send_colorblind_mode_update();
   if (profile_value_display_mode_key in patch) send_option_update("Values");
+  if (trade_value_source_key in patch) {
+    send_option_update(trade_win_loss_stats_option_name);
+    send_option_update(trade_value_source_key);
+  }
+  if (values_to_use_key in patch || values_to_use_option_name in patch) {
+    send_option_update(values_to_use_option_name);
+    send_option_update(values_to_use_key);
+    send_option_update("Values");
+  }
   if (
     ownership_link_provider_key in patch ||
     "Add Item Ownership Buttons" in patch
@@ -7590,6 +7749,10 @@ async function render_mass_send_panel(root) {
           let slots = cfg.offer_slots.slice();
           slots[idx] = Number(id) || null;
           await refresh({ ...cfg, offer_slots: slots });
+        },
+        reloadInventory: async () => {
+          ms_reset_inventory_session();
+          return ms_load_inventory_session();
         },
       };
       if (ms_inventory_session_items != null) {

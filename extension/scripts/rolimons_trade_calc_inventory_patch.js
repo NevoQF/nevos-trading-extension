@@ -7,12 +7,19 @@
 
   function ensure_bridge() {
     let el = document.getElementById(BRIDGE_ID);
+    if (el && el.tagName === "SCRIPT") {
+      el.remove();
+      el = null;
+    }
     if (el) return el;
-    el = document.createElement("script");
+    el = document.createElement("div");
     el.id = BRIDGE_ID;
-    el.type = "application/json";
+    el.hidden = true;
+    el.setAttribute("aria-hidden", "true");
     el.textContent = "{}";
-    (document.documentElement || document.head || document.body).appendChild(el);
+    (document.documentElement || document.head || document.body).appendChild(
+      el,
+    );
     return el;
   }
 
@@ -420,9 +427,10 @@
     let json = JSON.stringify(sides);
     let el = document.getElementById(TRADE_STAMP_ID);
     if (!el) {
-      el = document.createElement("script");
+      el = document.createElement("div");
       el.id = TRADE_STAMP_ID;
-      el.type = "application/json";
+      el.hidden = true;
+      el.setAttribute("aria-hidden", "true");
       (document.documentElement || document.head || document.body).appendChild(
         el,
       );
@@ -495,14 +503,20 @@
   }
 
   let bridge = ensure_bridge();
-  let obs = new MutationObserver(() => {
+  let last_bridge_cmd = "";
+  let on_bridge_command = () => {
     let cmd = bridge.getAttribute("data-nte-cmd");
-    if (!cmd) return;
+    if (!cmd || cmd === last_bridge_cmd) return;
+    last_bridge_cmd = cmd;
     handle_command(bridge.textContent);
-  });
+  };
+  let obs = new MutationObserver(on_bridge_command);
   obs.observe(bridge, {
     attributes: true,
     attributeFilter: ["data-nte-cmd"],
+    characterData: true,
+    childList: true,
+    subtree: true,
   });
 
   // Also wrap filter so bundle ids stay mapped after Rolimons rebuilds state.

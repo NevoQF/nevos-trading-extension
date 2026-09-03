@@ -4873,6 +4873,23 @@ body.is-tradeads-tab .popup {
   text-align: left;
 }
 
+.ta-strip-reload {
+  margin-left: 8px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  border-radius: 6px;
+  background: var(--bg-toggle);
+  color: var(--text-primary);
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ta-strip-reload:hover {
+  filter: brightness(1.08);
+}
+
 .ta-sheet-close {
   flex-shrink: 0;
   width: 32px;

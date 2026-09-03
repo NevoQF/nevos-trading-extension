@@ -832,7 +832,11 @@ async function trade_ad_notif_fetch_feed(options) {
     throw new Error(body?.error || "Trade ads feed returned an error.");
   }
   // Nginx scraper decoy is `{ok:true, source:"edge-cache", items:[]}` with no ads.
-  if (!Array.isArray(body.ads) || body.source === "edge-cache") {
+  if (
+    !Array.isArray(body.ads) ||
+    (typeof is_nte_api_decoy_response === "function" &&
+      is_nte_api_decoy_response(body))
+  ) {
     throw new Error("Trade ads feed unavailable (bad response).");
   }
   return body;

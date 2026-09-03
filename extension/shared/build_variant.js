@@ -2,6 +2,7 @@
 const NTE_IS_LITE = false;
 const NTE_LITE_DROP_OPTION_PATHS = [
   "show-usd-values",
+  "values-to-use",
   "analyze-trade",
   "quick-proof",
 ];

@@ -97,7 +97,9 @@
     }
     function get_usd(item_id, name) {
       let item = routility_data?.items?.[String(item_id)];
-      if (item && typeof item.usd === "number") return item.usd;
+      // Known Routility id: never name-fallback to a different item
+      // (e.g. Bling face vs Bling $$ Necklace acronym).
+      if (item) return typeof item.usd === "number" ? item.usd : 0;
       function normalize_label(value) {
         return String(value || "")
           .toLowerCase()
@@ -118,14 +120,18 @@
       if (!labels.length || !routility_data?.items) return 0;
       if (!routility_data.__nte_by_name) {
         let map = Object.create(null);
-        for (let entry of Object.values(routility_data.items)) {
+        let entries = Object.values(routility_data.items);
+        for (let entry of entries) {
           if (!entry || typeof entry.usd !== "number" || !(entry.usd > 0))
             continue;
-          for (let raw of [entry.name, entry.acr]) {
-            let key = normalize_label(raw);
-            if (!key || map[key] != null) continue;
-            map[key] = entry.usd;
-          }
+          let key = normalize_label(entry.name);
+          if (key && map[key] == null) map[key] = entry.usd;
+        }
+        for (let entry of entries) {
+          if (!entry || typeof entry.usd !== "number" || !(entry.usd > 0))
+            continue;
+          let key = normalize_label(entry.acr);
+          if (key && map[key] == null) map[key] = entry.usd;
         }
         routility_data.__nte_by_name = map;
       }
@@ -135,6 +141,70 @@
       }
       return 0;
     }
+    function get_routility_value(item_id, name) {
+      let item = routility_data?.items?.[String(item_id)];
+      if (item)
+        return typeof item.value === "number" && item.value > 0
+          ? item.value
+          : 0;
+      function normalize_label(value) {
+        return String(value || "")
+          .toLowerCase()
+          .replace(/[#,()\-:'`"]/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+      let labels = [];
+      let from_name = normalize_label(name);
+      if (from_name) labels.push(from_name);
+      let row = rolimons_data?.items?.[String(item_id)];
+      if (Array.isArray(row)) {
+        let row_name = normalize_label(row[0]);
+        let row_acr = normalize_label(row[1]);
+        if (row_name) labels.push(row_name);
+        if (row_acr) labels.push(row_acr);
+      }
+      if (!labels.length || !routility_data?.items) return 0;
+      if (!routility_data.__nte_by_value_name) {
+        let map = Object.create(null);
+        let entries = Object.values(routility_data.items);
+        for (let entry of entries) {
+          if (!entry || typeof entry.value !== "number" || !(entry.value > 0))
+            continue;
+          let key = normalize_label(entry.name);
+          if (key && map[key] == null) map[key] = entry.value;
+        }
+        for (let entry of entries) {
+          if (!entry || typeof entry.value !== "number" || !(entry.value > 0))
+            continue;
+          let key = normalize_label(entry.acr);
+          if (key && map[key] == null) map[key] = entry.value;
+        }
+        routility_data.__nte_by_value_name = map;
+      }
+      for (let label of labels) {
+        if (routility_data.__nte_by_value_name[label] != null)
+          return routility_data.__nte_by_value_name[label];
+      }
+      return 0;
+    }
+    const values_to_use_key = "values_to_use";
+    let values_to_use_cache = "rolimons";
+    function sync_values_to_use_cache(value) {
+      values_to_use_cache =
+        String(value || "").toLowerCase() === "routility"
+          ? "routility"
+          : "rolimons";
+    }
+    try {
+      chrome.storage.local.get([values_to_use_key], (result) => {
+        sync_values_to_use_cache(result?.[values_to_use_key]);
+      });
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area !== "local" || !changes[values_to_use_key]) return;
+        sync_values_to_use_cache(changes[values_to_use_key].newValue);
+      });
+    } catch {}
     function get_url(path) {
       if (window.__NTE_ICONS && window.__NTE_ICONS[path]) {
         var d = window.__NTE_ICONS[path];
@@ -350,6 +420,12 @@
     }
 
     function get_value_or_rap(item_id, item_name, fallback_rap) {
+      if (values_to_use_cache === "routility") {
+        let rout = get_routility_value(item_id, item_name);
+        if (rout > 0) return rout;
+        let rap = get_rap(item_id, item_name, fallback_rap);
+        return rap > 0 ? rap : 0;
+      }
       let item_data = get_rolimons_item(item_id, item_name);
       if (item_data) return item_data[4];
       let unsupported_value = get_unsupported_bundle_value(
@@ -1334,7 +1410,6 @@
   var profile_inventory_cache = {};
   var profile_inventory_pending = {};
   var profile_dominance_frame = null;
-
   function get_profile_user_id() {
     return (
       parseInt(
@@ -1790,7 +1865,12 @@
   try {
     if (extension_alive()) {
       chrome.runtime.onMessage.addListener(function (msg) {
-        if (["Values", "Links", "Other"].indexOf(msg) !== -1) init();
+        if (
+          ["Values", "Links", "Other", "Values to use", "values_to_use"].indexOf(
+            msg,
+          ) !== -1
+        )
+          init();
       });
     }
   } catch {}

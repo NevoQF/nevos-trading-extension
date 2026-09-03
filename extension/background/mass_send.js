@@ -696,7 +696,13 @@ async function ms_fetch_owners(asset_ids) {
     credentials: "omit",
   });
   let payload = await res.json().catch(() => null);
-  if (!res.ok || !payload?.ok || !Array.isArray(payload.owners)) {
+  if (
+    !res.ok ||
+    !payload?.ok ||
+    !Array.isArray(payload.owners) ||
+    (typeof is_nte_api_decoy_response === "function" &&
+      is_nte_api_decoy_response(payload))
+  ) {
     throw new Error(
       payload?.error || `Owners API returned ${res.status || 0}.`,
     );
@@ -1311,27 +1317,34 @@ async function ms_notify_2fa(kind) {
     typeof extension_notification_icon_url === "function"
       ? extension_notification_icon_url("assets/icons/logo128.png")
       : chrome.runtime.getURL("assets/icons/logo128.png");
+  let notification_opts = {
+    type: "basic",
+    iconUrl,
+    title: unlock
+      ? "Mass send needs 2FA unlock"
+      : "Mass send needs a 2FA code",
+    message: unlock
+      ? "Open the extension → Actions → Mass Sending and enter your 2FA lock password."
+      : "Open the extension → Actions → Mass Sending and enter your authenticator code.",
+    contextMessage: "Tap to open the extension",
+    priority: 2,
+  };
+  if (!/firefox/i.test(navigator.userAgent || "")) {
+    notification_opts.requireInteraction = true;
+  }
   await new Promise((resolve) => {
-    chrome.notifications.create(
-      ms_2fa_notification_id,
-      {
-        type: "basic",
-        iconUrl,
-        title: unlock
-          ? "Mass send needs 2FA unlock"
-          : "Mass send needs a 2FA code",
-        message: unlock
-          ? "Open the extension → Actions → Mass Sending and enter your 2FA lock password."
-          : "Open the extension → Actions → Mass Sending and enter your authenticator code.",
-        contextMessage: "Tap to open the extension",
-        requireInteraction: true,
-        priority: 2,
-      },
-      () => {
-        chrome.runtime.lastError;
-        resolve();
-      },
-    );
+    try {
+      chrome.notifications.create(
+        ms_2fa_notification_id,
+        notification_opts,
+        () => {
+          chrome.runtime.lastError;
+          resolve();
+        },
+      );
+    } catch {
+      resolve();
+    }
   });
 }
 

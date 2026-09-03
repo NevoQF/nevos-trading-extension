@@ -18,10 +18,18 @@
       .nte-history-proof-image-shell[hidden]{display:none!important}
       .nte-history-proof-empty-copy{margin-top:8px;font-size:11px;opacity:.72}
       .nte-history-proof-attachments{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px}
-      .nte-history-proof-thumb-link{display:block}
+      .nte-history-proof-thumb-link{display:block;cursor:zoom-in;text-decoration:none}
       .nte-history-proof-thumb{width:84px;height:84px;border-radius:10px;object-fit:cover;background:rgba(15,23,42,.45);border:1px solid rgba(148,163,184,.16)}
       .light-theme .nte-history-proof-thumb{background:rgba(226,232,240,.9)}
       .nte-history-proof-image-fail{display:flex;align-items:center;justify-content:center;min-width:84px;height:84px;padding:0 10px;border-radius:10px;background:rgba(248,113,113,.08);border:1px dashed rgba(248,113,113,.22);font-size:10px;font-weight:700;line-height:1.35;text-align:center}
+      .nte-history-proof-lightbox{position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
+      .nte-history-proof-lightbox[hidden]{display:none!important}
+      .nte-history-proof-lightbox-backdrop{position:absolute;inset:0;border:0;padding:0;margin:0;background:rgba(2,6,23,.84);cursor:pointer}
+      .nte-history-proof-lightbox-panel{position:relative;z-index:1;max-width:min(96vw,1200px);max-height:92vh;display:flex;align-items:center;justify-content:center}
+      .nte-history-proof-lightbox-img{display:block;max-width:min(96vw,1200px);max-height:92vh;width:auto;height:auto;object-fit:contain;border-radius:12px;box-shadow:0 18px 48px rgba(0,0,0,.5);background:rgba(15,23,42,.35)}
+      .nte-history-proof-lightbox-close{position:absolute;top:-12px;right:-12px;width:32px;height:32px;border:0;border-radius:999px;background:#0f172a;color:#e2e8f0;font:700 20px/1 system-ui,sans-serif;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+      .nte-history-proof-lightbox-close:hover{background:#1e293b}
+      .light-theme .nte-history-proof-lightbox-close{background:#f8fafc;color:#0f172a}
     `;
   };
 })();

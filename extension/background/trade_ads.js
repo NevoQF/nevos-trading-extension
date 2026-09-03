@@ -573,9 +573,10 @@ async function trade_ads_fetch_inventory_collectibles(user_id) {
 }
 
 const trade_ads_roblox_catalog_item_asset = 1;
-const trade_ads_random_offer_accessory_asset_types = new Set([
-  8, 41, 42, 43, 44, 45, 46, 47, 57, 58, 61, 65, 66, 67, 68, 69, 70, 71, 72, 79,
-  80,
+const trade_ads_random_offer_asset_types = new Set([
+  8, 17, 18, 19, 27, 28, 29, 30, 31, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51,
+  52, 53, 54, 55, 56, 57, 58, 61, 64, 65, 66, 67, 68, 69, 70, 71, 72, 76, 77, 78,
+  79, 80,
 ]);
 
 const trade_ads_catalog_detail_cache_key =
@@ -615,7 +616,7 @@ function trade_ads_catalog_row_to_detail(item) {
 
 function trade_ads_random_offer_detail_eligible(d) {
   if (!d || d.kind !== "asset") return false;
-  return trade_ads_random_offer_accessory_asset_types.has(d.assetType);
+  return trade_ads_random_offer_asset_types.has(d.assetType);
 }
 
 async function trade_ads_roblox_catalog_items_details(items) {
@@ -730,11 +731,13 @@ async function trade_ads_pick_random_offer_ids(inv_raw, item_data, owned_set) {
   );
   if (!pool.length) {
     throw new Error(
-      "Random offers only pick accessory items from your inventory. Add some or turn random offers off.",
+      "Random offers only pick tradable limited items from your inventory. Add some or turn random offers off.",
     );
   }
   trade_ads_shuffle(pool);
-  return pool.slice(0, 4);
+  let max_pick = Math.min(4, pool.length);
+  let pick_count = trade_ads_random_int_below(max_pick) + 1;
+  return pool.slice(0, pick_count);
 }
 
 async function trade_ads_thumb_bundle_lookup() {

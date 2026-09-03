@@ -589,15 +589,74 @@
     return `Show Images (${image_count})`;
   }
 
+  function close_proof_lightbox() {
+    let el = document.getElementById("nte-history-proof-lightbox");
+    if (!el) return;
+    el.hidden = true;
+    let img = el.querySelector(".nte-history-proof-lightbox-img");
+    if (img) img.removeAttribute("src");
+  }
+
+  function ensure_proof_lightbox() {
+    let el = document.getElementById("nte-history-proof-lightbox");
+    if (el) return el;
+    el = document.createElement("div");
+    el.id = "nte-history-proof-lightbox";
+    el.className = "nte-history-proof-lightbox";
+    el.hidden = true;
+    el.innerHTML = `
+      <button type="button" class="nte-history-proof-lightbox-backdrop" aria-label="Close image"></button>
+      <div class="nte-history-proof-lightbox-panel" role="dialog" aria-modal="true" aria-label="Proof image">
+        <button type="button" class="nte-history-proof-lightbox-close" aria-label="Close image">&times;</button>
+        <img class="nte-history-proof-lightbox-img" alt="Proof image">
+      </div>
+    `;
+    (document.body || document.documentElement).appendChild(el);
+    el.querySelector(".nte-history-proof-lightbox-backdrop")?.addEventListener("click", close_proof_lightbox);
+    el.querySelector(".nte-history-proof-lightbox-close")?.addEventListener("click", close_proof_lightbox);
+    if (!document.documentElement.__nte_proof_lightbox_esc) {
+      document.documentElement.__nte_proof_lightbox_esc = true;
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") close_proof_lightbox();
+      });
+    }
+    return el;
+  }
+
+  function open_proof_lightbox(data_url) {
+    let raw = String(data_url || "").trim();
+    if (!raw) return false;
+    let el = ensure_proof_lightbox();
+    let img = el.querySelector(".nte-history-proof-lightbox-img");
+    if (!img) return false;
+    img.src = raw;
+    el.hidden = false;
+    return true;
+  }
+
+  function attach_proof_open_handlers(scope) {
+    if (!scope) return;
+    for (let link of scope.querySelectorAll(".nte-history-proof-thumb-link")) {
+      if (link.__nte_proof_open_bound) continue;
+      link.__nte_proof_open_bound = true;
+      link.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        let img = link.querySelector("img.nte-history-proof-thumb");
+        let data_url = String(img?.currentSrc || img?.src || "").trim();
+        open_proof_lightbox(data_url);
+      });
+    }
+  }
+
   function render_proof_images(images) {
     let entries = Array.isArray(images) ? images : [];
     if (!entries.length) return '<div class="nte-history-proof-empty-copy">No image attachments on this proof.</div>';
     return `<div class="nte-history-proof-attachments">${entries
       .map((entry, index) => {
         let data_url = String(entry?.dataUrl || "").trim();
-        let source_url = String(entry?.sourceUrl || "").trim();
         if (!data_url) return `<div class="nte-history-proof-image-fail">${esc(entry?.error || `Could not load image ${index + 1}.`)}</div>`;
-        return `<a class="nte-history-proof-thumb-link" href="${attr_esc(source_url || data_url)}" target="_blank" rel="noopener noreferrer"><img class="nte-history-proof-thumb" src="${attr_esc(data_url)}" alt="Proof image ${index + 1}" loading="lazy" decoding="async"></a>`;
+        return `<a class="nte-history-proof-thumb-link" href="#" role="button" aria-label="View proof image ${index + 1}"><img class="nte-history-proof-thumb" src="${attr_esc(data_url)}" alt="Proof image ${index + 1}" loading="lazy" decoding="async"></a>`;
       })
       .join("")}</div>`;
   }
@@ -682,6 +741,7 @@
         }
         if (card.__nte_item_intel_images_loaded) {
           shell.innerHTML = card.__nte_item_intel_images_loaded;
+          attach_proof_open_handlers(shell);
           shell.hidden = false;
           set_proof_button_state(button, "open");
           return;
@@ -693,6 +753,7 @@
         if (response?.success) {
           card.__nte_item_intel_images_loaded = render_proof_images(response.images);
           shell.innerHTML = card.__nte_item_intel_images_loaded;
+          attach_proof_open_handlers(shell);
           set_proof_button_state(button, "open");
           return;
         }
