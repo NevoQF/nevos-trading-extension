@@ -25,6 +25,8 @@
 
 Release builds stay minified. This repo keeps the readable source, manifests, and assets.
 
+Each version is tagged (`v3.10.48`) and published as a [GitHub Release](https://github.com/NevoQF/nevos-trading-extension/releases) with the store zip files and SHA-256 checksums. See [VERIFY.md](VERIFY.md).
+
 ## What It Is
 
 nevos trading extension is a Roblox trading extension for Chrome, Brave, Edge, Opera, Firefox, and Safari. It adds trading tools directly into Roblox pages so traders can check values, inspect trades, search faster, flag risky items, generate proofs, and generally just makes trading easier.
@@ -129,7 +131,7 @@ GitHub README pages do not play YouTube embeds inline. Use the thumbnail link.
 
 ## Source
 
-The readable extension source is in `extension/`.
+The readable extension source is in `extension/`. Tagged releases and checksums are in [Releases](https://github.com/NevoQF/nevos-trading-extension/releases). How to check a zip: [VERIFY.md](VERIFY.md).
 
 ## Build (local)
 
