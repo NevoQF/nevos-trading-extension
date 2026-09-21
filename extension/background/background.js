@@ -72,7 +72,7 @@ if (typeof importScripts === "function") {
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":false,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
@@ -132,6 +132,10 @@ const trade_notification_prefix = "nru_trade_notification_";
 const cached_trades_key = "cachedTrades";
 const item_data_key = "data";
 const item_data_time_key = "lastRequestForData";
+const item_data_attempt_key = "lastItemDataAttempt";
+const item_data_server_fails_key = "itemDataServerFails";
+const item_data_max_age_ms = 60000;
+const item_data_server_fail_fallback = 5;
 const item_data_url = RolimonsItemDetails.ROLIMONS_ITEM_DETAILS_URL;
 const server_item_data_url = "https://nevos-extension.com/api/rolimons/items";
 const trade_ad_item_data_max_age_ms = 180000;
@@ -759,6 +763,8 @@ async function cache_item_data(data) {
   await set_local_values({
     [item_data_key]: normalized,
     [item_data_time_key]: Date.now(),
+    [item_data_attempt_key]: Date.now(),
+    [item_data_server_fails_key]: 0,
   });
   return normalized;
 }
@@ -768,16 +774,19 @@ function retry_item_data_until_success() {
   item_data_retry_promise = (async () => {
     try {
       for (;;) {
+        if (typeof nte_is_lite !== "function" || !nte_is_lite()) {
+          let server_data = await sync_item_data_from_server();
+          if (has_item_data(server_data)) {
+            await set_local_value(item_data_server_fails_key, 0);
+            return server_data;
+          }
+        }
         let data = null;
         try {
           data = await fetch_item_data();
         } catch {}
         if (has_item_data(data)) {
           return await cache_item_data(data);
-        }
-        if (typeof nte_is_lite !== "function" || !nte_is_lite()) {
-          let server_data = await sync_item_data_from_server();
-          if (has_item_data(server_data)) return server_data;
         }
         await sleep_for(1000);
       }
@@ -836,6 +845,8 @@ async function sync_item_data_from_server() {
     await set_local_values({
       [item_data_key]: payload,
       [item_data_time_key]: server_at > 0 ? server_at : Date.now(),
+      [item_data_attempt_key]: Date.now(),
+      [item_data_server_fails_key]: 0,
     });
     return payload;
   } catch {
@@ -845,55 +856,59 @@ async function sync_item_data_from_server() {
 
 let item_data_refresh_promise = null;
 
-async function get_cached_item_data(max_age_ms = 300000) {
+async function get_cached_item_data(max_age_ms = item_data_max_age_ms) {
   if (item_data_refresh_promise) return item_data_refresh_promise;
 
-  let { [item_data_key]: data, [item_data_time_key]: last_request } =
-    await get_local_values([item_data_key, item_data_time_key]);
-  data = coerce_item_data(data);
-
-  if (
-    has_item_data(data) &&
-    item_data_has_bundle_ids(data) &&
-    last_request &&
-    Date.now() - last_request < max_age_ms
-  ) {
+  let stored = await get_local_values([
+    item_data_key,
+    item_data_time_key,
+    item_data_attempt_key,
+    item_data_server_fails_key,
+  ]);
+  let data = coerce_item_data(stored[item_data_key]);
+  let last_attempt =
+    Number(stored[item_data_attempt_key] || stored[item_data_time_key] || 0) ||
+    0;
+  let has_good = has_item_data(data) && item_data_has_bundle_ids(data);
+  if (has_good && last_attempt && Date.now() - last_attempt < max_age_ms) {
     return data;
   }
 
   if (item_data_refresh_promise) return item_data_refresh_promise;
 
   item_data_refresh_promise = (async () => {
+    await set_local_value(item_data_attempt_key, Date.now());
     let fresh_data = null;
-    if (typeof nte_is_lite !== "function" || !nte_is_lite()) {
+    let is_lite = typeof nte_is_lite === "function" && nte_is_lite();
+    if (!is_lite) {
       fresh_data = await sync_item_data_from_server();
     }
-    if (!fresh_data) {
+    if (has_item_data(fresh_data) && item_data_has_bundle_ids(fresh_data)) {
+      return fresh_data;
+    }
+
+    let fails = (Number(stored[item_data_server_fails_key]) || 0) + 1;
+    await set_local_value(item_data_server_fails_key, fails);
+
+    if (is_lite || fails >= item_data_server_fail_fallback || !has_good) {
       try {
         fresh_data = await fetch_item_data();
       } catch {}
-    }
-    // Server/cache without bundle metadata → force Rolimons v3 normalize.
-    if (fresh_data && !item_data_has_bundle_ids(fresh_data)) {
-      try {
-        let roli = await fetch_item_data();
-        if (has_item_data(roli) && item_data_has_bundle_ids(roli))
-          fresh_data = roli;
-      } catch {}
-    }
-    if (fresh_data) {
-      return cache_item_data(fresh_data);
-    }
-
-    let stored = await get_local_values([item_data_key]);
-    let stored_data = coerce_item_data(stored?.[item_data_key]);
-    if (has_item_data(stored_data)) {
-      start_item_data_retry();
-      return stored_data;
+      if (fresh_data && !item_data_has_bundle_ids(fresh_data)) {
+        try {
+          let roli = await fetch_item_data();
+          if (has_item_data(roli) && item_data_has_bundle_ids(roli))
+            fresh_data = roli;
+        } catch {}
+      }
+      if (has_item_data(fresh_data)) {
+        return cache_item_data(fresh_data);
+      }
     }
 
+    if (has_good) return data;
     start_item_data_retry();
-    return null;
+    return data || null;
   })().finally(() => {
     item_data_refresh_promise = null;
   });
@@ -908,7 +923,7 @@ async function get_trade_ad_notification_item_data() {
   return get_cached_item_data(trade_ad_item_data_max_age_ms);
 }
 
-async function get_ui_item_data(max_age_ms = 300000) {
+async function get_ui_item_data(max_age_ms = item_data_max_age_ms) {
   let data = await get_cached_item_data(max_age_ms);
   if (has_item_data(data)) return data;
   return retry_item_data_until_success();
@@ -3158,9 +3173,13 @@ async function fetch_trade_history_api(query, limit = 6) {
       `Trade history is rate limited right now. Try again in about ${wait_seconds}s.`,
     );
   }
-  if (!response.ok || !payload?.ok || is_nte_api_decoy_response(payload)) {
+  if (is_nte_api_decoy_response(payload) || !payload?.ok) {
     throw new Error(
-      payload?.error || `Trade history API returned ${response.status}.`,
+      payload?.error && !is_nte_api_decoy_response(payload)
+        ? payload.error
+        : response.ok
+          ? "Could not load trade history right now."
+          : `Trade history API returned ${response.status}.`,
     );
   }
 
@@ -3928,6 +3947,101 @@ async function fetch_rolimons_player_tradable(user_id) {
   };
 }
 
+// DynamicHead inventory (type 79). Rolimons has no UAID timestamps for
+// collectible face bundles; these created/updated times fill Owner Since.
+async function fetch_rolimons_player_heads(user_id) {
+  let id = String(user_id || "").trim();
+  if (!/^\d+$/.test(id)) {
+    return { ok: false, complete: false, items: [], error: "invalid_user" };
+  }
+  let items = [];
+  let cursor = "";
+  for (let page = 0; page < 100; page++) {
+    let params = new URLSearchParams({
+      limit: "100",
+      sortOrder: "Desc",
+    });
+    if (cursor) params.set("cursor", cursor);
+    let url = `https://inventory.roblox.com/v2/users/${id}/inventory/79?${params.toString()}`;
+    let res = await nte_fetch_inventory_with_retries(
+      url,
+      { credentials: "include" },
+      {
+        source: "rolimons_player_heads",
+        silent: true,
+        maxAttempts: NTE_INVENTORY_RATE_LIMIT_ATTEMPTS,
+      },
+    );
+    if (!res) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "network",
+        page,
+      };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "auth",
+        status: res.status,
+      };
+    }
+    if (res.status === 429 || (res.status >= 500 && res.status < 600)) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "rate_limited",
+        status: res.status,
+        page,
+      };
+    }
+    if (!res.ok) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "http",
+        status: res.status,
+        page,
+      };
+    }
+    let data = await res.json().catch(() => null);
+    if (!data) {
+      return {
+        ok: false,
+        complete: false,
+        items,
+        error: "parse",
+        page,
+      };
+    }
+    let rows = Array.isArray(data.data) ? data.data : [];
+    for (let row of rows) {
+      items.push({
+        assetId: row?.assetId,
+        assetName: row?.assetName,
+        created: row?.created,
+        updated: row?.updated,
+      });
+    }
+    cursor = data.nextPageCursor || "";
+    if (!cursor) {
+      return { ok: true, complete: true, items };
+    }
+  }
+  return {
+    ok: false,
+    complete: false,
+    items,
+    error: "truncated",
+  };
+}
+
 let rolimons_player_face_map_cache = null;
 let rolimons_player_face_map_at = 0;
 
@@ -4113,44 +4227,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
               done("", err?.message || "Could not capture the current tab.");
             }
           });
-        let has_host_access = await check_host_permissions();
-        if (!has_host_access)
-          has_host_access = await request_host_permissions();
-        let captured = await capture_tab();
-        if (captured?.ok) return respond(captured);
-        if (is_quick_proof_capture_permission_error(captured?.error)) {
-          if (await open_first_roblox_popup(sender)) {
-            await new Promise((resolve) => setTimeout(resolve, 250));
-            captured = await capture_tab();
-            if (captured?.ok) return respond(captured);
-          }
-          return respond({
-            ok: false,
-            error: quick_proof_capture_permission_message,
-          });
-        }
-        if (!has_host_access)
-          return respond({
-            ok: false,
-            error: "Grant Roblox site access for Quick Proof, then try again.",
-          });
-        await request_host_permissions();
-        captured = await capture_tab();
-        if (
-          !captured?.ok &&
-          is_quick_proof_capture_permission_error(captured?.error)
-        ) {
-          if (await open_first_roblox_popup(sender)) {
-            await new Promise((resolve) => setTimeout(resolve, 250));
-            captured = await capture_tab();
-            if (captured?.ok) return respond(captured);
-          }
-          return respond({
-            ok: false,
-            error: quick_proof_capture_permission_message,
-          });
-        }
-        respond(captured);
+        respond(await capture_tab());
       } catch (err) {
         respond({
           ok: false,
@@ -4521,6 +4598,29 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
 
+  if (message?.type === "rolimons_player_heads") {
+    (async () => {
+      try {
+        let result = await fetch_rolimons_player_heads(message.user_id);
+        respond({
+          ok: !!result?.ok,
+          complete: !!result?.complete,
+          items: Array.isArray(result?.items) ? result.items : [],
+          error: result?.error || null,
+          status: result?.status || null,
+        });
+      } catch (error) {
+        respond({
+          ok: false,
+          complete: false,
+          items: [],
+          error: error?.message || String(error),
+        });
+      }
+    })();
+    return true;
+  }
+
   if (message?.type === "rolimons_player_face_map") {
     (async () => {
       try {
@@ -4564,6 +4664,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === trade_cache_alarm_name) {
     try {
       await get_pruned_cached_trades();
+    } catch {}
+
+    try {
+      await get_cached_item_data();
     } catch {}
 
     refresh_trade_cache();
@@ -4613,7 +4717,7 @@ chrome.storage.onChanged.addListener((changes, area_name) => {
 });
 
 const required_host_origins = (() => {
-  // Quick Proof only needs Roblox page access for tab capture flow.
+  // captureVisibleTab needs <all_urls>. A Roblox-only host permission is not enough.
   let quick_proof = ["https://www.roblox.com/*", "https://roblox.com/*"];
   let manifest_origins = chrome.runtime?.getManifest?.()?.host_permissions;
   if (!Array.isArray(manifest_origins) || !manifest_origins.length)
@@ -4622,13 +4726,6 @@ const required_host_origins = (() => {
   let filtered = quick_proof.filter((x) => granted_set.has(x));
   return filtered.length ? filtered : quick_proof;
 })();
-
-const quick_proof_capture_permission_message =
-  "Quick Proof needs one-time tab access. I opened the extension popup for you. If Proof still fails, open Roblox settings, click the extension settings entry, then try Proof again.";
-
-function is_quick_proof_capture_permission_error(error) {
-  return /'<all_urls>'|<all_urls>|activeTab/i.test(String(error || ""));
-}
 
 async function open_first_roblox_popup(sender) {
   if (

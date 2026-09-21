@@ -4616,7 +4616,7 @@ body.is-tradeads-tab .popup {
 }
 
 .ta-sheet-picker {
-  max-height: 48%;
+  max-height: 56%;
 }
 
 @keyframes ta-slide {
@@ -4647,6 +4647,88 @@ body.is-tradeads-tab .popup {
   border: 1px solid var(--border);
   background: var(--bg-secondary);
   color: var(--text-primary);
+}
+
+.ta-picker-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.015);
+  flex-shrink: 0;
+}
+
+.ta-picker-sort {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.ta-picker-sort-btn {
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.ta-picker-sort-btn.is-on {
+  background: color-mix(in srgb, var(--accent, #3d7eff) 22%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--accent, #3d7eff) 45%, var(--border));
+  color: var(--text-primary);
+}
+
+.ta-picker-range {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.ta-picker-range-sep {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.ta-picker-range input {
+  width: 72px;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 7px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.ta-pick-proj-tag,
+.ta-slot-proj,
+.ms-confirm-proj {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  z-index: 1;
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(245, 158, 11, 0.92);
+  color: #1a1205;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.ta-slot-proj {
+  left: 4px;
+  top: 4px;
 }
 
 .ta-tag-strip {
@@ -8450,6 +8532,193 @@ body.is-tradeads-tab .popup {
 
 .ms-action-run:active:not(:disabled) {
   transform: scale(0.98);
+}
+
+.ms-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(8, 10, 14, 0.62);
+  backdrop-filter: blur(10px) saturate(120%);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+}
+
+.ms-confirm-card {
+  width: min(420px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  border-radius: 16px;
+  background: var(--bg-card, #181b24);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  color: var(--text-primary);
+}
+
+.ms-confirm-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ms-confirm-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.ms-confirm-title {
+  font-size: 14px;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.ms-confirm-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.ms-confirm-close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ms-confirm-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.ms-confirm-body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.ms-confirm-side {
+  min-width: 0;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.ms-confirm-side-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.ms-confirm-side-head b {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.ms-confirm-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-confirm-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ms-confirm-thumb {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.ms-confirm-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ms-confirm-copy {
+  min-width: 0;
+}
+
+.ms-confirm-name {
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ms-confirm-value {
+  margin-top: 1px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ms-confirm-robux {
+  margin-top: 7px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.ms-confirm-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ms-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.ms-confirm-btn {
+  min-height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ms-confirm-btn.is-primary {
+  border-color: transparent;
+  background: var(--accent, #3d7eff);
+  color: #fff;
 }
 
 .ms-action-run.is-stop,

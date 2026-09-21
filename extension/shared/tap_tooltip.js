@@ -56,6 +56,13 @@
       .ms-field-help {
         -webkit-tap-highlight-color: transparent;
       }
+      .nte-trade-limit-help.is-open {
+        position: relative;
+        z-index: 2;
+      }
+      #nteTradeDailyLimitCount:has(.nte-trade-limit-help.is-open) {
+        z-index: 10050;
+      }
       .nte-tap-tooltip-host:focus-visible,
       .about-thanks-hint:focus-visible,
       .nte-trade-limit-help:focus-visible,

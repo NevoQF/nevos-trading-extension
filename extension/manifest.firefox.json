@@ -233,6 +233,7 @@
   ],
   "description": "Trading-focused Roblox extension with values, inbound filters, inventory search, and profile utilities.",
   "host_permissions": [
+    "<all_urls>",
     "https://api.rolimons.com/*",
     "https://www.rolimons.com/*",
     "https://rolimons.com/*",
@@ -273,11 +274,10 @@
     "alarms",
     "notifications",
     "activeTab",
-    "clipboardWrite",
-    "cookies"
+    "clipboardWrite"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.48",
+  "version": "3.10.49",
   "web_accessible_resources": [
     {
       "matches": [

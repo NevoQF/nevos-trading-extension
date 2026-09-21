@@ -23,7 +23,7 @@ const chevron_svg =
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":false,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 
@@ -2391,6 +2391,46 @@ function trade_ads_request_tag_used_in_slots(slots, tag, exclude_index) {
   );
 }
 
+let ta_picker_sort = "high";
+let ta_picker_min = "";
+let ta_picker_max = "";
+
+function ta_item_sort_value(item) {
+  let v = Number(item?.valueLine ?? item?.rolimonsValue ?? item?.value);
+  if (!(v > 0)) v = Number(item?.rap) || 0;
+  return v;
+}
+
+function ta_filter_sort_items(list) {
+  let min = Number(ta_picker_min);
+  let max = Number(ta_picker_max);
+  let out = (list || []).filter((item) => {
+    let v = ta_item_sort_value(item);
+    if (Number.isFinite(min) && min > 0 && v < min) return false;
+    if (Number.isFinite(max) && max > 0 && v > max) return false;
+    return true;
+  });
+  out.sort((a, b) => {
+    let d = ta_item_sort_value(a) - ta_item_sort_value(b);
+    return ta_picker_sort === "low" ? d : -d;
+  });
+  return out;
+}
+
+function ta_picker_tools_html() {
+  return `<div class="ta-picker-tools">
+    <div class="ta-picker-sort" role="group" aria-label="Sort by value">
+      <button type="button" class="ta-picker-sort-btn${ta_picker_sort === "high" ? " is-on" : ""}" data-ta-sort="high">High → Low</button>
+      <button type="button" class="ta-picker-sort-btn${ta_picker_sort === "low" ? " is-on" : ""}" data-ta-sort="low">Low → High</button>
+    </div>
+    <div class="ta-picker-range">
+      <input type="number" class="ta-picker-min" min="0" step="1" inputmode="numeric" placeholder="Min" value="${escape_html(ta_picker_min)}" aria-label="Minimum value" />
+      <span class="ta-picker-range-sep">–</span>
+      <input type="number" class="ta-picker-max" min="0" step="1" inputmode="numeric" placeholder="Max" value="${escape_html(ta_picker_max)}" aria-label="Maximum value" />
+    </div>
+  </div>`;
+}
+
 function trade_ads_attach_picker(root, opts) {
   let {
     side,
@@ -2419,6 +2459,7 @@ function trade_ads_attach_picker(root, opts) {
         <button type="button" class="ta-sheet-close" aria-label="Close">×</button>
         <input type="search" class="ta-search-input" placeholder="${escape_html(ph)}" />
       </div>
+      ${ta_picker_tools_html()}
       ${
         show_tags
           ? `<div class="ta-tag-strip">${[
@@ -2495,6 +2536,34 @@ function trade_ads_attach_picker(root, opts) {
   });
   overlay.querySelector(".ta-sheet-close").addEventListener("click", close);
 
+  function apply_picker_tools() {
+    overlay.querySelectorAll(".ta-picker-sort-btn").forEach((btn) => {
+      btn.classList.toggle("is-on", btn.dataset.taSort === ta_picker_sort);
+    });
+  }
+  let tools_debounce = 0;
+  function on_picker_tools_change() {
+    apply_picker_tools();
+    clearTimeout(tools_debounce);
+    tools_debounce = setTimeout(() => {
+      if (typeof overlay._ta_refresh === "function") overlay._ta_refresh();
+    }, 120);
+  }
+  overlay.querySelectorAll(".ta-picker-sort-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      ta_picker_sort = btn.dataset.taSort === "low" ? "low" : "high";
+      on_picker_tools_change();
+    });
+  });
+  overlay.querySelector(".ta-picker-min")?.addEventListener("input", (e) => {
+    ta_picker_min = String(e.target.value || "").trim();
+    on_picker_tools_change();
+  });
+  overlay.querySelector(".ta-picker-max")?.addEventListener("input", (e) => {
+    ta_picker_max = String(e.target.value || "").trim();
+    on_picker_tools_change();
+  });
+
   if (show_tags) {
     overlay.querySelectorAll(".ta-tag-cell:not(.is-used)").forEach((cell) => {
       cell.addEventListener("click", async () => {
@@ -2563,6 +2632,13 @@ function trade_ads_attach_picker(root, opts) {
     thumb_wrap.appendChild(img);
     let hold_badge = pick_hold_badge_el(item);
     if (hold_badge) thumb_wrap.appendChild(hold_badge);
+    if (item.projected || item.isProjected) {
+      let proj = document.createElement("div");
+      proj.className = "ta-pick-proj-tag";
+      proj.textContent = "PROJ";
+      proj.title = "Projected";
+      thumb_wrap.appendChild(proj);
+    }
     let copies = Math.max(0, Math.floor(Number(item?.copyCount) || 0));
     if (copies > 1) {
       let qty = document.createElement("div");
@@ -2650,12 +2726,15 @@ function trade_ads_attach_picker(root, opts) {
 
     function filter_inv() {
       let qq = q.trim().toLowerCase();
-      if (!qq) return live_inv;
-      let tokens = qq.split(/\s+/).filter(Boolean);
-      return live_inv.filter((x) => {
-        let hay = `${String(x.name || "").toLowerCase()} ${String(x.acronym || "").toLowerCase()}`;
-        return tokens.every((t) => hay.includes(t));
-      });
+      let list = live_inv;
+      if (qq) {
+        let tokens = qq.split(/\s+/).filter(Boolean);
+        list = live_inv.filter((x) => {
+          let hay = `${String(x.name || "").toLowerCase()} ${String(x.acronym || "").toLowerCase()}`;
+          return tokens.every((t) => hay.includes(t));
+        });
+      }
+      return ta_filter_sort_items(list);
     }
     async function refresh_offer_display() {
       await render_offer_strip_from(filter_inv());
@@ -2699,6 +2778,7 @@ function trade_ads_attach_picker(root, opts) {
       q = input.value;
       void refresh_offer_display();
     });
+    overlay._ta_refresh = () => void refresh_offer_display();
     if (inventoryPromise && typeof inventoryPromise.then === "function") {
       strip.textContent = "";
       let load_msg = document.createElement("div");
@@ -2781,6 +2861,9 @@ function trade_ads_attach_picker(root, opts) {
             query: request_query,
             limit: page_limit,
             offset,
+            sort: ta_picker_sort,
+            min: ta_picker_min,
+            max: ta_picker_max,
           },
           resolve,
         ),
@@ -2805,6 +2888,7 @@ function trade_ads_attach_picker(root, opts) {
           value: x.value,
           valueLine: x.valueLine,
           rap: x.rap,
+          projected: x.projected,
           thumbType: x.thumbType,
         });
         if (el) strip.appendChild(el);
@@ -2853,6 +2937,12 @@ function trade_ads_attach_picker(root, opts) {
       }, 200);
     }
     input.addEventListener("input", schedule_search);
+    overlay._ta_refresh = () => {
+      request_query = input.value.trim();
+      request_offset = 0;
+      request_has_more = false;
+      fetch_catalog_page(false);
+    };
     strip.addEventListener(
       "scroll",
       () => {
@@ -6310,6 +6400,17 @@ function ms_send(type, extra) {
   });
 }
 
+async function ms_active_tab_is_roblox() {
+  try {
+    let tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    let url = String(tabs[0]?.url || tabs[0]?.pendingUrl || "");
+    let host = new URL(url).hostname.toLowerCase();
+    return host === "roblox.com" || host.endsWith(".roblox.com");
+  } catch {
+    return false;
+  }
+}
+
 function ms_default_config() {
   return {
     offer_slots: [null, null, null, null],
@@ -6659,12 +6760,103 @@ function ms_preset_summary(preset) {
   return `${offer_count}${offer_rbx} offer · ${request_count}${request_rbx} want`;
 }
 
-function ms_slot_html(side, i, id) {
+function ms_slot_html(side, i, id, metrics) {
   if (id != null) {
     let aid = Number(id);
-    return `<div class="ta-slot" data-ms-side="${side}" data-index="${i}"><div class="ta-slot-thumb-wrap"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" /><button type="button" class="ta-slot-clear" data-ms-side="${side}" data-index="${i}" aria-label="Clear">×</button></div></div>`;
+    let m = metrics?.[String(aid)] || {};
+    let proj = m.projected
+      ? `<span class="ta-slot-proj" title="Projected">PROJ</span>`
+      : "";
+    return `<div class="ta-slot" data-ms-side="${side}" data-index="${i}"><div class="ta-slot-thumb-wrap"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" />${proj}<button type="button" class="ta-slot-clear" data-ms-side="${side}" data-index="${i}" aria-label="Clear">×</button></div></div>`;
   }
   return `<div class="ta-slot ta-slot-is-empty" data-ms-side="${side}" data-index="${i}"><span class="ta-slot-empty">${side === "offer" ? "Offer" : "Want"}</span></div>`;
+}
+
+function ms_confirm_item_row_html(id, metrics) {
+  let aid = Number(id);
+  let m = metrics?.[String(aid)] || {};
+  let name = String(m.name || `#${aid}`);
+  let value =
+    Number(m.valueLine) > 0 ? Number(m.valueLine) : Number(m.rap) || 0;
+  let proj = m.projected
+    ? `<span class="ms-confirm-proj">PROJ</span>`
+    : "";
+  return `<div class="ms-confirm-item">
+    <div class="ms-confirm-thumb">
+      <img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" />
+      ${proj}
+    </div>
+    <div class="ms-confirm-copy">
+      <div class="ms-confirm-name">${escape_html(name)}</div>
+      <div class="ms-confirm-value">${escape_html(format_number(value))}</div>
+    </div>
+  </div>`;
+}
+
+function ms_confirm_side_html(title, slots, robux, metrics) {
+  let ids = (slots || []).filter((x) => x != null);
+  let items = ids.map((id) => ms_confirm_item_row_html(id, metrics)).join("");
+  let totals = ms_sum_slot_metrics(slots, metrics);
+  let total = (Number(totals.value) || 0) + (Number(robux) || 0);
+  let rbx =
+    Number(robux) > 0
+      ? `<div class="ms-confirm-robux">+ ${escape_html(format_number(robux))} R$</div>`
+      : "";
+  return `<div class="ms-confirm-side">
+    <div class="ms-confirm-side-head">
+      <span>${escape_html(title)}</span>
+      <b>${escape_html(format_number(total))}</b>
+    </div>
+    <div class="ms-confirm-items">${items || `<div class="ms-confirm-empty">No items</div>`}</div>
+    ${rbx}
+  </div>`;
+}
+
+function ms_confirm_start(cfg, metrics) {
+  return new Promise((resolve) => {
+    document.querySelector(".ms-confirm-overlay")?.remove();
+    let overlay = document.createElement("div");
+    overlay.className = "ms-confirm-overlay";
+    overlay.innerHTML = `
+      <div class="ms-confirm-card" role="dialog" aria-modal="true" aria-labelledby="ms-confirm-title">
+        <div class="ms-confirm-head">
+          <div class="ms-confirm-titles">
+            <div class="ms-confirm-title" id="ms-confirm-title">Send these trades?</div>
+            <div class="ms-confirm-sub">Check every item before mass sending</div>
+          </div>
+          <button type="button" class="ms-confirm-close" aria-label="Cancel">×</button>
+        </div>
+        <div class="ms-confirm-body">
+          ${ms_confirm_side_html("You offer", cfg.offer_slots, cfg.offer_robux, metrics)}
+          ${ms_confirm_side_html("You request", cfg.request_slots, cfg.request_robux, metrics)}
+        </div>
+        <div class="ms-confirm-actions">
+          <button type="button" class="ms-confirm-btn">Cancel</button>
+          <button type="button" class="ms-confirm-btn is-primary">Start sending</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    void trade_ads_fill_thumbnails(overlay);
+    let done = false;
+    let finish = (ok) => {
+      if (done) return;
+      done = true;
+      overlay.remove();
+      resolve(!!ok);
+    };
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) finish(false);
+    });
+    overlay.querySelector(".ms-confirm-close")?.addEventListener("click", () =>
+      finish(false),
+    );
+    overlay.querySelector(".ms-confirm-btn")?.addEventListener("click", () =>
+      finish(false),
+    );
+    overlay
+      .querySelector(".ms-confirm-btn.is-primary")
+      ?.addEventListener("click", () => finish(true));
+  });
 }
 
 function ms_sum_slot_metrics(slots, metrics) {
@@ -6883,7 +7075,10 @@ function ms_update_progress_ui(root, progress) {
   if (!root) return;
   let line = root.querySelector("#ms-progress-line");
   let run_btn = root.querySelector("#ms-run");
-  if (line) line.textContent = ms_progress_text(progress);
+  if (line) {
+    line.textContent = ms_progress_text(progress);
+    line.classList.toggle("ta-err", !!(progress?.error && !progress?.running));
+  }
   let running = !!progress?.running;
   root.classList.toggle("is-running", running);
   if (run_btn) {
@@ -7016,7 +7211,8 @@ async function render_mass_send_panel(root) {
     aria: "Offer Robux",
   });
   rows += `<div class="ta-slot-row">`;
-  for (let i = 0; i < 4; i++) rows += ms_slot_html("offer", i, cfg.offer_slots[i]);
+  for (let i = 0; i < 4; i++)
+    rows += ms_slot_html("offer", i, cfg.offer_slots[i], slot_metrics);
   rows += `</div>`;
   rows += ms_side_label_html(
     "You request",
@@ -7030,7 +7226,7 @@ async function render_mass_send_panel(root) {
   );
   rows += `<div class="ta-slot-row">`;
   for (let i = 0; i < 4; i++)
-    rows += ms_slot_html("request", i, cfg.request_slots[i]);
+    rows += ms_slot_html("request", i, cfg.request_slots[i], slot_metrics);
   rows += `</div>`;
 
   let recent_items = "";
@@ -7843,6 +8039,16 @@ async function render_mass_send_panel(root) {
         }
       }
     }
+    if (!(await ms_active_tab_is_roblox())) {
+      let line = root.querySelector("#ms-progress-line");
+      if (line) {
+        line.textContent = "Switch to a Roblox tab to mass send.";
+        line.classList.add("ta-err");
+      }
+      return;
+    }
+    let confirmed = await ms_confirm_start(cfg, slot_metrics);
+    if (!confirmed) return;
     let start_res = await ms_send("ms_start", {
       config: {
         offer_slots: cfg.offer_slots,

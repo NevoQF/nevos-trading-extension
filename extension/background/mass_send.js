@@ -3,6 +3,8 @@ const mass_send_owners_api_url =
 const mass_send_send_url = "https://trades.roblox.com/v2/trades/send";
 const mass_send_delay_ms = 3000;
 const mass_send_rate_limit_wait_ms = 61000;
+const ms_need_roblox_tab_error = "Switch to a Roblox tab to mass send.";
+const ms_need_roblox_tab_wait = "Switch to a Roblox tab to keep sending.";
 const mass_send_rate_unlocked_key = "mass_send_rate_unlocked";
 const ms_totp_secret_key = "roblox_totp_secret_b32";
 const ms_totp_mode_key = "roblox_totp_storage_mode";
@@ -91,6 +93,23 @@ function ms_normalize_asset_ids(slots) {
     .map((x) => Number(x))
     .filter((n) => Number.isFinite(n) && n > 0)
     .slice(0, 4);
+}
+
+function ms_instances_match_assets(asset_ids, instances) {
+  let want = (asset_ids || []).length;
+  if (!want || !Array.isArray(instances) || instances.length !== want)
+    return false;
+  let seen = new Set();
+  for (let id of instances) {
+    let s = String(id || "").trim();
+    if (!s || s === "0" || seen.has(s)) return false;
+    seen.add(s);
+  }
+  return seen.size === want;
+}
+
+function ms_copy_instance_ids(instances) {
+  return Array.isArray(instances) ? instances.slice() : [];
 }
 
 const ms_online_hours_max = 8760; // 1 year; 0 = filter off
@@ -255,6 +274,45 @@ async function ms_write_trade_daily_limit_snapshot(state) {
       fetched_at: Date.now(),
     });
   } catch {}
+}
+
+function ms_is_roblox_url(url) {
+  try {
+    let host = new URL(String(url || "")).hostname.toLowerCase();
+    return host === "roblox.com" || host.endsWith(".roblox.com");
+  } catch {
+    return false;
+  }
+}
+
+async function ms_roblox_tab_is_in_front() {
+  if (!chrome?.windows?.getLastFocused || !chrome?.tabs?.query) return false;
+  let win = null;
+  try {
+    win = await chrome.windows.getLastFocused({ windowTypes: ["normal"] });
+  } catch {
+    win = null;
+  }
+  let tabs = [];
+  try {
+    if (win?.id != null) {
+      tabs = await chrome.tabs.query({ active: true, windowId: win.id });
+    } else {
+      tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    }
+  } catch {
+    return false;
+  }
+  return ms_is_roblox_url(tabs[0]?.url || tabs[0]?.pendingUrl);
+}
+
+async function ms_wait_for_roblox_tab() {
+  while (!ms_abort) {
+    if (await ms_roblox_tab_is_in_front()) return;
+    ms_state.status = ms_need_roblox_tab_wait;
+    await ms_sleep(400);
+  }
+  throw new Error("Cancelled by user");
 }
 
 async function ms_ask_roblox_tab_trade_daily_limit() {
@@ -593,7 +651,18 @@ function ms_resolve_instances_for_assets(items, asset_ids, options = {}) {
     }
   }
   let missing = Object.keys(needed).filter((key) => needed[key] > 0);
-  if (!missing.length) return { ok: true, instances: collected, missing: [] };
+  if (
+    !missing.length &&
+    ms_instances_match_assets(asset_ids, collected)
+  )
+    return { ok: true, instances: collected.slice(), missing: [] };
+  if (!missing.length) {
+    return {
+      ok: false,
+      missing: asset_ids.map(String),
+      error: "Could not resolve a unique copy for every requested item.",
+    };
+  }
 
   let item_data = options.item_data || null;
   let on_hold_labels = [];
@@ -953,13 +1022,14 @@ async function ms_inventory_for_picker() {
     let ui =
       typeof trade_ads_row_ui_metrics === "function"
         ? trade_ads_row_ui_metrics(roli)
-        : { valueLine: value, rap: 0 };
+        : { valueLine: value, rap: 0, projected: false };
     enriched.push({
       assetId: asset_id,
       name: name || "",
       value,
       valueLine: ui.valueLine,
       rap: ui.rap,
+      projected: ui.projected,
       acronym,
       onHoldCount: on_hold_count,
       copyCount: copy_count,
@@ -1588,16 +1658,38 @@ async function ms_send_trade(
   offer_robux = 0,
   request_robux = 0,
 ) {
+  let offer_payload = ms_copy_instance_ids(offer_ids);
+  let request_payload = ms_copy_instance_ids(request_ids);
+  if (!offer_payload.length || !request_payload.length) {
+    return {
+      resp: { ok: false, status: 0 },
+      data: {},
+      csrf,
+      error: "Incomplete trade payload.",
+    };
+  }
+  if (
+    offer_payload.length !== (Array.isArray(offer_ids) ? offer_ids.length : 0) ||
+    request_payload.length !==
+      (Array.isArray(request_ids) ? request_ids.length : 0)
+  ) {
+    return {
+      resp: { ok: false, status: 0 },
+      data: {},
+      csrf,
+      error: "Trade item count mismatch. Send blocked.",
+    };
+  }
   let body = {
     senderOffer: {
       userId: self_id,
       robux: ms_clamp_robux(offer_robux),
-      collectibleItemInstanceIds: offer_ids,
+      collectibleItemInstanceIds: offer_payload.slice(),
     },
     recipientOffer: {
       userId: recipient_id,
       robux: ms_clamp_robux(request_robux),
-      collectibleItemInstanceIds: request_ids,
+      collectibleItemInstanceIds: request_payload.slice(),
     },
   };
   let do_send = async (token, challenge_headers = null) => {
@@ -1814,6 +1906,7 @@ async function ms_run(config) {
   };
 
   try {
+    await ms_wait_for_roblox_tab();
     let offer_assets = ms_normalize_asset_ids(config?.offer_slots);
     let request_assets = ms_normalize_asset_ids(config?.request_slots);
     let hours = ms_clamp_hours(config?.online_hours);
@@ -1871,7 +1964,10 @@ async function ms_run(config) {
         offer_resolved?.error || "One or more offer items are not available to trade.",
       );
     }
-    let offer_instances = offer_resolved.instances;
+    let offer_instances = ms_copy_instance_ids(offer_resolved.instances);
+    if (!ms_instances_match_assets(offer_assets, offer_instances)) {
+      throw new Error("Could not resolve a unique copy for every offer item.");
+    }
 
     ms_state.phase = "owners";
     ms_state.status = "Loading owners…";
@@ -1923,6 +2019,11 @@ async function ms_run(config) {
         break;
       }
       if (ms_state.sent >= target_sends) break;
+      await ms_wait_for_roblox_tab();
+      if (ms_abort) {
+        ms_state.error = "Cancelled by user";
+        break;
+      }
 
       let target = candidates[i];
       let recipient_id = target.user_id;
@@ -1942,14 +2043,23 @@ async function ms_run(config) {
         ms_state.skipped++;
         continue;
       }
-      let their_instances = their_instances_result.instances;
+      let their_instances = ms_copy_instance_ids(
+        their_instances_result.instances,
+      );
+      if (!ms_instances_match_assets(request_assets, their_instances)) {
+        ms_state.skipped++;
+        continue;
+      }
+      if (!ms_instances_match_assets(offer_assets, offer_instances)) {
+        throw new Error("Offer items changed while sending. Stopped to avoid a bad trade.");
+      }
 
       let result = await ms_send_trade_with_rate_limit(
         csrf,
         self_id,
         recipient_id,
-        offer_instances,
-        their_instances,
+        ms_copy_instance_ids(offer_instances),
+        ms_copy_instance_ids(their_instances),
         offer_robux,
         request_robux,
       );
@@ -2047,6 +2157,13 @@ function mass_send_handle_message(message, respond) {
           respond({
             ok: false,
             error: "Rate the extension 5 stars to unlock Mass Sending.",
+          });
+          return;
+        }
+        if (!(await ms_roblox_tab_is_in_front())) {
+          respond({
+            ok: false,
+            error: ms_need_roblox_tab_error,
           });
           return;
         }
@@ -2181,7 +2298,7 @@ function mass_send_handle_message(message, respond) {
           metrics[String(aid)] =
             typeof trade_ads_row_ui_metrics === "function"
               ? trade_ads_row_ui_metrics(row)
-              : { valueLine: 0, rap: 0 };
+              : { valueLine: 0, rap: 0, projected: false, name: "" };
         }
         respond({ ok: true, metrics });
       } catch (err) {

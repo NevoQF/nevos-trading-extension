@@ -195,7 +195,150 @@
     return data?.items && typeof data.items === "object" ? data.items : {};
   }
 
-  function enrich_missing_bundles(missing, bundle_to_face, roli_items, thumbs) {
+  async function fetch_heads(user_id) {
+    let res = await send_message({
+      type: "rolimons_player_heads",
+      user_id,
+    });
+    if (!res?.complete) return [];
+    return Array.isArray(res?.items) ? res.items : [];
+  }
+
+  function parse_inventory_time(row) {
+    let created = Date.parse(row?.created || "");
+    if (Number.isFinite(created)) return created;
+    let updated = Date.parse(row?.updated || "");
+    return Number.isFinite(updated) ? updated : 0;
+  }
+
+  function normalize_head_name(name) {
+    return String(name || "")
+      .toLowerCase()
+      .replace(/\s*-\s*head\s*$/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function build_head_name_to_bundle(roli_items, bundle_to_face) {
+    let map = Object.create(null);
+    for (let [bundle_id, face_id] of Object.entries(bundle_to_face || {})) {
+      let row = roli_items[bundle_id] || roli_items[face_id];
+      let key = normalize_head_name(row?.[0]);
+      if (key && !map[key]) map[key] = String(bundle_id);
+    }
+    return map;
+  }
+
+  function owned_since_map_from_heads(
+    heads,
+    face_to_bundle,
+    bundle_to_face,
+    roli_items,
+  ) {
+    let name_to_bundle = build_head_name_to_bundle(roli_items, bundle_to_face);
+    let map = Object.create(null);
+    function add_bundle(bundle_id, ts) {
+      bundle_id = String(bundle_id || "");
+      if (!bundle_id || !ts) return;
+      let face = bundle_to_face[bundle_id];
+      let rec = map[bundle_id] || (face && map[face]) || null;
+      if (!rec) rec = { oldest: ts, newest: ts };
+      else {
+        if (ts < rec.oldest) rec.oldest = ts;
+        if (ts > rec.newest) rec.newest = ts;
+      }
+      map[bundle_id] = rec;
+      if (face) map[face] = rec;
+    }
+    for (let row of Array.isArray(heads) ? heads : []) {
+      let ts = parse_inventory_time(row);
+      if (!ts) continue;
+      let asset_id = String(row?.assetId || "");
+      let bundle_id =
+        face_to_bundle[asset_id] ||
+        (bundle_to_face[asset_id] ? asset_id : "") ||
+        name_to_bundle[normalize_head_name(row?.assetName)] ||
+        "";
+      if (bundle_id) add_bundle(bundle_id, ts);
+    }
+    return map;
+  }
+
+  function format_owned_since(ms) {
+    ms = Number(ms);
+    if (!Number.isFinite(ms) || ms <= 0) return null;
+    let date = new Date(ms);
+    if (!Number.isFinite(date.getTime())) return null;
+    let sec = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    let units = [
+      [31536000, "year"],
+      [2592000, "month"],
+      [86400, "day"],
+      [3600, "hour"],
+      [60, "minute"],
+    ];
+    let text = "just now";
+    for (let [size, unit] of units) {
+      if (sec < size) continue;
+      let n = Math.floor(sec / size);
+      text = n === 1 ? `1 ${unit} ago` : `${n} ${unit}s ago`;
+      break;
+    }
+    return { text, title: date.toLocaleString() };
+  }
+
+  function is_unknown_owned_since(text) {
+    return /^(unknown|don'?t know|n\/a|-)?$/i.test(String(text || "").trim());
+  }
+
+  function owned_since_el(card) {
+    let el = card.querySelector(".inv_owner_since_time");
+    if (el) return el;
+    for (let row of card.querySelectorAll(".d-flex.justify-content-between")) {
+      let header = row.querySelector(".item_card_stat_header");
+      if (!/own(ed|er) since/i.test(header?.textContent || "")) continue;
+      return (
+        row.querySelector("small, .text-success, .text-truncate") ||
+        row.lastElementChild
+      );
+    }
+    return null;
+  }
+
+  function apply_owned_since_text(el, ms) {
+    let fmt = format_owned_since(ms);
+    if (!el || !fmt) return false;
+    el.textContent = fmt.text;
+    el.title = fmt.title;
+    el.setAttribute("data-original-title", fmt.title);
+    return true;
+  }
+
+  function paint_owned_since(grid, since_map) {
+    if (!grid || !since_map) return;
+    for (let card of grid.querySelectorAll(".mix_item")) {
+      let id = card_item_id(card);
+      let rec = id ? since_map[id] : null;
+      if (!rec?.oldest) continue;
+      let el = owned_since_el(card);
+      if (!el) continue;
+      if (
+        !card.dataset.nteBundleInjected &&
+        !is_unknown_owned_since(el.textContent)
+      ) {
+        continue;
+      }
+      apply_owned_since_text(el, rec.oldest);
+    }
+  }
+
+  function enrich_missing_bundles(
+    missing,
+    bundle_to_face,
+    roli_items,
+    thumbs,
+    since_map,
+  ) {
     return missing
       .map((item) => {
         let bundle_id = String(item?.itemTarget?.targetId || "");
@@ -231,6 +374,7 @@
         let serials = unique_sorted_serials(
           instances.map((inst) => inst?.serialNumber ?? item?.serialNumber),
         );
+        let rec = since_map?.[bundle_id] || since_map?.[face_id];
         return {
           bundle_id,
           face_id,
@@ -245,6 +389,7 @@
           quantity: Math.max(1, copies.length || instances.length || 1),
           held,
           thumb: thumbs[bundle_id] || "",
+          owned_since_ms: rec?.oldest || 0,
         };
       })
       .filter(Boolean)
@@ -370,6 +515,29 @@
     details.appendChild(wrap);
   }
 
+  function append_owned_since_row(details, href, owned_since_ms) {
+    let since_wrap = document.createElement("a");
+    since_wrap.href = href;
+    let row = document.createElement("div");
+    row.className = "d-flex justify-content-between";
+    let header = document.createElement("div");
+    header.className = "item_card_stat_header";
+    header.textContent = "Owner Since";
+    let value_wrap = document.createElement("div");
+    let small = document.createElement("small");
+    small.className = "inv_owner_since_time text-success text-truncate";
+    let fmt = format_owned_since(owned_since_ms);
+    small.textContent = fmt?.text || "Unknown";
+    if (fmt?.title) {
+      small.title = fmt.title;
+      small.setAttribute("data-original-title", fmt.title);
+    }
+    value_wrap.appendChild(small);
+    row.append(header, value_wrap);
+    since_wrap.appendChild(row);
+    details.appendChild(since_wrap);
+  }
+
   function append_single_copy_footer(details, item, href) {
     let serials = unique_sorted_serials(
       item.serials?.length ? item.serials : [item.serial],
@@ -391,14 +559,7 @@
       if (serial_el) bind_serials_tip(serial_el, serials);
     }
 
-    let since_wrap = document.createElement("a");
-    since_wrap.href = href;
-    since_wrap.innerHTML =
-      `<div class="d-flex justify-content-between">` +
-      `<div class="item_card_stat_header">Owner Since</div>` +
-      `<div><small class="inv_owner_since_time text-success text-truncate">Unknown</small></div>` +
-      `</div>`;
-    details.appendChild(since_wrap);
+    append_owned_since_row(details, href, item.owned_since_ms);
 
     let btn_wrap = document.createElement("div");
     btn_wrap.className = "pt-1 d-flex justify-content-between";
@@ -421,6 +582,8 @@
       append_single_copy_footer(details, item, bundle_href(item));
       return;
     }
+
+    append_owned_since_row(details, bundle_href(item), item.owned_since_ms);
 
     let btn_wrap = document.createElement("div");
     btn_wrap.className = "pt-1 d-flex justify-content-between";
@@ -595,10 +758,11 @@
     let grid = document.querySelector("#mix_container");
     if (!grid) return;
 
-    let [tradable_res, face_map, roli_items] = await Promise.all([
+    let [tradable_res, face_map, roli_items, heads] = await Promise.all([
       fetch_tradable(user_id),
       fetch_face_map(),
       fetch_item_data(),
+      fetch_heads(user_id),
     ]);
     // Incomplete fetches (VPN 429s mid-pagination) must not mutate the page —
     // that would strip owned items that never made it into the partial list.
@@ -619,6 +783,12 @@
     }
     let tradable = tradable_res.items;
     let { face_to_bundle, bundle_to_face } = build_face_maps(face_map);
+    let since_map = owned_since_map_from_heads(
+      heads,
+      face_to_bundle,
+      bundle_to_face,
+      roli_items,
+    );
 
     let shown_ids = new Set();
     grid
@@ -697,6 +867,7 @@
         bundle_to_face,
         roli_items,
         thumbs,
+        since_map,
       );
       let template = enriched.length ? pick_template(grid) : null;
       if (template) {
@@ -730,6 +901,7 @@
     }
 
     paint_player_serial_tips(grid, hold_map);
+    paint_owned_since(grid, since_map);
     sync_player_limiteds_count(grid);
   }
 
@@ -1428,11 +1600,9 @@
     }, 1500);
   }
 
-  const TC_USD_OPTION = "Show Routility USD Values";
   const TC_TRADE_STAMP_ID = "nte-roli-tc-trade";
   let tc_usd_roli = null;
   let tc_usd_routility = null;
-  let tc_usd_enabled = false;
   let tc_usd_timer = 0;
   let tc_usd_observer = null;
   let tc_usd_last_key = "";
@@ -1736,7 +1906,7 @@
 
   async function paint_trade_calculator_usd() {
     ensure_tc_usd_styles();
-    let show = tc_usd_enabled && !!tc_usd_routility?.items;
+    let show = !!tc_usd_routility?.items;
     let trade = show ? await resolve_trade_for_usd() : { offer: [], request: [] };
     let offer = sum_side_usd(trade.offer);
     let request = sum_side_usd(trade.request);
@@ -1782,12 +1952,6 @@
   }
 
   async function refresh_tc_usd_data() {
-    tc_usd_enabled = (await get_option(TC_USD_OPTION)) === true;
-    if (!tc_usd_enabled) {
-      tc_usd_last_key = "";
-      paint_usd_for_current_page();
-      return;
-    }
     try {
       tc_usd_routility = await send_message("getRoutilityData");
     } catch {
@@ -1844,7 +2008,7 @@
     usd_storage_hooked = true;
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
-      if (changes[TC_USD_OPTION] || changes.data || changes.routility_data)
+      if (changes.data || changes.routility_data)
         refresh_tc_usd_data().catch(() => {});
     });
   }
@@ -1927,7 +2091,7 @@
 
   function paint_trade_ads_usd() {
     ensure_ad_usd_styles();
-    let show = tc_usd_enabled && !!tc_usd_routility?.items;
+    let show = !!tc_usd_routility?.items;
     for (let card of document.querySelectorAll(".mix_item")) {
       paint_ad_side_usd(card.querySelector(".ad_side_left"), show);
       paint_ad_side_usd(card.querySelector(".ad_side_right"), show);

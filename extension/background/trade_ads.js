@@ -145,23 +145,41 @@ function trade_ads_effective_value(row) {
 }
 
 function trade_ads_row_ui_metrics(row) {
-  if (!Array.isArray(row)) return { valueLine: 0, rap: 0 };
+  if (!Array.isArray(row))
+    return { valueLine: 0, rap: 0, projected: false, name: "" };
   let rap = Number(row[2]) || 0;
   let v = Number(row[3]);
   let raw = Number.isFinite(v) ? v : 0;
   let valueLine = raw > 0 ? raw : rap;
-  return { valueLine, rap };
+  return {
+    valueLine,
+    rap,
+    projected: Number(row[7]) === 1,
+    name: String(row[0] || ""),
+  };
 }
 
 function trade_ads_item_summaries(ids, item_data) {
   return (ids || []).slice(0, 4).map((id) => {
     let row = get_rolimons_item(item_data, Number(id));
     if (!Array.isArray(row))
-      return { id: Number(id), name: null, value: null, rap: null };
+      return {
+        id: Number(id),
+        name: null,
+        value: null,
+        rap: null,
+        projected: false,
+      };
     let rap = Number(row[2]) || 0;
     let v = Number(row[3]);
     let value = Number.isFinite(v) && v > 0 ? v : rap > 0 ? rap : 0;
-    return { id: Number(id), name: String(row[0] || ""), value, rap };
+    return {
+      id: Number(id),
+      name: String(row[0] || ""),
+      value,
+      rap,
+      projected: Number(row[7]) === 1,
+    };
   });
 }
 
@@ -366,27 +384,26 @@ async function trade_ads_resolve_legacy_trade_ad_ids(ids, item_data, options = {
   return out.slice(0, 4);
 }
 
-async function trade_ads_get_cookie_header_value() {
-  for (let url of [
-    "https://www.rolimons.com/",
-    "https://rolimons.com/",
-    "https://api.rolimons.com/",
-  ]) {
-    let c = await chrome.cookies.get({ url, name: "_RoliVerification" });
-    if (c?.value) return `_RoliVerification=${c.value}`;
-  }
-  let all = await chrome.cookies.getAll({ name: "_RoliVerification" });
-  let hit = all.find((x) => String(x.domain || "").includes("rolimons"));
-  if (hit?.value) return `_RoliVerification=${hit.value}`;
-  return null;
+function trade_ads_normalize_cookie_header(cookie_header) {
+  let s = String(cookie_header || "").trim();
+  if (!s) return null;
+  return s.startsWith("_RoliVerification=")
+    ? s
+    : `_RoliVerification=${s}`;
 }
 
-async function trade_ads_resolve_cookie_header() {
-  let from_jar = await trade_ads_get_cookie_header_value();
-  if (from_jar) return from_jar;
-  let stored = await get_local_value(trade_ads_roli_key);
-  if (stored?.cookieHeader) return stored.cookieHeader;
-  return null;
+function trade_ads_is_stored_verified(stored, user_id) {
+  if (!stored || stored.userId == null || user_id == null) return false;
+  if (Number(stored.userId) !== Number(user_id)) return false;
+  return !!(stored.cookieHeader || stored.verified);
+}
+
+function trade_ads_session_from_stored(stored) {
+  if (!stored || !(stored.cookieHeader || stored.verified)) return null;
+  return {
+    cookie_header: trade_ads_normalize_cookie_header(stored.cookieHeader),
+    credentials: "include",
+  };
 }
 
 function trade_ads_extract_verification_cookie_from_response(response) {
@@ -429,6 +446,7 @@ async function trade_ads_verify_via_api(user_id) {
     `https://api.rolimons.com/auth/v1/verifyphrase/${user_id}`,
     {
       method: "POST",
+      credentials: "include",
       headers: {
         accept: "*/*",
         "accept-language": "en-US,en;q=0.9",
@@ -445,33 +463,16 @@ async function trade_ads_verify_via_api(user_id) {
     );
   }
 
-  let cookie_header =
-    trade_ads_extract_verification_cookie_from_response(response);
-  if (cookie_header) {
-    await set_local_value(trade_ads_roli_key, {
-      userId: user_id,
-      cookieHeader: cookie_header,
-      at: Date.now(),
-    });
-    return { ok: true, cookieHeader: cookie_header };
-  }
-
-  for (let i = 0; i < 25; i++) {
-    await new Promise((r) => setTimeout(r, 100));
-    cookie_header = await trade_ads_get_cookie_header_value();
-    if (cookie_header) {
-      await set_local_value(trade_ads_roli_key, {
-        userId: user_id,
-        cookieHeader: cookie_header,
-        at: Date.now(),
-      });
-      return { ok: true, cookieHeader: cookie_header };
-    }
-  }
-
-  throw new Error(
-    "Rolimons accepted the phrase, but the extension could not read the session cookie. Reload the extension and confirm host access to api.rolimons.com, then try again.",
+  let cookie_header = trade_ads_normalize_cookie_header(
+    trade_ads_extract_verification_cookie_from_response(response),
   );
+  await set_local_value(trade_ads_roli_key, {
+    userId: user_id,
+    verified: true,
+    cookieHeader: cookie_header,
+    at: Date.now(),
+  });
+  return { ok: true, cookieHeader: cookie_header };
 }
 
 async function trade_ads_get_roblox_bio(user_id) {
@@ -1004,18 +1005,29 @@ function trade_ads_match_item_query(row, q) {
   return tokens.every((t) => hay.includes(t));
 }
 
-async function trade_ads_search_items(item_data, query, limit, offset) {
+async function trade_ads_search_items(
+  item_data,
+  query,
+  limit,
+  offset,
+  options = {},
+) {
   limit = Math.max(1, Math.min(200, Number(limit) || 100));
   offset = Math.max(0, Number(offset) || 0);
   let q = String(query || "")
     .trim()
     .toLowerCase();
+  let min = Number(options.min);
+  let max = Number(options.max);
+  let sort_low = String(options.sort || "") === "low";
   let items = item_data?.items || {};
   let rows = [];
   for (let [id, row] of Object.entries(items)) {
     if (!Array.isArray(row)) continue;
     let v = trade_ads_effective_value(row);
     if (v <= 0) continue;
+    if (Number.isFinite(min) && min > 0 && v < min) continue;
+    if (Number.isFinite(max) && max > 0 && v > max) continue;
     if (!trade_ads_match_item_query(row, q)) continue;
     let ui = trade_ads_row_ui_metrics(row);
     rows.push({
@@ -1025,10 +1037,11 @@ async function trade_ads_search_items(item_data, query, limit, offset) {
       value: v,
       valueLine: ui.valueLine,
       rap: ui.rap,
+      projected: ui.projected,
       thumbType: item_data?.bundleIds?.[String(id)] ? "Bundle" : "Asset",
     });
   }
-  rows.sort((a, b) => b.value - a.value);
+  rows.sort((a, b) => (sort_low ? a.value - b.value : b.value - a.value));
   let total = rows.length;
   let slice = rows.slice(offset, offset + limit);
   return {
@@ -1270,16 +1283,16 @@ async function trade_ads_post_now(options) {
   if (me.id == null)
     throw new Error("Sign in to Roblox in this browser first.");
 
-  let cookie_header = await trade_ads_resolve_cookie_header();
-  if (!cookie_header)
+  let stored = await get_local_value(trade_ads_roli_key);
+  if (!trade_ads_is_stored_verified(stored, me.id)) {
     throw new Error(
       "Rolimons is not connected yet. Finish verification in the Trade ads tab.",
     );
-
-  let stored = await get_local_value(trade_ads_roli_key);
-  if (stored?.userId && Number(stored.userId) !== Number(me.id)) {
+  }
+  let session = trade_ads_session_from_stored(stored);
+  if (!session) {
     throw new Error(
-      "Verified Rolimons account does not match the signed-in Roblox user. Verify again on this account.",
+      "Rolimons is not connected yet. Finish verification in the Trade ads tab.",
     );
   }
 
@@ -1307,16 +1320,16 @@ async function trade_ads_post_now(options) {
 
   let body = await trade_ads_build_post_body(config, item_data, owned_counts, inv);
 
+  let roli_headers = {
+    accept: "application/json",
+    "content-type": "application/json",
+    Referer: "https://www.rolimons.com/",
+  };
+  if (session.cookie_header) roli_headers.cookie = session.cookie_header;
   let response = await fetch("https://api.rolimons.com/tradeads/v1/createad", {
     method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      cookie: cookie_header.startsWith("_RoliVerification=")
-        ? cookie_header
-        : `_RoliVerification=${cookie_header}`,
-      Referer: "https://www.rolimons.com/",
-    },
+    credentials: session.credentials,
+    headers: roli_headers,
     body: JSON.stringify(body),
   });
   let data = await response.json().catch(() => ({}));
@@ -1471,15 +1484,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       let roli = await get_local_value(trade_ads_roli_key);
       let verify_ui = (await get_local_value(trade_ads_verify_ui_key)) || {};
       let config = await trade_ads_get_config_merged();
-      let cookie_ok = !!(await trade_ads_get_cookie_header_value());
-      let verified = false;
-      if (
-        me?.id != null &&
-        roli?.userId != null &&
-        Number(roli.userId) === Number(me.id)
-      ) {
-        verified = !!(roli.cookieHeader || cookie_ok);
-      }
+      let verified = trade_ads_is_stored_verified(roli, me?.id);
       let item_data = await get_cached_item_data();
       let slot_item_metrics = {};
       let metric_slots = [
@@ -1503,7 +1508,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       respond({
         roblox: me?.id != null ? { id: me.id, name: me.name || "" } : null,
         verified,
-        roliStored: !!roli?.cookieHeader,
+        roliStored: !!(roli?.cookieHeader || roli?.verified),
         verify_ui,
         config,
         slot_item_metrics,
@@ -1609,13 +1614,6 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (message?.type === "trade_ads_disconnect") {
     (async () => {
       await set_local_value(trade_ads_roli_key, null);
-      for (let url of [
-        "https://www.rolimons.com/",
-        "https://rolimons.com/",
-        "https://api.rolimons.com/",
-      ]) {
-        await chrome.cookies.remove({ url, name: "_RoliVerification" });
-      }
       respond({ ok: true });
     })();
     return true;
@@ -1654,6 +1652,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
             value: v,
             valueLine: ui.valueLine,
             rap: ui.rap,
+            projected: ui.projected,
             acronym,
             thumbType: item_data?.bundleIds?.[String(x.assetId)]
               ? "Bundle"
@@ -1740,6 +1739,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           message.query,
           limit,
           offset,
+          {
+            sort: message.sort,
+            min: message.min,
+            max: message.max,
+          },
         );
         respond({
           ok: true,

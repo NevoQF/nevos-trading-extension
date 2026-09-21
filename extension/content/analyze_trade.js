@@ -203,7 +203,9 @@
         .replace(/\bng-hide\b/g, "")
         .trim();
       btn.classList.remove("btn-cta-md");
-      btn.classList.add("btn-control-md", "nte-analyze-trade-btn");
+      if (!/\bfoundation-web-button\b/.test(btn.className))
+        btn.classList.add("btn-control-md");
+      btn.classList.add("nte-analyze-trade-btn");
       btn.onclick = () => run(btn);
       set_btn_idle(btn);
       return btn;
