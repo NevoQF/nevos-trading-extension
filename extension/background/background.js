@@ -1133,18 +1133,31 @@ const TRADE_OFFER_ITEM_KEYS = [
   "collectibles",
 ];
 
-function get_trade_asset_id(item) {
-  let id =
-    item?.assetId ??
-    item?.itemTarget?.targetId ??
-    item?.targetId ??
-    item?.itemId ??
-    item?.asset?.id ??
-    item?.item?.id ??
-    item?.id;
-  if (id == null) return null;
+function read_positive_asset_id(id) {
+  if (typeof id === "number")
+    return Number.isFinite(id) && id > 0 ? Math.floor(id) : null;
+  if (typeof id !== "string" || !/^\d+$/.test(id.trim())) return null;
   let parsed = parseInt(id, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function get_trade_asset_id(item) {
+  let candidates = [
+    item?.assetId,
+    item?.itemTarget?.targetId,
+    item?.targetId,
+    item?.itemId,
+    item?.asset?.id,
+    item?.item?.id,
+    item?.collectibleItem?.assetId,
+    item?.collectibleItem?.itemTarget?.targetId,
+    item?.id,
+  ];
+  for (let id of candidates) {
+    let parsed = read_positive_asset_id(id);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 function patch_trade_asset_pricing(item, item_data) {
@@ -1162,11 +1175,26 @@ function patch_trade_asset_pricing(item, item_data) {
     typeof entry[2] === "number" && Number.isFinite(entry[2]) ? entry[2] : null;
   if (rap === null) return item;
 
-  return {
+  let next = {
     ...item,
     recentAveragePrice: rap,
     rap,
   };
+  for (let key of ["item", "asset", "collectibleItem"]) {
+    if (!next[key] || typeof next[key] !== "object" || Array.isArray(next[key]))
+      continue;
+    next[key] = { ...next[key], recentAveragePrice: rap, rap };
+  }
+  if (Array.isArray(next.instances)) {
+    let parent_id = get_trade_asset_id(item);
+    next.instances = next.instances.map((inst) => {
+      if (!inst || typeof inst !== "object") return inst;
+      let inst_id = get_trade_asset_id(inst);
+      if (inst_id && parent_id && inst_id !== parent_id) return inst;
+      return { ...inst, recentAveragePrice: rap, rap };
+    });
+  }
+  return next;
 }
 
 function patch_trade_offer_pricing(offer, item_data) {
@@ -1216,9 +1244,32 @@ function apply_fresh_pricing_to_trade(trade, item_data) {
   return next;
 }
 
+async function get_item_data_for_trade_pricing() {
+  let stored = await get_local_values([
+    item_data_key,
+    item_data_time_key,
+    item_data_attempt_key,
+  ]);
+  let data = coerce_item_data(stored[item_data_key]);
+  let has_good = has_item_data(data) && item_data_has_bundle_ids(data);
+  let last_attempt =
+    Number(stored[item_data_attempt_key] || stored[item_data_time_key] || 0) ||
+    0;
+  let fresh =
+    has_good &&
+    last_attempt &&
+    Date.now() - last_attempt < item_data_max_age_ms;
+  if (fresh) return data;
+  if (has_good) {
+    get_cached_item_data().catch(() => {});
+    return data;
+  }
+  return get_cached_item_data();
+}
+
 async function get_priced_cached_trade(trade) {
   if (!trade) return trade;
-  let item_data = await get_cached_item_data();
+  let item_data = await get_item_data_for_trade_pricing();
   return apply_fresh_pricing_to_trade(trade, item_data);
 }
 
@@ -4121,6 +4172,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
 
+  if (message?.type === "priceTrade") {
+    (async () => {
+      let trade = message.trade;
+      if (!trade || typeof trade !== "object") return respond(null);
+      respond(await get_priced_cached_trade(trade));
+    })();
+    return true;
+  }
+
   if (message?.type === "quickProofFetchImage") {
     (async () => {
       try {
@@ -4717,7 +4777,6 @@ chrome.storage.onChanged.addListener((changes, area_name) => {
 });
 
 const required_host_origins = (() => {
-  // captureVisibleTab needs <all_urls>. A Roblox-only host permission is not enough.
   let quick_proof = ["https://www.roblox.com/*", "https://roblox.com/*"];
   let manifest_origins = chrome.runtime?.getManifest?.()?.host_permissions;
   if (!Array.isArray(manifest_origins) || !manifest_origins.length)

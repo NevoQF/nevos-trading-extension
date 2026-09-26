@@ -2,8 +2,9 @@
   const style_id = "nte-trade-page-theme-style";
   const upload_style_id = "nte-trade-page-theme-upload-style";
   const upload_modal_id = "nte-trade-page-theme-upload-modal";
-  const enabled_key = "trade_page_theme_enabled";
-  const theme_key = "trade_page_theme";
+  const site = /rolimons\.com$/i.test(location.hostname) ? "rolimons" : "roblox";
+  const enabled_key = site === "rolimons" ? "rolimons_profile_theme_enabled" : "trade_page_theme_enabled";
+  const theme_key = site === "rolimons" ? "rolimons_profile_theme" : "trade_page_theme";
   const custom_themes_key = "trade_page_custom_themes";
   const default_image_overlay = 72;
   const recommended_image_width = 1920;
@@ -718,9 +719,232 @@
     if (open_picker) file_input.click();
   }
 
+  function is_theme_page() {
+    if (site === "rolimons") return /^\/player\/\d+/i.test(location.pathname || "");
+    return is_trade_page();
+  }
+
   function remove_theme() {
-    document.documentElement.classList.remove("nte-trade-page-theme");
+    document.documentElement.classList.remove("nte-trade-page-theme", "nte-rolimons-profile-theme");
     document.getElementById(style_id)?.remove();
+  }
+
+  function apply_rolimons_theme(theme, root, style) {
+    let backdrop = get_theme_backdrop(theme);
+    let cover = theme.effect === "circuit" ? "34px 34px, 34px 34px, auto" : "cover";
+    root.classList.add("nte-rolimons-profile-theme");
+    root.classList.remove("nte-trade-page-theme");
+    style.textContent = `
+      html.nte-rolimons-profile-theme {
+        --nte-theme-bg: ${theme.background};
+        --nte-theme-surface: ${theme.surface};
+        --nte-theme-surface-2: ${theme.surface2};
+        --nte-theme-text: ${theme.text};
+        --nte-theme-muted: ${theme.muted};
+        --nte-theme-accent: ${theme.accent};
+        --nte-theme-border: ${theme.border};
+      }
+
+      html.nte-rolimons-profile-theme body,
+      html.nte-rolimons-profile-theme #page_content_container,
+      html.nte-rolimons-profile-theme #page_content_body {
+        background: ${backdrop} !important;
+        background-attachment: fixed !important;
+        background-size: ${cover} !important;
+        color: var(--nte-theme-muted) !important;
+      }
+
+      html.nte-rolimons-profile-theme nav.navbar,
+      html.nte-rolimons-profile-theme footer.bg-primary {
+        background: ${hex_to_rgba(theme.surface, 0.92)} !important;
+        backdrop-filter: blur(12px);
+        color: var(--nte-theme-muted) !important;
+        border-color: var(--nte-theme-border) !important;
+      }
+
+      html.nte-rolimons-profile-theme .navbar .nav-link,
+      html.nte-rolimons-profile-theme .navbar .navbar-brand,
+      html.nte-rolimons-profile-theme .site_navbar_item,
+      html.nte-rolimons-profile-theme .navbar_item_title,
+      html.nte-rolimons-profile-theme .navbar_menu_item_title,
+      html.nte-rolimons-profile-theme footer,
+      html.nte-rolimons-profile-theme footer a {
+        color: var(--nte-theme-text) !important;
+      }
+
+      html.nte-rolimons-profile-theme .navbar_menu_item_inner,
+      html.nte-rolimons-profile-theme #navbarPlayerDropdown {
+        background: transparent !important;
+        color: var(--nte-theme-text) !important;
+        border-radius: 10px !important;
+        box-shadow: none !important;
+      }
+
+      html.nte-rolimons-profile-theme .navbar_menu_item_inner:hover,
+      html.nte-rolimons-profile-theme #navbarPlayerDropdown:hover,
+      html.nte-rolimons-profile-theme .navbar_menu_item_inner.show {
+        background: ${hex_to_rgba(theme.surface2, 0.9)} !important;
+      }
+
+      html.nte-rolimons-profile-theme .page_title,
+      html.nte-rolimons-profile-theme .section_header,
+      html.nte-rolimons-profile-theme .stat-data,
+      html.nte-rolimons-profile-theme .item_card_name,
+      html.nte-rolimons-profile-theme .card-title {
+        color: var(--nte-theme-text) !important;
+      }
+
+      html.nte-rolimons-profile-theme .page_subtitle,
+      html.nte-rolimons-profile-theme #page_content_body a:not(.btn) {
+        color: var(--nte-theme-accent) !important;
+      }
+
+      html.nte-rolimons-profile-theme .mix_item a:not(.btn),
+      html.nte-rolimons-profile-theme .mix_item .item_card_name,
+      html.nte-rolimons-profile-theme .mix_item .text-light {
+        color: var(--nte-theme-text) !important;
+      }
+
+      html.nte-rolimons-profile-theme .mix_item .item_card_stat_header {
+        color: var(--nte-theme-muted) !important;
+      }
+
+      html.nte-rolimons-profile-theme .stat-header,
+      html.nte-rolimons-profile-theme .text-muted,
+      html.nte-rolimons-profile-theme .card-subtitle {
+        color: var(--nte-theme-muted) !important;
+      }
+
+      html.nte-rolimons-profile-theme .player_info_grid .shadow > div,
+      html.nte-rolimons-profile-theme .stats_box,
+      html.nte-rolimons-profile-theme .player_secondary_stats_grid > div,
+      html.nte-rolimons-profile-theme .mix_item,
+      html.nte-rolimons-profile-theme .player_page_history_chart_container,
+      html.nte-rolimons-profile-theme .dropdown-menu,
+      html.nte-rolimons-profile-theme .modal-content {
+        background-color: var(--nte-theme-surface) !important;
+        color: var(--nte-theme-muted) !important;
+        border-color: var(--nte-theme-border) !important;
+      }
+
+      html.nte-rolimons-profile-theme .player_page_history_chart_container,
+      html.nte-rolimons-profile-theme .player_secondary_stats_grid > div {
+        box-shadow: 0 10px 24px ${hex_to_rgba(theme.background, 0.28)} !important;
+      }
+
+      html.nte-rolimons-profile-theme .mix_item {
+        border: 1px solid ${hex_to_rgba(theme.border, 0.7)} !important;
+        border-radius: 12px !important;
+        overflow: hidden;
+        box-shadow: 0 8px 18px ${hex_to_rgba(theme.background, 0.22)} !important;
+      }
+
+      html.nte-rolimons-profile-theme .item_card_img_container {
+        background: var(--nte-theme-surface-2) !important;
+      }
+
+      html.nte-rolimons-profile-theme .item_card_name {
+        padding-top: 2px;
+      }
+
+      html.nte-rolimons-profile-theme #page_content_body label,
+      html.nte-rolimons-profile-theme .switch {
+        color: var(--nte-theme-muted) !important;
+      }
+
+      html.nte-rolimons-profile-theme .form-control,
+      html.nte-rolimons-profile-theme .btn-primary.dropdown-toggle {
+        background-color: var(--nte-theme-surface-2) !important;
+        color: var(--nte-theme-text) !important;
+        border: 1px solid ${hex_to_rgba(theme.border, 0.85)} !important;
+        border-radius: 8px !important;
+        box-shadow: none !important;
+      }
+
+      html.nte-rolimons-profile-theme .form-control::placeholder {
+        color: var(--nte-theme-muted) !important;
+      }
+
+      html.nte-rolimons-profile-theme .form-control:focus,
+      html.nte-rolimons-profile-theme .btn-primary.dropdown-toggle:focus,
+      html.nte-rolimons-profile-theme .btn-primary.dropdown-toggle.show {
+        border-color: var(--nte-theme-accent) !important;
+        box-shadow: 0 0 0 2px ${hex_to_rgba(theme.accent, 0.28)} !important;
+      }
+
+      html.nte-rolimons-profile-theme .switch-slider {
+        background: var(--nte-theme-surface-2) !important;
+      }
+
+      html.nte-rolimons-profile-theme .switch-input:checked + .switch-slider {
+        background: var(--nte-theme-accent) !important;
+      }
+
+      html.nte-rolimons-profile-theme .highcharts-background,
+      html.nte-rolimons-profile-theme .highcharts-plot-background {
+        fill: transparent !important;
+      }
+
+      html.nte-rolimons-profile-theme .highcharts-button-box {
+        fill: var(--nte-theme-surface-2) !important;
+      }
+
+      html.nte-rolimons-profile-theme .highcharts-button text,
+      html.nte-rolimons-profile-theme .highcharts-axis-labels text,
+      html.nte-rolimons-profile-theme .highcharts-legend-item text,
+      html.nte-rolimons-profile-theme .highcharts-title {
+        fill: var(--nte-theme-text) !important;
+      }
+
+      html.nte-rolimons-profile-theme .highcharts-grid-line,
+      html.nte-rolimons-profile-theme .highcharts-axis-line,
+      html.nte-rolimons-profile-theme .highcharts-tick {
+        stroke: var(--nte-theme-border) !important;
+      }
+
+      html.nte-rolimons-profile-theme .btn-primary,
+      html.nte-rolimons-profile-theme .btn-flat-dark-gray-lg-font {
+        background-color: var(--nte-theme-surface-2) !important;
+        border-color: var(--nte-theme-border) !important;
+        color: var(--nte-theme-text) !important;
+      }
+
+      html.nte-rolimons-profile-theme .highcharts-range-selector,
+      html.nte-rolimons-profile-theme .dropdown-item {
+        background: var(--nte-theme-surface-2) !important;
+        color: var(--nte-theme-text) !important;
+        border-color: var(--nte-theme-border) !important;
+      }
+
+      html.nte-rolimons-profile-theme .btn-flat-light-blue,
+      html.nte-rolimons-profile-theme .btn-flat-light-blue-sm,
+      html.nte-rolimons-profile-theme .btn-light-blue {
+        background-color: ${hex_to_rgba(theme.accent, 0.16)} !important;
+        border: 1px solid ${hex_to_rgba(theme.accent, 0.38)} !important;
+        color: var(--nte-theme-text) !important;
+      }
+
+      html.nte-rolimons-profile-theme .btn-flat-light-blue svg path,
+      html.nte-rolimons-profile-theme .btn-flat-light-blue-sm svg path,
+      html.nte-rolimons-profile-theme .btn-light-blue svg path {
+        fill: currentColor !important;
+      }
+
+      html.nte-rolimons-profile-theme .btn-flat-light-blue:hover,
+      html.nte-rolimons-profile-theme .btn-flat-light-blue-sm:hover,
+      html.nte-rolimons-profile-theme .btn-light-blue:hover {
+        background-color: ${hex_to_rgba(theme.accent, 0.28)} !important;
+        border-color: ${hex_to_rgba(theme.accent, 0.55)} !important;
+        color: var(--nte-theme-text) !important;
+      }
+
+      html.nte-rolimons-profile-theme .btn-group .btn.active,
+      html.nte-rolimons-profile-theme .btn-group .btn:active {
+        background-color: ${hex_to_rgba(theme.accent, 0.28)} !important;
+        color: var(--nte-theme-text) !important;
+        border-color: ${hex_to_rgba(theme.accent, 0.45)} !important;
+      }
+    `;
   }
 
   function apply_theme(theme) {
@@ -730,6 +954,11 @@
       style = document.createElement("style");
       style.id = style_id;
       (document.head || document.documentElement).appendChild(style);
+    }
+
+    if (site === "rolimons") {
+      apply_rolimons_theme(theme, root, style);
+      return;
     }
 
     root.classList.add("nte-trade-page-theme");
@@ -883,15 +1112,21 @@
 
       html.nte-trade-page-theme .trades-container .btn-primary-md,
       html.nte-trade-page-theme .trades-container .btn-primary-sm,
-      html.nte-trade-page-theme .trades-container .nte-analyze-trade-btn {
+      html.nte-trade-page-theme .trades-container .nte-analyze-trade-btn:not(.foundation-web-button) {
         background-color: var(--nte-trade-accent) !important;
         border-color: var(--nte-trade-accent) !important;
         color: var(--nte-trade-bg) !important;
       }
 
+      html.nte-trade-page-theme .trade-request-window-offers .nte-analyze-trade-btn {
+        background-color: var(--nte-trade-surface) !important;
+        border: 1px solid var(--nte-trade-border-soft) !important;
+        color: var(--nte-trade-text) !important;
+      }
+
       html.nte-trade-page-theme .trades-container .btn-control-md,
       html.nte-trade-page-theme .trades-container .btn-secondary-md,
-      html.nte-trade-page-theme .trades-container .nte-history-btn {
+      html.nte-trade-page-theme .trades-container .nte-history-btn:not(.foundation-web-button) {
         background-color: var(--nte-trade-surface) !important;
         border-color: var(--nte-trade-border-soft) !important;
         color: var(--nte-trade-text) !important;
@@ -899,7 +1134,7 @@
 
       html.nte-trade-page-theme .trades-container .btn-control-md:hover,
       html.nte-trade-page-theme .trades-container .btn-secondary-md:hover,
-      html.nte-trade-page-theme .trades-container .nte-history-btn:hover {
+      html.nte-trade-page-theme .trades-container .nte-history-btn:not(.foundation-web-button):hover {
         border-color: var(--nte-trade-accent) !important;
         color: var(--nte-trade-accent) !important;
       }
@@ -945,7 +1180,7 @@
   }
 
   async function refresh() {
-    if (!is_trade_page()) {
+    if (!is_theme_page()) {
       remove_theme();
       return;
     }

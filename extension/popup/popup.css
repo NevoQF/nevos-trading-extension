@@ -7169,6 +7169,58 @@ body.is-tradeads-tab .popup {
   font-weight: 700;
 }
 
+.nte-totp-help {
+  margin: -4px 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.nte-totp-help summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.nte-totp-help summary::-webkit-details-marker {
+  display: none;
+}
+
+.nte-totp-help summary::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 8px;
+  border-right: 1.5px solid var(--text-muted);
+  border-bottom: 1.5px solid var(--text-muted);
+  transform: rotate(-45deg) translateY(-1px);
+}
+
+.nte-totp-help[open] summary::before {
+  transform: rotate(45deg) translateY(-1px);
+}
+
+.nte-totp-help summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.nte-totp-help ol {
+  margin: 0;
+  padding: 0 12px 10px 28px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.nte-totp-help li + li {
+  margin-top: 6px;
+}
+
 .nte-totp-label {
   display: block;
   font-size: 11px;
@@ -7455,6 +7507,35 @@ body.is-tradeads-tab .popup {
   font-size: 11px;
   line-height: 1.45;
   color: var(--text-secondary);
+}
+
+.nte-theme-surfaces {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.nte-theme-surfaces button {
+  border: 0;
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.nte-theme-surfaces button.is-active {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .nte-theme-toggle {

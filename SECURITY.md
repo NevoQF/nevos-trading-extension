@@ -1,10 +1,10 @@
 # Security
 
-Current supported source version: `3.10.49`.
+Current supported source version: `3.10.50`.
 
 This public repo is readable source for review and verification. Prefer official builds from the website, browser stores, or [GitHub Releases](https://github.com/NevoQF/nevos-trading-extension/releases).
 
-Each release tag (`v3.10.49`) points at the source for that version and includes SHA-256 checksums for the published zip files. See [VERIFY.md](VERIFY.md).
+Each release tag (`v3.10.50`) points at the source for that version and includes SHA-256 checksums for the published zip files. See [VERIFY.md](VERIFY.md).
 
 ## Reporting
 

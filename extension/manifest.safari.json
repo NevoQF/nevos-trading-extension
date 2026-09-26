@@ -41,6 +41,17 @@
     {
       "js": [
         "shared/browser_compat.js",
+        "content/trade_page_themes.js"
+      ],
+      "matches": [
+        "https://www.rolimons.com/player/*",
+        "https://rolimons.com/player/*"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "js": [
+        "shared/browser_compat.js",
         "shared/build_variant.js",
         "shared/username_lookup_guard.js",
         "shared/nte_icon_utils.js",
@@ -184,7 +195,6 @@
   ],
   "description": "Free trading extension for Roblox traders.",
   "host_permissions": [
-    "<all_urls>",
     "https://api.rolimons.com/*",
     "https://www.rolimons.com/*",
     "https://rolimons.com/*",
@@ -227,7 +237,7 @@
     "activeTab"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.49",
+  "version": "3.10.50",
   "web_accessible_resources": [
     {
       "matches": [

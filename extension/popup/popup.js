@@ -151,6 +151,8 @@ const popup_theme_default = "modern";
 const trade_page_theme_enabled_key = "trade_page_theme_enabled";
 const trade_page_theme_key = "trade_page_theme";
 const trade_page_custom_themes_key = "trade_page_custom_themes";
+const rolimons_profile_theme_enabled_key = "rolimons_profile_theme_enabled";
+const rolimons_profile_theme_key = "rolimons_profile_theme";
 const trade_page_theme_default_image_overlay = 72;
 const inbound_trade_notification_min_gain_key =
   "inbound_trade_notification_min_gain_percent";
@@ -4287,6 +4289,8 @@ async function render_options() {
     trade_page_theme_enabled_key,
     trade_page_theme_key,
     trade_page_custom_themes_key,
+    rolimons_profile_theme_enabled_key,
+    rolimons_profile_theme_key,
   ]);
   saved = await ensure_colorblind_mode_settings(saved);
   saved = await ensure_counter_trade_choices_settings(saved);
@@ -4390,6 +4394,8 @@ async function render_options() {
   append_trade_page_theme_card(container, {
     enabled: saved[trade_page_theme_enabled_key],
     theme: saved[trade_page_theme_key],
+    rolimons_enabled: saved[rolimons_profile_theme_enabled_key],
+    rolimons_theme: saved[rolimons_profile_theme_key],
     custom_themes: saved[trade_page_custom_themes_key],
   });
   ensure_options_search_bar();
@@ -4419,7 +4425,16 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
           <span class="toggle-thumb"></span>
         </label>
       </div>
-      <p class="nte-totp-hint">Paste your Roblox 2FA <strong>secret</strong> to auto-fill 2FA challenges. Treat it like a password - do not share it with anybody.</p>
+      <p class="nte-totp-hint">Paste the setup <strong>secret</strong>, not the 6-digit code. Treat it like a password and don't share it.</p>
+      <details class="nte-totp-help">
+        <summary>How do I get my secret?</summary>
+        <ol>
+          <li>On Roblox, turn Authenticator off, then start turning it on again.</li>
+          <li>At the QR code, click the text under it. That reveals the secret. Copy it.</li>
+          <li>Go back, scan the QR code, and finish setting up Authenticator.</li>
+          <li>Paste that secret here. The 6-digit code is only for logging in, and it changes every few seconds.</li>
+        </ol>
+      </details>
       <div id="nte-totp-pw-toggle-row" class="nte-totp-pw-toggle-row" hidden>
         <button type="button" class="nte-totp-pw-reveal-btn" id="nte-totp-pw-toggle" aria-expanded="false">
           <span class="nte-totp-pw-reveal-icon" aria-hidden="true"></span>
@@ -4588,6 +4603,17 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
     status_el.textContent = msg || "";
   }
 
+  function totp_is_login_code(value) {
+    const compact = String(value || "").replace(/[\s-]/g, "");
+    return /^\d{6}$/.test(compact) || /^\d{8}$/.test(compact);
+  }
+
+  function reject_login_code() {
+    set_status(
+      "That's the login code, not the secret. It changes every few seconds. Open “How do I get my secret?” and paste the longer key Roblox shows under the QR code.",
+    );
+  }
+
   enabled_el.addEventListener("change", () => {
     const enabled = enabled_el.checked;
     chrome.storage.local.set({ [ROBLOX_TOTP_ENABLED_KEY]: enabled }, () => {
@@ -4705,11 +4731,19 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   });
 
   secret_el.addEventListener("input", () => {
+    if (totp_is_login_code(secret_el.value)) {
+      reject_login_code();
+      return;
+    }
     if (!pending_encrypt) clear_protect_prompt();
   });
 
   save_btn.addEventListener("click", async () => {
     const secret_trim = (secret_el.value || "").trim();
+    if (totp_is_login_code(secret_trim)) {
+      reject_login_code();
+      return;
+    }
     let enabled = enabled_el.checked;
     if (secret_trim) enabled = true;
 
@@ -4725,6 +4759,10 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
 
       if (pending_encrypt) {
         const plain = secret_trim || pending_secret;
+        if (totp_is_login_code(plain)) {
+          reject_login_code();
+          return;
+        }
         if (!plain) {
           clear_protect_prompt();
           set_status("Enter your 2FA secret.");
@@ -4880,8 +4918,19 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   const card = document.createElement("div");
   card.className = "nte-theme-card";
 
-  let theme = normalize_trade_page_theme(snapshot.theme);
-  let enabled = snapshot.enabled === true;
+  let surface = "roblox";
+  let surface_state = {
+    roblox: {
+      enabled: snapshot.enabled === true,
+      theme: normalize_trade_page_theme(snapshot.theme),
+    },
+    rolimons: {
+      enabled: snapshot.rolimons_enabled === true,
+      theme: normalize_trade_page_theme(snapshot.rolimons_theme),
+    },
+  };
+  let theme = surface_state.roblox.theme;
+  let enabled = surface_state.roblox.enabled;
   let custom_themes = normalize_custom_trade_page_themes(
     snapshot.custom_themes,
   );
@@ -4894,13 +4943,17 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   card.innerHTML = `
     <div class="nte-theme-head">
       <div>
-        <span class="nte-theme-title">Trade page theme</span>
-        <span class="nte-theme-sub">Recolor the trades page.</span>
+        <span class="nte-theme-title">Themes</span>
+        <span class="nte-theme-sub" id="nte-theme-sub">Recolor the Roblox trades page.</span>
       </div>
-      <label class="nte-theme-toggle" title="Enable trade page theme">
+      <label class="nte-theme-toggle" title="Enable this theme">
         <input type="checkbox" id="nte-theme-enabled" />
         <span></span>
       </label>
+    </div>
+    <div class="nte-theme-surfaces" id="nte-theme-surfaces">
+      <button type="button" data-theme-surface="roblox">Roblox</button>
+      <button type="button" data-theme-surface="rolimons">Rolimons</button>
     </div>
     <div class="nte-theme-expanded" id="nte-theme-expanded" hidden>
       <div class="nte-theme-preview" id="nte-theme-preview">
@@ -4970,7 +5023,7 @@ function append_trade_page_theme_card(container, snapshot = {}) {
 
   container.append(card);
   card.dataset.optionSearch = build_option_search_text(
-    "trade page theme recolor trades upload custom",
+    "themes trade page rolimons profile recolor upload custom",
   );
 
   const enabled_el = card.querySelector("#nte-theme-enabled");
@@ -5192,6 +5245,47 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     }
   }
 
+  function theme_storage_for(which = surface) {
+    let state = surface_state[which];
+    if (which === "rolimons") {
+      return {
+        [rolimons_profile_theme_enabled_key]: state.enabled,
+        [rolimons_profile_theme_key]: pack_trade_page_theme(state.theme),
+      };
+    }
+    return {
+      [trade_page_theme_enabled_key]: state.enabled,
+      [trade_page_theme_key]: pack_trade_page_theme(state.theme),
+    };
+  }
+
+  function sync_surface_buttons() {
+    let sub = card.querySelector("#nte-theme-sub");
+    if (sub) {
+      sub.textContent =
+        surface === "rolimons"
+          ? "Recolor Rolimons player profiles."
+          : "Recolor the Roblox trades page.";
+    }
+    for (let button of card.querySelectorAll("[data-theme-surface]")) {
+      let active = button.getAttribute("data-theme-surface") === surface;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    }
+  }
+
+  function show_surface(next) {
+    if (next !== "roblox" && next !== "rolimons") return;
+    surface_state[surface] = { enabled, theme };
+    surface = next;
+    enabled = surface_state[surface].enabled;
+    theme = surface_state[surface].theme;
+    active_color_key = "";
+    color_picker.hidden = true;
+    sync_surface_buttons();
+    paint_inputs(theme);
+  }
+
   function save_theme(
     next_theme = read_theme_from_inputs(),
     next_enabled = enabled_el.checked,
@@ -5199,11 +5293,9 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   ) {
     theme = normalize_trade_page_theme(next_theme);
     enabled = !!next_enabled;
+    surface_state[surface] = { enabled, theme };
     paint_inputs(theme);
-    set_storage({
-      [trade_page_theme_enabled_key]: enabled,
-      [trade_page_theme_key]: pack_trade_page_theme(theme),
-    }).then(() => set_status(message));
+    set_storage(theme_storage_for()).then(() => set_status(message));
   }
 
   function queue_theme_save() {
@@ -5269,11 +5361,10 @@ function append_trade_page_theme_card(container, snapshot = {}) {
       let deleted_active = is_same_theme(removed, theme);
       if (deleted_active)
         theme = normalize_trade_page_theme(trade_page_theme_default);
+      if (deleted_active) surface_state[surface] = { enabled, theme };
       set_storage({
         [trade_page_custom_themes_key]: custom_themes,
-        ...(deleted_active
-          ? { [trade_page_theme_key]: pack_trade_page_theme(theme) }
-          : {}),
+        ...(deleted_active ? theme_storage_for() : {}),
       }).then(() => {
         render_presets();
         paint_inputs(theme);
@@ -5400,7 +5491,15 @@ function append_trade_page_theme_card(container, snapshot = {}) {
     else reader.readAsText(file);
   });
 
+  card.querySelector("#nte-theme-surfaces")?.addEventListener("click", (event) => {
+    let button = event.target.closest("[data-theme-surface]");
+    if (!button) return;
+    show_surface(button.getAttribute("data-theme-surface"));
+    set_status("");
+  });
+
   render_presets();
+  sync_surface_buttons();
   paint_inputs(theme);
   set_status("");
   if (force_theme_upload_page) {
@@ -5441,6 +5540,8 @@ function restore_defaults() {
     updates[trade_page_theme_enabled_key] = false;
     updates[trade_page_theme_key] = { ...trade_page_theme_default };
     updates[trade_page_custom_themes_key] = [];
+    updates[rolimons_profile_theme_enabled_key] = false;
+    updates[rolimons_profile_theme_key] = { ...trade_page_theme_default };
     chrome.storage.local.remove(
       [ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY],
       () => {
@@ -5475,6 +5576,8 @@ function get_settings_backup_keys() {
     trade_page_theme_enabled_key,
     trade_page_theme_key,
     trade_page_custom_themes_key,
+    rolimons_profile_theme_enabled_key,
+    rolimons_profile_theme_key,
     trade_ads_config_storage_key,
     trade_ads_verify_storage_key,
     nte_discord_banner_dismissed_key,
@@ -5507,6 +5610,8 @@ function get_settings_backup_defaults() {
   defaults[trade_page_theme_enabled_key] = false;
   defaults[trade_page_theme_key] = pack_trade_page_theme(trade_page_theme_default);
   defaults[trade_page_custom_themes_key] = [];
+  defaults[rolimons_profile_theme_enabled_key] = false;
+  defaults[rolimons_profile_theme_key] = pack_trade_page_theme(trade_page_theme_default);
   return defaults;
 }
 
@@ -5519,6 +5624,7 @@ function normalize_imported_setting(key, value) {
       inbound_trade_notification_webhook_enabled_key,
       inbound_trade_notification_webhook_ping_enabled_key,
       trade_page_theme_enabled_key,
+      rolimons_profile_theme_enabled_key,
       nte_discord_banner_dismissed_key,
       nte_rate_banner_dismissed_key,
     ].includes(key)
@@ -5544,7 +5650,8 @@ function normalize_imported_setting(key, value) {
     return normalize_counter_trade_choice_mode(value);
   if (key === legacy_counter_trade_prompt_option_name) return value === true;
   if (key === popup_theme_storage_key) return normalize_popup_theme(value);
-  if (key === trade_page_theme_key) return pack_trade_page_theme(value);
+  if (key === trade_page_theme_key || key === rolimons_profile_theme_key)
+    return pack_trade_page_theme(value);
   if (key === trade_page_custom_themes_key)
     return normalize_custom_trade_page_themes(value);
   return value;
@@ -6359,8 +6466,7 @@ function open_totp_autofill_from_mass_send() {
 async function maybe_focus_mass_send_2fa() {
   let progress = await ms_send("ms_progress");
   let st = await get_storage(["nte_ms_focus_2fa"]);
-  let needs =
-    !!(progress?.running && progress?.prompt?.kind) || !!st?.nte_ms_focus_2fa;
+  let needs = !!progress?.running || !!st?.nte_ms_focus_2fa;
   if (!needs) return;
   if (st?.nte_ms_focus_2fa) {
     try {
@@ -6375,6 +6481,10 @@ async function maybe_focus_mass_send_2fa() {
     actions_get_active_category(actions_root) === "mass";
   if (on_mass) {
     let ms_root = actions_root?.querySelector("#actions-ms-root");
+    if (ms_root && !ms_root.querySelector("#ms-2fa-box")) {
+      await render_mass_send_panel(ms_root);
+      return;
+    }
     if (ms_root) {
       ms_update_progress_ui(ms_root, progress);
       if (progress?.running) ms_start_polling(ms_root);
@@ -6401,6 +6511,7 @@ function ms_send(type, extra) {
 }
 
 async function ms_active_tab_is_roblox() {
+  if (is_mobile_browser()) return true;
   try {
     let tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     let url = String(tabs[0]?.url || tabs[0]?.pendingUrl || "");

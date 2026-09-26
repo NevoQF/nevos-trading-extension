@@ -25,7 +25,7 @@
 
 Release builds stay minified. This repo keeps the readable source, manifests, and assets.
 
-Each version is tagged (`v3.10.49`) and published as a [GitHub Release](https://github.com/NevoQF/nevos-trading-extension/releases) with the store zip files and SHA-256 checksums. See [VERIFY.md](VERIFY.md).
+Each version is tagged (`v3.10.50`) and published as a [GitHub Release](https://github.com/NevoQF/nevos-trading-extension/releases) with the store zip files and SHA-256 checksums. See [VERIFY.md](VERIFY.md).
 
 ## What It Is
 

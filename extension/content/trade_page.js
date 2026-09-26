@@ -7917,10 +7917,7 @@
         event.stopPropagation();
         run_nte_quick_proof(btn).catch((err) => {
           console.debug("NTE quick proof failed", err);
-          if (nte_quick_proof_needs_permission_help(err?.message)) {
-            nte_quick_proof_permission_toast(err?.message);
-            return;
-          }
+          if (nte_quick_proof_capture_denied(err?.message)) return;
           nte_quick_proof_toast(
             "Proof failed",
             err?.message || "Could not copy the proof.",
@@ -7950,30 +7947,10 @@
     requestAnimationFrame(() => toast.classList.add("is-visible"));
   }
 
-  function nte_quick_proof_needs_permission_help(message) {
-    return /tab access|Roblox settings|activeTab|<all_urls>/i.test(
+  function nte_quick_proof_capture_denied(message) {
+    return /permission|activeTab|<all_urls>|not allowed to/i.test(
       String(message || ""),
     );
-  }
-
-  function nte_quick_proof_permission_toast(message) {
-    let old = document.querySelector(".nte-proof-toast");
-    old?.__nte_proof_cleanup?.();
-    old?.remove();
-    let toast = document.createElement("div");
-    toast.className = "nte-proof-toast nte-proof-toast--permission";
-    toast.innerHTML = `
-      <button type="button" class="nte-proof-toast-close" aria-label="Close">x</button>
-      <div class="nte-proof-toast-title">Quick Proof needs tab access</div>
-      <div class="nte-proof-toast-sub">${nte_quick_proof_esc(
-        message ||
-          "Couldn't capture this tab. Reload the trade page and try Proof again.",
-      )}</div>
-    `;
-    toast.style.borderColor = "rgba(129, 140, 248, .44)";
-    nte_quick_proof_bind_toast_close(toast);
-    document.body.appendChild(toast);
-    requestAnimationFrame(() => toast.classList.add("is-visible"));
   }
 
   function nte_quick_proof_text_toast(proof_text, title = "Proof text ready") {
@@ -8738,6 +8715,14 @@
   }
 
   async function nte_quick_proof_trade_screenshot_blob() {
+    let probe = await nte_quick_proof_message(
+      { type: "quickProofCaptureTab" },
+      10000,
+    );
+    if (!probe?.ok || !probe.dataUrl)
+      throw new Error(
+        probe?.error || "Could not capture the trade screenshot.",
+      );
     let target = nte_quick_proof_target();
     if (!target) throw new Error("Could not find the selected trade.");
     let restore_ui = nte_quick_proof_hide_capture_ui();
@@ -8908,14 +8893,12 @@
           "Proof screenshot timed out.",
         );
       } catch (err) {
-        if (/firefox/i.test(navigator.userAgent || "")) {
-          nte_quick_proof_text_toast(
-            data.proof_text,
-            "Image proof is not supported on Firefox",
-          );
-          return;
-        }
-        throw err;
+        if (!nte_quick_proof_capture_denied(err?.message)) throw err;
+        blob = null;
+      }
+      if (!blob) {
+        nte_quick_proof_text_toast(data.proof_text);
+        return;
       }
       await nte_quick_proof_preview_toast(data.proof_text, blob);
     } finally {
@@ -11496,6 +11479,9 @@
   border-color:rgba(248,113,113,.28);color:#ffe4e6;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 2px 8px rgba(2,6,23,.12);
 }
 .nte-trade-row-decline:disabled{cursor:wait}
+.nte-trade-row-decline.is-locked,
+.nte-trade-row-decline.is-locked:hover,
+.nte-trade-row-decline.is-locked:disabled{cursor:not-allowed;opacity:.42}
 .nte-trade-row-decline.is-pending{
   background:linear-gradient(180deg,rgba(71,85,105,.3),rgba(51,65,85,.24));border-color:rgba(148,163,184,.24);color:#e2e8f0;
 }
@@ -11656,8 +11642,8 @@
     btn.classList.toggle("is-locked", !!locked);
     btn.setAttribute("aria-pressed", locked ? "true" : "false");
     btn.title = locked
-      ? "Locked: bulk decline will skip this trade"
-      : "Lock: keep this trade during bulk decline";
+      ? "Locked: quick decline and bulk decline skip this trade"
+      : "Lock: keep this trade from quick decline and bulk decline";
     if (btn.dataset.nteLockedState === state) return;
     btn.dataset.nteLockedState = state;
     btn.innerHTML = locked
@@ -11681,6 +11667,7 @@
       save_locked_trade_ids();
       update_trade_row_lock_button(btn, is_trade_row_locked(key));
       sync_trade_row_lock_buttons_for_id(key);
+      sync_trade_row_decline_lock(row, key);
     } finally {
       if (btn) delete btn.dataset.nteLockBusy;
     }
@@ -12153,10 +12140,18 @@
           query_trade_row_control(row, ".nte-trade-row-lock"),
           is_trade_row_locked(trade_id),
         );
+        sync_trade_row_decline_lock(row, trade_id);
       }
     });
   } catch {}
-  load_locked_trade_ids().catch(() => {});
+  load_locked_trade_ids()
+    .then(() => {
+      for (let row of document.querySelectorAll(".trade-row-list .trade-row")) {
+        let trade_id = get_selected_trade_id_sync(row);
+        if (trade_id) sync_trade_row_decline_lock(row, trade_id);
+      }
+    })
+    .catch(() => {});
   let trade_row_mut_observer_paused_until = 0;
   let trade_category_soft_until = 0;
   let trade_category_soft_end_timer = 0;
@@ -12437,6 +12432,13 @@
     ensure_trade_row_decline_button(row);
   }
   function request_trade_row_decline(trade_id) {
+    if (is_trade_row_locked(trade_id)) {
+      return Promise.resolve({
+        ok: false,
+        status: 0,
+        error: "This trade is locked.",
+      });
+    }
     return new Promise((resolve) => {
       let settled = false;
       let finish = (result) => {
@@ -12458,6 +12460,17 @@
         },
       );
     });
+  }
+  function sync_trade_row_decline_lock(row, trade_id) {
+    let btn = query_trade_row_control(row, ".nte-trade-row-decline");
+    if (!btn) return;
+    if (btn.dataset.nteState === "pending" || btn.dataset.nteState === "success")
+      return;
+    let locked = is_trade_row_locked(trade_id);
+    btn.classList.toggle("is-locked", locked);
+    btn.disabled = locked;
+    if (locked) btn.title = "Locked trade";
+    else if (btn.dataset.nteState !== "error") btn.removeAttribute("title");
   }
   function set_trade_row_decline_button_state(btn, state, detail = "") {
     if (!btn) return;
@@ -12482,6 +12495,13 @@
         break;
     }
     btn.textContent = label;
+    if (state === "pending" || state === "success") return;
+    let trade_id = btn.parentElement?.dataset?.nteTradeId;
+    if (trade_id && is_trade_row_locked(trade_id)) {
+      btn.classList.add("is-locked");
+      btn.disabled = true;
+      btn.title = "Locked trade";
+    }
   }
   function get_adjacent_trade_row(row) {
     let next = row?.nextElementSibling;
@@ -12576,6 +12596,7 @@
       append_trade_row_control(row, wrap);
       wrap.dataset.nteTradeId = String(trade_id);
       park_trade_row_control_node(wrap, trade_id);
+      sync_trade_row_decline_lock(row, trade_id);
       sync_trade_row_decline_position(row);
       return;
     }
@@ -12608,6 +12629,12 @@
     btn.addEventListener("click", async (event) => {
       event.preventDefault();
       let current_row = trade_row_from_control(btn);
+      let locked_id =
+        wrap.dataset.nteTradeId || get_selected_trade_id_sync(current_row);
+      if (is_trade_row_locked(locked_id)) {
+        sync_trade_row_decline_lock(current_row, locked_id);
+        return;
+      }
       if (!current_row?.isConnected || btn.disabled) return;
       set_trade_row_decline_button_state(btn, "pending");
       let trade_id = get_selected_trade_id_sync(current_row);
@@ -12639,6 +12666,7 @@
     });
     wrap.appendChild(btn);
     set_trade_row_decline_button_state(btn, "idle");
+    sync_trade_row_decline_lock(row, trade_id);
     sync_trade_row_decline_position(row);
   }
   let L_running = false,
@@ -14068,6 +14096,9 @@
         border-color:rgba(248,113,113,.28);color:#ffe4e6;box-shadow:inset 0 1px 0 rgba(255,255,255,.07),0 2px 8px rgba(2,6,23,.12);
       }
       .nte-trade-row-decline:disabled{cursor:wait}
+      .nte-trade-row-decline.is-locked,
+      .nte-trade-row-decline.is-locked:hover,
+      .nte-trade-row-decline.is-locked:disabled{cursor:not-allowed;opacity:.42}
       .nte-trade-row-decline.is-pending{
         background:linear-gradient(180deg,rgba(71,85,105,.3),rgba(51,65,85,.24));border-color:rgba(148,163,184,.24);color:#e2e8f0;
       }
@@ -16037,6 +16068,10 @@
       .nte-poison-fallback-row .nte-analyze-trade-btn,
       .nte-poison-fallback-row .nte-poison-btn,
       .nte-trade-request-analyze-row .nte-analyze-trade-btn{position:static!important;pointer-events:auto!important;isolation:auto!important;z-index:0!important}
+      .trade-buttons .foundation-web-button.nte-history-btn,
+      .trade-buttons .foundation-web-button.nte-analyze-trade-btn,
+      .trade-buttons .foundation-web-button.nte-counter-send-btn,
+      .nte-trade-request-analyze-row .foundation-web-button.nte-analyze-trade-btn{position:relative!important}
       .nte-trade-row-lock-wrap,.nte-trade-row-lock{pointer-events:auto!important;isolation:isolate!important}
       .nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row{position:relative!important;isolation:auto!important;z-index:0!important}
       /* Offer text/totals must paint over History/Analyze if USD rows overflow into the button row. */
@@ -17579,29 +17614,43 @@
   try {
     chrome.runtime.onMessage.addListener((message, _sender, respond) => {
       if (message?.type !== "nte_get_trade_daily_limit") return;
-      (async () => {
-        try {
-          let state = await refresh_trade_daily_limit_state(!!message.force);
-          let count = Math.min(
-            trade_daily_limit_max,
-            Math.max(0, Number(state?.count) || 0),
-          );
-          let remaining = Math.max(0, trade_daily_limit_max - count);
-          respond({
-            ok: true,
-            count,
-            remaining,
-            max: trade_daily_limit_max,
-            at_limit: remaining <= 0 || !!state?.at_limit,
-            reset_at: state?.reset_at ?? null,
-          });
-        } catch (err) {
+      let replied = false;
+      let timer = setTimeout(() => {
+        reply_trade_daily_limit(trade_daily_limit_state);
+      }, 1200);
+      function reply_trade_daily_limit(state) {
+        if (replied) return;
+        replied = true;
+        clearTimeout(timer);
+        if (!state) {
+          respond({ ok: false, error: "Trade limit is still loading." });
+          return;
+        }
+        let count = Math.min(
+          trade_daily_limit_max,
+          Math.max(0, Number(state.count) || 0),
+        );
+        let remaining = Math.max(0, trade_daily_limit_max - count);
+        respond({
+          ok: true,
+          count,
+          remaining,
+          max: trade_daily_limit_max,
+          at_limit: remaining <= 0 || !!state.at_limit,
+          reset_at: state.reset_at ?? null,
+        });
+      }
+      refresh_trade_daily_limit_state(!!message.force)
+        .then((state) => reply_trade_daily_limit(state))
+        .catch((err) => {
+          if (replied) return;
+          replied = true;
+          clearTimeout(timer);
           respond({
             ok: false,
             error: err?.message || String(err),
           });
-        }
-      })();
+        });
       return true;
     });
   } catch {}
@@ -17661,16 +17710,24 @@
     }
   }
 
+  function is_send_offer_confirm_heading(el) {
+    for (let node of el.querySelectorAll?.("h1, h2, h3") || []) {
+      if (/^send offer$/i.test((node.textContent || "").trim())) return true;
+    }
+    return false;
+  }
   function is_duplicate_trade_warning_modal(el) {
     if (!(el instanceof Element) || el.classList.contains("ng-hide"))
       return false;
     if (!el.getClientRects().length) return false;
     if (el.getAttribute?.("aria-hidden") === "true") return false;
     if (el.dataset?.state === "closed") return false;
+    if (is_send_offer_confirm_heading(el)) return true;
     let text = el.textContent || "";
     return (
       /send a trade request/i.test(text) ||
-      (/send request/i.test(text) && /review|trade|offer/i.test(text))
+      (/send request/i.test(text) && /review|trade|offer/i.test(text)) ||
+      (/send offer/i.test(text) && /trades are final/i.test(text))
     );
   }
 
@@ -17727,7 +17784,8 @@
     let title = candidates.find(
       (el) =>
         (/send a trade request/i.test(el.textContent || "") ||
-          /send request/i.test(el.textContent || "")) &&
+          /send request/i.test(el.textContent || "") ||
+          /^send offer$/i.test((el.textContent || "").trim())) &&
         el.children.length <= 3,
     );
     if (title) return { node: title, place: "after" };
@@ -17956,7 +18014,7 @@
     let btn = event.target?.closest?.("button");
     if (!(btn instanceof Element)) return;
     let modal = btn.closest(
-      ".modal-dialog, .modal-content, .modal-body, [role='dialog'], .rbx-overlay, .rbx-modal, .modal-container",
+      ".foundation-web-dialog-content, .modal-dialog, .modal-content, .modal-body, [role='dialog'], .rbx-overlay, .rbx-modal, .modal-container",
     );
     if (!is_duplicate_trade_warning_modal(modal)) return;
     let label = String(btn.textContent || "")
@@ -17985,10 +18043,10 @@
     if (!(node instanceof Element)) return false;
     return !!(
       node.matches?.(
-        '.modal-dialog, .modal-content, .modal-body, [role="dialog"], .rbx-overlay, .rbx-modal, .modal-container',
+        '.foundation-web-dialog-content, .modal-dialog, .modal-content, .modal-body, [role="dialog"], .rbx-overlay, .rbx-modal, .modal-container',
       ) ||
       node.querySelector?.(
-        '.modal-dialog, .modal-content, .modal-body, [role="dialog"], .rbx-overlay, .rbx-modal, .modal-container',
+        '.foundation-web-dialog-content, .modal-dialog, .modal-content, .modal-body, [role="dialog"], .rbx-overlay, .rbx-modal, .modal-container',
       )
     );
   }
@@ -19151,14 +19209,17 @@
     let style = document.createElement("style");
     style.textContent = `
       .nte-history-fallback-row{display:flex;flex-direction:row;align-items:center;flex-wrap:wrap;gap:10px;margin-top:14px;margin-bottom:6px;min-height:36px}
-      .trade-request-window-offers > button.btn-full-width:has(+ .nte-trade-request-analyze-row),
-      .trade-request-window-offers > button.foundation-web-button:has(+ .nte-trade-request-analyze-row){margin-bottom:0!important}
-      .trade-request-window-offers > button.btn-full-width + .nte-trade-request-analyze-row,
-      .trade-request-window-offers > button.foundation-web-button + .nte-trade-request-analyze-row{margin-top:14px!important;padding-top:0!important}
-      .nte-trade-request-analyze-row{display:flex;flex-direction:column;gap:0;margin:0!important;padding:0!important;width:100%}
+      .trade-request-window-offers>button.foundation-web-button,
+      .trade-request-window-offers>button.btn-full-width,
+      .trade-request-window-offers>.nte-trade-request-analyze-row{width:100%!important;max-width:none!important;flex:1 1 100%!important;align-self:stretch!important;box-sizing:border-box!important}
+      .nte-trade-request-analyze-row{display:flex;flex-direction:column;gap:0;margin:8px 0 0!important;padding:0!important;width:100%}
+      .trade-request-window-offers .nte-trade-request-analyze-row .nte-analyze-trade-btn{display:flex!important;align-items:center!important;justify-content:center!important;width:100%!important;max-width:none!important;box-sizing:border-box!important;position:relative!important;box-shadow:none!important;background:rgba(255,255,255,.06)!important;color:inherit!important;border:1px solid rgba(255,255,255,.16)!important}
+      .light-theme .trade-request-window-offers .nte-trade-request-analyze-row .nte-analyze-trade-btn{background:rgba(27,37,58,.04)!important;border-color:rgba(27,37,58,.14)!important;color:inherit!important}
+      .trade-request-window-offers .nte-trade-request-analyze-row .nte-analyze-trade-btn:hover{background:rgba(255,255,255,.1)!important}
+      .light-theme .trade-request-window-offers .nte-trade-request-analyze-row .nte-analyze-trade-btn:hover{background:rgba(27,37,58,.07)!important}
       .nte-trade-request-analyze-row .nte-analyze-trade-btn{width:100%;min-height:0;margin:0!important}
-      .nte-history-btn,.nte-analyze-trade-btn{position:static;display:inline-flex;align-items:center;justify-content:center;gap:8px}
-      .nte-history-btn .nte-history-btn-inner,.nte-analyze-trade-btn .nte-history-btn-inner{display:inline-flex;align-items:center;justify-content:center;gap:8px}
+      .nte-history-btn:not(.foundation-web-button),.nte-analyze-trade-btn:not(.foundation-web-button){position:static;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+      .nte-history-btn:not(.foundation-web-button) .nte-history-btn-inner,.nte-analyze-trade-btn:not(.foundation-web-button) .nte-history-btn-inner{display:inline-flex;align-items:center;justify-content:center;gap:8px}
       .nte-history-btn.nte-history-btn--loading,.nte-analyze-trade-btn.nte-analyze-trade-btn--loading{pointer-events:none}
       .nte-history-btn.nte-history-btn--active{box-shadow:0 0 0 1px rgba(96,165,250,.38) inset}
       .nte-analyze-trade-btn.nte-analyze-trade-btn--active{box-shadow:0 0 0 1px rgba(45,212,191,.42) inset}
@@ -21211,12 +21272,51 @@
     return btn;
   }
 
+  function set_trade_action_button_label(btn, label, with_spinner) {
+    if (!(btn instanceof HTMLElement)) return;
+    if (!btn.classList.contains("foundation-web-button")) {
+      btn.innerHTML = with_spinner
+        ? `<span class="nte-history-btn-inner"><span class="nte-history-btn-spinner"></span><span class="nte-history-btn-label">${label}</span></span>`
+        : `<span class="nte-history-btn-inner"><span class="nte-history-btn-label">${label}</span></span>`;
+      return;
+    }
+    let layer = btn.querySelector(
+      ":scope > [data-testid='foundation-web-state-layer']",
+    );
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.setAttribute("aria-hidden", "true");
+      layer.dataset.testid = "foundation-web-state-layer";
+      layer.className =
+        "absolute inset-[0] transition-colors group-hover/interactable:bg-[var(--color-state-hover)] group-active/interactable:bg-[var(--color-state-press)] group-disabled/interactable:bg-none";
+      btn.prepend(layer);
+    }
+    let row = [...btn.children].find(
+      (el) => el !== layer && el.tagName === "SPAN",
+    );
+    if (!row) {
+      row = document.createElement("span");
+      btn.appendChild(row);
+    }
+    row.className = "flex items-center min-width-0 gap-small";
+    row.replaceChildren();
+    if (with_spinner) {
+      let spin = document.createElement("span");
+      spin.className = "nte-history-btn-spinner";
+      row.appendChild(spin);
+    }
+    let text = document.createElement("span");
+    text.className =
+      "padding-y-xsmall text-truncate-end text-no-wrap nte-history-btn-label";
+    text.textContent = label;
+    row.appendChild(text);
+  }
+
   function nte_history_set_btn_idle(btn) {
     btn.disabled = false;
     btn.__nte_history_open = false;
     btn.classList.remove("nte-history-btn--loading", "nte-history-btn--active");
-    btn.innerHTML =
-      '<span class="nte-history-btn-inner"><span class="nte-history-btn-label">History</span></span>';
+    set_trade_action_button_label(btn, "History", false);
     btn.setAttribute("aria-label", "View item trade history");
     btn.title = "View item trade history";
   }
@@ -21225,8 +21325,7 @@
     btn.disabled = true;
     btn.classList.remove("nte-history-btn--active");
     btn.classList.add("nte-history-btn--loading");
-    btn.innerHTML =
-      '<span class="nte-history-btn-inner"><span class="nte-history-btn-spinner"></span><span class="nte-history-btn-label">Thinking</span></span>';
+    set_trade_action_button_label(btn, "Thinking", true);
     btn.setAttribute("aria-label", "Loading item trade history");
     btn.title = "Loading item trade history";
   }
@@ -21236,8 +21335,7 @@
     btn.__nte_history_open = true;
     btn.classList.remove("nte-history-btn--loading");
     btn.classList.add("nte-history-btn--active");
-    btn.innerHTML =
-      '<span class="nte-history-btn-inner"><span class="nte-history-btn-label">History</span></span>';
+    set_trade_action_button_label(btn, "History", false);
     btn.setAttribute("aria-label", "Hide item trade history");
     btn.title = "Hide item trade history";
   }
@@ -21252,6 +21350,7 @@
       send_message: nte_send_message,
       assert_dominance: assert_trade_page_dominance,
       set_history_btn_idle: nte_history_set_btn_idle,
+      set_action_label: set_trade_action_button_label,
       inject_history_styles: inject_trade_history_styles,
       get_container_from_button: get_trade_history_container_from_button,
       get_state_key: nte_history_state_key,
@@ -21833,15 +21932,31 @@
       sync_counter_send_buttons_fn().catch(() => {});
   }
 
+  function tune_trade_request_analyze_button(btn) {
+    if (!btn) return;
+    for (let name of [
+      "bg-action-emphasis",
+      "content-action-emphasis",
+      "btn-full-width",
+      "btn-cta-md",
+      "btn-control-md",
+      "btn-primary-md",
+    ])
+      btn.classList.remove(name);
+    btn.classList.add("foundation-web-button", "width-full", "radius-medium");
+    btn.style.removeProperty("margin-top");
+    btn.style.removeProperty("margin-bottom");
+    btn.style.removeProperty("text-decoration");
+  }
   function sync_trade_request_analyze_spacing(make_offer_btn, row) {
     if (!make_offer_btn || !row) return;
-    make_offer_btn.style.setProperty("margin-bottom", "0", "important");
-    row.style.setProperty("margin-top", "14px", "important");
-    row.style.setProperty("margin-bottom", "0", "important");
-    row.style.setProperty("padding-top", "0", "important");
-    let btn = row.querySelector(".nte-analyze-trade-btn");
-    btn?.style.setProperty("margin-top", "0", "important");
-    btn?.style.setProperty("margin-bottom", "0", "important");
+    make_offer_btn.style.removeProperty("margin-bottom");
+    row.style.removeProperty("margin-top");
+    row.style.removeProperty("margin-bottom");
+    row.style.removeProperty("padding-top");
+    tune_trade_request_analyze_button(
+      row.querySelector(".nte-analyze-trade-btn"),
+    );
   }
 
   async function inject_trade_request_analyze_button() {
@@ -21908,7 +22023,7 @@
     if (!row.querySelector(".nte-analyze-trade-btn")) {
       btn = create_analyze_trade_button(make_offer_btn);
       if (btn) {
-        btn.classList.add("btn-full-width");
+        tune_trade_request_analyze_button(btn);
         row.appendChild(btn);
         assert_trade_page_dominance();
       }
@@ -22028,8 +22143,10 @@
         .replace(/\bng-hide\b/g, "")
         .trim();
       btn.classList.remove("btn-cta-md", "ng-hide");
-      btn.classList.add("btn-control-md", "nte-counter-send-btn");
-      btn.textContent = "Send";
+      if (!/\bfoundation-web-button\b/.test(btn.className))
+        btn.classList.add("btn-control-md");
+      btn.classList.add("nte-counter-send-btn");
+      set_trade_action_button_label(btn, "Send", false);
       btn.setAttribute("aria-label", "Send a new trade to this user");
       btn.title = "Send a new trade to this user";
       btn.onclick = (event) => {

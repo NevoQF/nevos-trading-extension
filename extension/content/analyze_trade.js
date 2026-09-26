@@ -211,11 +211,21 @@
       return btn;
     }
 
+    function paint_action_label(btn, label, with_spinner) {
+      if (typeof deps.set_action_label === "function") {
+        deps.set_action_label(btn, label, with_spinner);
+        return;
+      }
+      btn.innerHTML = with_spinner
+        ? `<span class="nte-history-btn-inner"><span class="nte-history-btn-spinner"></span><span class="nte-history-btn-label">${label}</span></span>`
+        : `<span class="nte-history-btn-inner"><span class="nte-history-btn-label">${label}</span></span>`;
+    }
+
     function set_btn_idle(btn) {
       btn.disabled = false;
       btn.__nte_analyze_trade_open = false;
       btn.classList.remove("nte-analyze-trade-btn--loading", "nte-analyze-trade-btn--active");
-      btn.innerHTML = '<span class="nte-history-btn-inner"><span class="nte-history-btn-label">Analyze Trade</span></span>';
+      paint_action_label(btn, "Analyze Trade", false);
       btn.setAttribute("aria-label", "Analyze this trade");
       btn.title = "Analyze this trade";
     }
@@ -224,7 +234,7 @@
       btn.disabled = true;
       btn.classList.remove("nte-analyze-trade-btn--active");
       btn.classList.add("nte-analyze-trade-btn--loading");
-      btn.innerHTML = '<span class="nte-history-btn-inner"><span class="nte-history-btn-spinner"></span><span class="nte-history-btn-label">Analyzing</span></span>';
+      paint_action_label(btn, "Analyzing", true);
       btn.setAttribute("aria-label", "Analyzing this trade");
       btn.title = "Analyzing this trade";
     }
@@ -234,7 +244,7 @@
       btn.__nte_analyze_trade_open = true;
       btn.classList.remove("nte-analyze-trade-btn--loading");
       btn.classList.add("nte-analyze-trade-btn--active");
-      btn.innerHTML = '<span class="nte-history-btn-inner"><span class="nte-history-btn-label">Analyze Trade</span></span>';
+      paint_action_label(btn, "Analyze Trade", false);
       btn.setAttribute("aria-label", "Hide trade analysis");
       btn.title = "Hide trade analysis";
     }

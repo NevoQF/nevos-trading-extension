@@ -51,6 +51,24 @@ function ms_default_state() {
   };
 }
 
+let ms_keep_alive_timer = 0;
+
+function ms_keep_alive_tick() {
+  if (!ms_state.running) return;
+  try {
+    chrome.runtime.getPlatformInfo(() => {
+      chrome.runtime.lastError;
+    });
+  } catch {}
+  clearTimeout(ms_keep_alive_timer);
+  ms_keep_alive_timer = setTimeout(ms_keep_alive_tick, 15000);
+}
+
+function ms_stop_keep_alive() {
+  clearTimeout(ms_keep_alive_timer);
+  ms_keep_alive_timer = 0;
+}
+
 function ms_sleep(ms) {
   return new Promise((resolve) => {
     let done = false;
@@ -285,7 +303,13 @@ function ms_is_roblox_url(url) {
   }
 }
 
+function ms_is_mobile() {
+  return /android|iphone|ipod|iemobile|mobile/i.test(navigator.userAgent || "");
+}
+
 async function ms_roblox_tab_is_in_front() {
+  // Mobile has no way to keep a Roblox tab in front while the extension is open.
+  if (ms_is_mobile()) return true;
   if (!chrome?.windows?.getLastFocused || !chrome?.tabs?.query) return false;
   let win = null;
   try {
@@ -315,6 +339,27 @@ async function ms_wait_for_roblox_tab() {
   throw new Error("Cancelled by user");
 }
 
+function ms_tab_message(tab_id, message, timeout_ms = 1500) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer = setTimeout(() => finish(null), timeout_ms);
+    function finish(value) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    }
+    try {
+      chrome.tabs.sendMessage(tab_id, message, (res) => {
+        if (chrome.runtime.lastError) finish(null);
+        else finish(res ?? null);
+      });
+    } catch {
+      finish(null);
+    }
+  });
+}
+
 async function ms_ask_roblox_tab_trade_daily_limit() {
   if (!chrome?.tabs?.query || !chrome?.tabs?.sendMessage) return null;
   let tabs = [];
@@ -323,10 +368,11 @@ async function ms_ask_roblox_tab_trade_daily_limit() {
   } catch {
     return null;
   }
+  tabs = tabs.filter((tab) => tab.active && tab.id != null);
   for (let tab of tabs) {
     if (tab?.id == null) continue;
     try {
-      let res = await chrome.tabs.sendMessage(tab.id, {
+      let res = await ms_tab_message(tab.id, {
         type: "nte_get_trade_daily_limit",
       });
       if (!res || res.ok === false) continue;
@@ -637,15 +683,19 @@ function ms_resolve_instances_for_assets(items, asset_ids, options = {}) {
   }
   let collected = [];
   let matched_rows = {};
-  let used_ids = new Set();
+  let used_ids = new Set(
+    [...(options.used_ids || [])].map((id) => String(id || "").trim()).filter(Boolean),
+  );
   for (let item of items || []) {
     let target = String(ms_tradable_target_id(item) || "");
     if (!target || !needed[target]) continue;
     if (!matched_rows[target]) matched_rows[target] = item;
-    let instances = ms_collect_instance_ids(item).filter((id) => !used_ids.has(id));
+    let instances = ms_collect_instance_ids(item).filter(
+      (id) => !used_ids.has(String(id)),
+    );
     while (needed[target] > 0 && instances.length) {
       let inst = instances.shift();
-      used_ids.add(inst);
+      used_ids.add(String(inst));
       collected.push(inst);
       needed[target]--;
     }
@@ -1905,6 +1955,7 @@ async function ms_run(config) {
     status: "Preparing…",
   };
 
+  ms_keep_alive_tick();
   try {
     await ms_wait_for_roblox_tab();
     let offer_assets = ms_normalize_asset_ids(config?.offer_slots);
@@ -2013,16 +2064,31 @@ async function ms_run(config) {
     if (!csrf) throw new Error("Could not get Roblox CSRF token.");
 
     ms_state.phase = "sending";
+    let used_offer_ids = new Set();
     for (let i = 0; i < candidates.length; i++) {
       if (ms_abort) {
         ms_state.error = "Cancelled by user";
         break;
       }
       if (ms_state.sent >= target_sends) break;
-      await ms_wait_for_roblox_tab();
-      if (ms_abort) {
-        ms_state.error = "Cancelled by user";
-        break;
+      if (used_offer_ids.size) {
+        let next_offer = await ms_resolve_instances_for_user(
+          self_id,
+          offer_assets,
+          { item_data, used_ids: used_offer_ids },
+        );
+        if (ms_abort) {
+          ms_state.error = "Cancelled by user";
+          break;
+        }
+        if (!next_offer?.ok) {
+          throw new Error(
+            next_offer?.error
+              ? `Sent ${ms_state.sent}. ${next_offer.error}`
+              : `Sent ${ms_state.sent}. No more free copies of your offer items.`,
+          );
+        }
+        offer_instances = ms_copy_instance_ids(next_offer.instances);
       }
 
       let target = candidates[i];
@@ -2083,6 +2149,7 @@ async function ms_run(config) {
 
       if (result.resp.ok) {
         ms_state.sent++;
+        for (let id of offer_instances) used_offer_ids.add(String(id));
         let trade_id =
           result.data?.id ?? result.data?.tradeId ?? result.data?.trade_id;
         if (trade_id != null) {
@@ -2135,6 +2202,7 @@ async function ms_run(config) {
 
   ms_session_secret = null;
   ms_state.running = false;
+  ms_stop_keep_alive();
   ms_state.wait_until = 0;
   ms_state.remaining = 0;
   ms_finish_2fa_wait(null);
