@@ -1722,7 +1722,9 @@
               r.querySelector('[thumbnail-type="BundleThumbnail"]')
             ),
             l = n.resolveRolimonsItemId(a, o, is_bundle_card);
-          let f = r.querySelector(".item-card-link"),
+          // Offer/request slots (.trade-request-item) have no .item-card-link,
+          // so the flag box mounts on the slot itself.
+          let f = r.querySelector(".item-card-link") || r,
             u = m(r);
           if (u) {
             let old_box = f?.querySelector(".flagBox[data-nte-side]");
@@ -1731,7 +1733,7 @@
             return;
           }
           if (void 0 === r.getElementsByClassName("flagBox")[0]) {
-            let e = r.querySelector(".item-card-link");
+            let e = r.querySelector(".item-card-link") || r;
             (e.style.position = "relative"), i(e);
           }
           let c = r.getElementsByClassName("flagBox")[0];
@@ -1776,12 +1778,38 @@
                 r(item);
         }
         if ("sendOrCounter" === n.getPageType()) {
-          let e = await n.waitForElm(".inventory-panel-holder");
-          for (let inventory of (await n.waitForElm(".hlist", e),
-          e.querySelectorAll(".hlist")))
-            for (let item of (await n.waitForElm(".item-card-container"),
-            inventory.querySelectorAll(".item-card-container")))
+          await n.waitForElm(".inventory-panel-holder");
+          // Scan every inventory panel: the other trader's grid needs flags
+          // too, not just your own. Late-loading cards are picked up by the
+          // next refresh pass.
+          for (let panel of document.querySelectorAll(
+            ".inventory-panel-holder",
+          ))
+            for (let inventory of panel.querySelectorAll(".hlist"))
+              for (let item of inventory.querySelectorAll(
+                ".item-card-container",
+              ))
+                r(item);
+          // Flags must also land on the offer/request summary slots while
+          // sending a trade, not just on the inventory grid.
+          for (let item of document.querySelectorAll(
+            ".trade-request-window .trade-request-item",
+          )) {
+            let filled =
+              !item.classList.contains("blank-item") &&
+              !item.classList.contains("draggable-border") &&
+              !!item.querySelector("img");
+            if (filled) {
               r(item);
+              continue;
+            }
+            item.querySelector(".flagBox")?.remove();
+            item.classList.remove(
+              "nte-has-flag",
+              "nte-flag-side-left",
+              "nte-flag-side-right",
+            );
+          }
         }
         if ("catalog" === n.getPageType())
           for (let item of (await n.waitForElm(".item-card-container"),
@@ -8893,7 +8921,7 @@
           "Proof screenshot timed out.",
         );
       } catch (err) {
-        if (!nte_quick_proof_capture_denied(err?.message)) throw err;
+        console.debug("NTE quick proof screenshot skipped", err);
         blob = null;
       }
       if (!blob) {
@@ -13365,6 +13393,7 @@
 
   async function prefetch_uncached_trades(cached) {
     if (!is_trade_list_page() || prefetch_running || document.hidden) return;
+    if (!(await c.getOption("Fast Trade Loading"))) return;
     let type = get_current_trade_tab();
     if (type === prefetch_last_tab && Date.now() - prefetch_last_time < 120000)
       return;
@@ -13907,6 +13936,7 @@
       .nte-sales-hover-sale:first-of-type{border-top:0}
       .nte-sales-hover-sale-date{opacity:.72}
       .nte-sales-hover-sale-price{font-weight:800}
+      .nte-sales-hover-sale-volume{opacity:.5;font-weight:600;margin-left:4px}
       .nte-sales-hover-more{margin-top:8px}
       .nte-sales-hover-more-btn{
         appearance:none;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;
@@ -14443,6 +14473,9 @@
       ? new Intl.DateTimeFormat(void 0, {
           month: "short",
           day: "numeric",
+          // Sale points are UTC day buckets; formatting them in the viewer's
+          // timezone shifted every date back a day west of UTC.
+          timeZone: "UTC",
         }).format(new Date(time))
       : "Unknown";
   }
@@ -14476,21 +14509,40 @@
     push(payload?.resaleData?.priceDataPoints);
     push(payload?.graphData?.dataPoints);
     push(payload?.itemPriceData?.priceDataPoints);
+    // Roblox reports one price point per day plus a parallel per-day volume.
+    let volume_by_time = new Map();
+    let push_volumes = (arr) => {
+      if (!Array.isArray(arr)) return;
+      for (let row of arr) {
+        let time = parse_trade_sales_time(
+          row?.date ?? row?.timestamp ?? row?.time,
+        );
+        let count = parseInt(row?.value ?? row?.volume ?? row?.count ?? 0, 10);
+        if (Number.isFinite(time) && Number.isFinite(count) && count > 0)
+          volume_by_time.set(time, count);
+      }
+    };
+    push_volumes(payload.volumeDataPoints);
+    push_volumes(payload?.resaleData?.volumeDataPoints);
     return rows
-      .map((row) => ({
-        value: parseInt(
-          row?.value ?? row?.price ?? row?.robux ?? row?.amount ?? 0,
-          10,
-        ),
-        time_ms: parse_trade_sales_time(
+      .map((row) => {
+        let time_ms = parse_trade_sales_time(
           row?.date ??
             row?.timestamp ??
             row?.time ??
             row?.created ??
             row?.saleDate ??
             row?.soldAt,
-        ),
-      }))
+        );
+        return {
+          value: parseInt(
+            row?.value ?? row?.price ?? row?.robux ?? row?.amount ?? 0,
+            10,
+          ),
+          time_ms,
+          volume: volume_by_time.get(time_ms) || 0,
+        };
+      })
       .filter(
         (row) =>
           Number.isFinite(row.value) &&
@@ -14526,6 +14578,7 @@
       recent_sales = points.map((point) => ({
         date_text: format_trade_sales_date(point.time_ms),
         value: point.value,
+        volume: point.volume || 0,
       }));
     return {
       rap,
@@ -14565,7 +14618,11 @@
       .map(
         (sale) => `<div class="nte-sales-hover-sale">
             <span class="nte-sales-hover-sale-date">${String(sale.date_text || "").replace(/[<>]/g, "")}</span>
-            <span class="nte-sales-hover-sale-price">${c.commafy(sale.value)}</span>
+            <span class="nte-sales-hover-sale-price">${c.commafy(sale.value)}${
+              Number(sale.volume) > 1
+                ? `<span class="nte-sales-hover-sale-volume">×${Number(sale.volume)}</span>`
+                : ""
+            }</span>
           </div>`,
       )
       .join("")}</div>${toggle_html}</div>`;
@@ -17008,6 +17065,22 @@
     // for changes and re-run the UI refresh (value summaries, devline, lock,
     // decline, etc.) when new elements appear. Toggle via the setting.
     (function bind_roblox_new_ui_refresh_observer() {
+      let debounce = 0;
+      function on_mut(mutations) {
+        if (
+          trade_ui_refresh_muted ||
+          trade_category_soft_mode() ||
+          trade_row_mut_observer_paused() ||
+          mutation_is_extension_only(mutations)
+        )
+          return;
+        clearTimeout(debounce);
+        debounce = setTimeout(() => {
+          if (trade_category_soft_mode() || trade_row_mut_observer_paused())
+            return;
+          schedule_trade_ui_refresh(0, false);
+        }, 180);
+      }
       let bound = false;
       function ensure() {
         if (bound) return;
@@ -17017,41 +17090,8 @@
           document.querySelector(".trade-row-list");
         if (!host) return;
         bound = true;
-        let debounce = 0;
-        let on_mut = (mutations) => {
-          if (
-            trade_ui_refresh_muted ||
-            trade_category_soft_mode() ||
-            trade_row_mut_observer_paused() ||
-            mutation_is_extension_only(mutations)
-          )
-            return;
-          clearTimeout(debounce);
-          debounce = setTimeout(() => {
-            if (trade_category_soft_mode() || trade_row_mut_observer_paused())
-              return;
-            schedule_trade_ui_refresh(0, false);
-          }, 180);
-        };
         let observer = new MutationObserver(on_mut);
         observer.observe(host, { childList: true, subtree: true });
-        let request_obs = null;
-        let request_host = null;
-        setInterval(() => {
-          let request = document.querySelector(".trade-request-window");
-          if (request === request_host && request_host?.isConnected) return;
-          if (request_obs) {
-            try {
-              request_obs.disconnect();
-            } catch {}
-            request_obs = null;
-          }
-          request_host = request || null;
-          if (!request) return;
-          request_obs = new MutationObserver(on_mut);
-          request_obs.observe(request, { childList: true, subtree: true });
-          schedule_trade_ui_refresh(0, true);
-        }, 500);
         // Also watch the detail pane area when it shows up.
         let detail_observer_bound = false;
         let detail_check = setInterval(() => {
@@ -17065,6 +17105,36 @@
         }, 1500);
         setTimeout(() => clearInterval(detail_check), 30000);
       }
+      // Send/counter pages have no trade row list, so the request window has
+      // its own watcher that always runs. Offer changes compare signatures —
+      // a blanket refresh on every React mutation froze the page.
+      let request_obs = null;
+      let request_host = null;
+      setInterval(() => {
+        let request = document.querySelector(".trade-request-window");
+        if (request === request_host && request_host?.isConnected) return;
+        if (request_obs) {
+          try {
+            request_obs.disconnect();
+          } catch {}
+          request_obs = null;
+        }
+        request_host = request || null;
+        if (!request) return;
+        request_obs = new MutationObserver((mutations) => {
+          if (
+            trade_ui_refresh_muted ||
+            trade_category_soft_mode() ||
+            trade_row_mut_observer_paused() ||
+            mutation_is_extension_only(mutations)
+          )
+            return;
+          if (mutations.some(mutation_touches_trade_offers))
+            sync_trade_offer_changes();
+        });
+        request_obs.observe(request, { childList: true, subtree: true });
+        schedule_trade_ui_refresh(0, true);
+      }, 500);
       // Wait briefly for the page to mount before binding.
       let try_bind = setInterval(() => {
         if (bound) {
@@ -17103,6 +17173,13 @@
     if (trade_ui_refresh_messages.includes(e)) N();
     if (e === "Show Quick Decline Button") L();
     if (e === "Show Trade Lock Button") L();
+    if (e === "Fast Trade Loading") {
+      (async () => {
+        if (await c.getOption("Fast Trade Loading"))
+          schedule_trade_ui_refresh(0, !1);
+        else cancel_background_trade_fetch();
+      })();
+    }
     if (e === partner_value_on_trade_lists_option_name) L();
     if (e === "Analyze Trade") {
       if (typeof nte_is_lite !== "function" || !nte_is_lite()) {

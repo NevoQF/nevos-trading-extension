@@ -159,9 +159,9 @@ function trade_ads_row_ui_metrics(row) {
   };
 }
 
-function trade_ads_item_summaries(ids, item_data) {
+function trade_ads_item_summaries(ids, item_data, face_map) {
   return (ids || []).slice(0, 4).map((id) => {
-    let row = get_rolimons_item(item_data, Number(id));
+    let row = trade_ads_post_id_row(item_data, face_map, id);
     if (!Array.isArray(row))
       return {
         id: Number(id),
@@ -354,10 +354,43 @@ async function trade_ads_get_legacy_item_cache() {
   return trade_ads_legacy_item_cache_mem;
 }
 
+async function trade_ads_face_bundle_map() {
+  // Rolimons maps classic face ids to dynamic-head bundle ids
+  // ({ face_asset_id: bundle_id }); background.js owns the fetch + cache.
+  try {
+    if (typeof fetch_rolimons_player_face_map === "function")
+      return (await fetch_rolimons_player_face_map()) || {};
+  } catch {}
+  return {};
+}
+
+async function trade_ads_face_id_for_bundle(bundle_id) {
+  let want = String(bundle_id);
+  let map = await trade_ads_face_bundle_map();
+  for (let [face_id, bundle] of Object.entries(map || {})) {
+    if (String(bundle) === want) return Number(face_id);
+  }
+  return null;
+}
+
+function trade_ads_post_id_row(item_data, face_map, id) {
+  // Trade-ad ids for dynamic heads are classic face ids; the matching
+  // Rolimons row lives under the bundle id.
+  let row = get_rolimons_item(item_data, Number(id));
+  if (Array.isArray(row)) return row;
+  let bundle = face_map?.[String(id)];
+  if (bundle != null && bundle !== "")
+    return get_rolimons_item(item_data, Number(bundle));
+  return null;
+}
+
 async function trade_ads_resolve_legacy_trade_ad_id(id, item_data) {
   let n = Number(id);
   if (!Number.isFinite(n) || n <= 0) return null;
   if (!item_data?.bundleIds?.[String(n)]) return n;
+  // Dynamic heads post to Rolimons trade ads as their classic face id.
+  let face_id = await trade_ads_face_id_for_bundle(n);
+  if (Number.isFinite(face_id) && face_id > 0) return face_id;
   let row = get_rolimons_item(item_data, n);
   if (!Array.isArray(row)) return n;
   let cache = await trade_ads_get_legacy_item_cache();
@@ -533,8 +566,72 @@ async function trade_ads_auto_verify(user_id) {
   }
 }
 
+async function trade_ads_fetch_tradable_snapshot(user_id) {
+  // Roblox's collectibles index keeps legacy entries the account can no longer
+  // trade (classic faces after the dynamic-head migration), so tradeability is
+  // decided here: every id tradableitems lists is offerable; everything else
+  // is not. Bundles (dynamic heads) only exist here, not in collectibles.
+  // Best effort: an incomplete walk must not filter the inventory.
+  let bundles = [];
+  let tradable_ids = new Set();
+  let cursor = "";
+  let limit = "100";
+  let complete = false;
+  for (let page = 0; page < 40; page++) {
+    let params = new URLSearchParams({
+      sortBy: "CreationTime",
+      limit,
+      sortOrder: "Desc",
+    });
+    if (cursor) params.set("cursor", cursor);
+    let url = `https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`;
+    let res =
+      typeof nte_fetch_inventory_with_retries === "function"
+        ? await nte_fetch_inventory_with_retries(
+            url,
+            { credentials: "include" },
+            { source: "trade_ads", silent: true },
+          )
+        : await fetch(url, { credentials: "include" }).catch(() => null);
+    if (!res) break;
+    if (res.status === 500 && limit === "100") {
+      limit = "50";
+      page -= 1;
+      continue;
+    }
+    if (!res.ok) break;
+    let data = await res.json().catch(() => null);
+    if (!data) break;
+    let rows = Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data?.data)
+        ? data.data
+        : [];
+    for (let row of rows) {
+      let target = Number(row?.itemTarget?.targetId);
+      if (Number.isFinite(target) && target > 0)
+        tradable_ids.add(String(target));
+      if (String(row?.itemTarget?.itemType || "") !== "Bundle") continue;
+      if (!Number.isFinite(target) || target <= 0) continue;
+      let instances = Array.isArray(row?.instances) ? row.instances : [row];
+      bundles.push({
+        assetId: target,
+        name: String(row?.itemName || "").trim(),
+        copyCount: Math.max(1, instances.length),
+        onHoldCount: instances.filter((it) => it?.isOnHold === true).length,
+      });
+    }
+    cursor = data?.nextPageCursor || "";
+    if (!cursor) {
+      complete = true;
+      break;
+    }
+  }
+  return { bundles, tradableIds: tradable_ids, complete };
+}
+
 async function trade_ads_fetch_inventory_collectibles(user_id) {
-  let all = [];
+  let rows = [];
   let cursor = "";
   if (typeof nte_inventory_load_status === "function") {
     nte_inventory_load_status("trade_ads", "Loading your items…");
@@ -563,14 +660,41 @@ async function trade_ads_fetch_inventory_collectibles(user_id) {
     }
     let data = await res.json();
     let chunk = Array.isArray(data?.data) ? data.data : [];
-    for (let row of chunk) {
-      if (row?.assetId != null)
-        all.push({ assetId: Number(row.assetId), name: row?.name || "" });
-    }
+    rows = rows.concat(chunk);
     cursor = data?.nextPageCursor || "";
     if (!cursor) break;
   }
-  return all;
+  // Group copies per asset so the picker can show copy / on-hold counts.
+  let by_id = new Map();
+  for (let row of rows) {
+    let id = Number(row?.assetId);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    let entry = by_id.get(id);
+    if (!entry) {
+      entry = {
+        assetId: id,
+        name: row?.name || "",
+        copyCount: 0,
+        onHoldCount: 0,
+      };
+      by_id.set(id, entry);
+    }
+    entry.copyCount += 1;
+    if (row?.isOnHold === true) entry.onHoldCount += 1;
+  }
+  let tradable = await trade_ads_fetch_tradable_snapshot(user_id);
+  for (let bundle of tradable.bundles) {
+    by_id.set(Number(bundle.assetId), bundle);
+  }
+  // The collectibles index can keep items the account can no longer trade
+  // (classic faces after the dynamic-head migration). Only offer what
+  // tradableitems confirms — but never filter on a partial or failed walk.
+  if (tradable.complete && tradable.tradableIds.size) {
+    for (let id of [...by_id.keys()]) {
+      if (!tradable.tradableIds.has(String(id))) by_id.delete(id);
+    }
+  }
+  return [...by_id.values()];
 }
 
 const trade_ads_roblox_catalog_item_asset = 1;
@@ -726,10 +850,18 @@ async function trade_ads_pick_random_offer_ids(inv_raw, item_data, owned_set) {
       "No valued tradable items in your inventory for random offers.",
     );
   }
-  let details = await trade_ads_resolve_catalog_details_for_ids(candidates);
-  let pool = candidates.filter((id) =>
-    trade_ads_random_offer_detail_eligible(details[String(id)]),
-  );
+  // Bundles (dynamic heads) are tradeable as-is; only assets need the
+  // catalog type whitelist.
+  let bundle_lookup = item_data?.bundleIds || {};
+  let bundle_pool = candidates.filter((id) => bundle_lookup[String(id)]);
+  let asset_candidates = candidates.filter((id) => !bundle_lookup[String(id)]);
+  let details = await trade_ads_resolve_catalog_details_for_ids(asset_candidates);
+  let pool = [
+    ...bundle_pool,
+    ...asset_candidates.filter((id) =>
+      trade_ads_random_offer_detail_eligible(details[String(id)]),
+    ),
+  ];
   if (!pool.length) {
     throw new Error(
       "Random offers only pick tradable limited items from your inventory. Add some or turn random offers off.",
@@ -1213,11 +1345,10 @@ async function trade_ads_build_post_body(
   return body;
 }
 
-function trade_ads_sum_side_roli_value(asset_ids, item_data) {
-  let items = item_data?.items || {};
+function trade_ads_sum_side_roli_value(asset_ids, item_data, face_map) {
   let s = 0;
   for (let id of asset_ids || []) {
-    let row = items[String(id)];
+    let row = trade_ads_post_id_row(item_data, face_map, id);
     if (row) s += trade_ads_effective_value(row);
   }
   return s;
@@ -1229,13 +1360,16 @@ async function trade_ads_notify_post_success(_config, body, item_data) {
   ensure_notification_click_handler();
   if (!chrome.notifications?.create) return;
 
+  let face_map = await trade_ads_face_bundle_map();
   let offerItemsVal = trade_ads_sum_side_roli_value(
     body?.offer_item_ids,
     item_data,
+    face_map,
   );
   let requestVal = trade_ads_sum_side_roli_value(
     body?.request_item_ids,
     item_data,
+    face_map,
   );
   let robux = Math.floor(Number(body?.offer_robux) || 0);
   let offerPart = format_number(offerItemsVal);
@@ -1301,7 +1435,8 @@ async function trade_ads_post_now(options) {
   for (let row of inv || []) {
     let id = Number(row?.assetId);
     if (!Number.isFinite(id) || id <= 0) continue;
-    owned_counts[id] = (owned_counts[id] || 0) + 1;
+    owned_counts[id] =
+      (owned_counts[id] || 0) + Math.max(1, Number(row?.copyCount) || 1);
   }
 
   let stored_config = await trade_ads_get_config_merged();
@@ -1364,13 +1499,16 @@ async function trade_ads_post_now(options) {
   let out = { ok: true, data, body, player_id: body.player_id };
   try {
     let recent = (await get_local_value(trade_ads_recent_posts_key)) || [];
+    let face_map = await trade_ads_face_bundle_map();
     let offer_summaries = trade_ads_item_summaries(
       body.offer_item_ids,
       item_data,
+      face_map,
     );
     let request_summaries = trade_ads_item_summaries(
       body.request_item_ids,
       item_data,
+      face_map,
     );
     console.log("NTE recent post saving:", {
       offer_ids: body.offer_item_ids?.slice(0, 4),
@@ -1646,6 +1784,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           let acronym = Array.isArray(row) ? String(row[1] || "") : "";
           let v = row ? trade_ads_effective_value(row) : 0;
           let ui = trade_ads_row_ui_metrics(row);
+          let copy_count = Math.max(0, Number(x.copyCount) || 0);
+          let hold_count = Math.max(0, Number(x.onHoldCount) || 0);
           return {
             assetId: x.assetId,
             name: x.name || "",
@@ -1657,6 +1797,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
             thumbType: item_data?.bundleIds?.[String(x.assetId)]
               ? "Bundle"
               : "Asset",
+            copyCount: copy_count,
+            onHoldCount: hold_count,
+            // Every copy on hold — the picker disables the cell.
+            tradable: !(copy_count > 0 && hold_count >= copy_count),
           };
         });
         enriched.sort((a, b) => b.value - a.value);

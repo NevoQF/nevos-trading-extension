@@ -8,6 +8,38 @@
   if (!window.__nru_trade_detail_cache_bridge_loaded) {
     window.__nru_trade_detail_cache_bridge_loaded = true;
 
+    // The MAIN-world patch reads this attribute to decide whether it may
+    // serve cached trade details. Absent = on (the default).
+    function sync_fast_trade_loading_attribute() {
+      try {
+        let root = document.documentElement;
+        if (!root) return;
+        chrome.storage.local.get("Fast Trade Loading", (res) => {
+          let enabled = res?.["Fast Trade Loading"] !== false;
+          if (enabled) root.removeAttribute("data-nte-fast-trade-loading");
+          else root.setAttribute("data-nte-fast-trade-loading", "0");
+        });
+      } catch {}
+    }
+    sync_fast_trade_loading_attribute();
+    document.addEventListener(
+      "DOMContentLoaded",
+      sync_fast_trade_loading_attribute,
+      { once: true },
+    );
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "local" && "Fast Trade Loading" in changes)
+          sync_fast_trade_loading_attribute();
+      });
+    } catch {}
+    try {
+      chrome.runtime.onMessage.addListener((message) => {
+        if (message === "Fast Trade Loading")
+          sync_fast_trade_loading_attribute();
+      });
+    } catch {}
+
     let TRADE_DETAIL_CACHE_MAX = 500;
     let TRADE_DETAIL_CACHE_TTL = 30 * 60 * 1000;
     let trade_detail_cache = new Map(),

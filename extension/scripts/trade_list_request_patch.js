@@ -6,6 +6,13 @@
   let trade_limit = "100",
     trade_detail_request_seq = 0;
 
+  function fast_trade_loading_enabled() {
+    return (
+      document.documentElement?.getAttribute("data-nte-fast-trade-loading") !==
+      "0"
+    );
+  }
+
   function is_trade_list_status(value) {
     return /^(inbound|outbound|completed|inactive)$/i.test(String(value || "").trim());
   }
@@ -284,7 +291,15 @@
         "GET" === get_request_method(input, init)
           ? get_trade_detail_id(get_request_url(input))
           : "";
-      let cached_response = await get_cached_trade_response(input, init);
+      let cached_response = null;
+      if (fast_trade_loading_enabled() && !init?.signal?.aborted) {
+        try {
+          cached_response = await get_cached_trade_response(input, init);
+        } catch (err) {
+          console.debug("NTE trade cache: serve failed, using network", err);
+          cached_response = null;
+        }
+      }
       if (cached_response) return cached_response;
       let decline_id =
         "POST" === get_request_method(input, init)
@@ -450,6 +465,7 @@
             ? url.url
             : "";
     let patched_url = raw_url ? patch_url(raw_url) || raw_url : url;
+    this.__nru_request_seq = (this.__nru_request_seq || 0) + 1;
     this.__nru_xhr_request_meta = {
       method: String(method || "GET").toUpperCase(),
       url: raw_url || ("string" == typeof url ? url : ""),
@@ -492,24 +508,22 @@
         });
       } catch {}
     }
-    if ("GET" === meta.method && trade_id && !1 !== meta.rest?.[0]) {
-      request_cached_trade_detail(trade_id).then((trade) => {
-        if (
-          trade &&
-          (trade.participantAOffer ||
-            trade.participantBOffer ||
-            Array.isArray(trade.offers))
-        ) {
-          respond_with_cached_xhr(
-            xhr,
-            meta.url,
-            null == trade.tradeId
-              ? { ...trade, tradeId: parseInt(trade_id, 10) || trade_id }
-              : trade,
-            { "x-nru-trade-cache": "hit" },
-          );
+    if (
+      fast_trade_loading_enabled() &&
+      "GET" === meta.method &&
+      trade_id &&
+      !1 !== meta.rest?.[0]
+    ) {
+      let request_seq = xhr.__nru_request_seq;
+      let settled = !1;
+      let send_real = (reason) => {
+        if (settled) return;
+        settled = !0;
+        // The caller may have aborted or reopened this XHR while the cache
+        // lookup ran — never write to a dead request.
+        if (xhr.__nru_request_seq !== request_seq || xhr.readyState === 0)
           return;
-        }
+        if (reason) console.debug(`NTE trade cache: ${reason}`);
         dispatch_trade_detail_network_start(trade_id);
         try {
           xhr.addEventListener("loadend", () => {
@@ -523,8 +537,47 @@
             } catch {}
           });
         } catch {}
-        original_send.apply(xhr, args);
-      });
+        try {
+          original_send.apply(xhr, args);
+        } catch (err) {
+          console.debug("NTE trade cache: fallback send failed", err);
+        }
+      };
+      request_cached_trade_detail(trade_id)
+        .then((trade) => {
+          if (settled) return;
+          if (
+            trade &&
+            (trade.participantAOffer ||
+              trade.participantBOffer ||
+              Array.isArray(trade.offers))
+          ) {
+            try {
+              respond_with_cached_xhr(
+                xhr,
+                meta.url,
+                null == trade.tradeId
+                  ? { ...trade, tradeId: parseInt(trade_id, 10) || trade_id }
+                  : trade,
+                { "x-nru-trade-cache": "hit" },
+              );
+              settled = !0;
+              return;
+            } catch (err) {
+              console.debug(
+                "NTE trade cache: serve failed, using network",
+                err,
+              );
+            }
+          }
+          send_real("");
+        })
+        .catch((err) => {
+          console.debug("NTE trade cache: lookup failed, using network", err);
+          send_real("");
+        });
+      // Safety net: a cached path must never strand the request.
+      setTimeout(() => send_real("lookup stalled, using network"), 650);
       return void 0;
     }
     return original_send.apply(xhr, args);

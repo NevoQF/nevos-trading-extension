@@ -23,7 +23,7 @@ const chevron_svg =
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 
@@ -6522,6 +6522,47 @@ async function ms_active_tab_is_roblox() {
   }
 }
 
+async function ms_focus_or_open_roblox_tab() {
+  try {
+    let tabs = await chrome.tabs.query({
+      url: ["https://www.roblox.com/*", "https://roblox.com/*"],
+    });
+    let tab = tabs.find((t) => t.active) || tabs[0];
+    if (tab?.id != null) {
+      await chrome.tabs.update(tab.id, { active: true });
+      if (tab.windowId != null)
+        await chrome.windows.update(tab.windowId, { focused: true });
+      return true;
+    }
+  } catch {}
+  try {
+    await chrome.tabs.create({ url: "https://www.roblox.com/trades" });
+    return true;
+  } catch {}
+  return false;
+}
+
+function ms_append_go_roblox_button(line) {
+  if (!line) return;
+  let btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "ms-go-roblox";
+  btn.textContent = "Go to Roblox";
+  btn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    void ms_focus_or_open_roblox_tab();
+  });
+  line.appendChild(btn);
+}
+
+function ms_show_switch_tab_hint(root) {
+  let line = root.querySelector("#ms-progress-line");
+  if (!line) return;
+  line.classList.add("ta-err");
+  line.textContent = "Switch to a Roblox tab to mass send.";
+  ms_append_go_roblox_button(line);
+}
+
 function ms_default_config() {
   return {
     offer_slots: [null, null, null, null],
@@ -7189,6 +7230,8 @@ function ms_update_progress_ui(root, progress) {
   if (line) {
     line.textContent = ms_progress_text(progress);
     line.classList.toggle("ta-err", !!(progress?.error && !progress?.running));
+    if (/switch to a roblox tab/i.test(line.textContent))
+      ms_append_go_roblox_button(line);
   }
   let running = !!progress?.running;
   root.classList.toggle("is-running", running);
@@ -7534,6 +7577,14 @@ async function render_mass_send_panel(root) {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                   <span>Export</span>
                 </button>
+                ${
+                  cfg.blocked_users.length
+                    ? `<button type="button" class="ms-blocklist-io-btn" id="ms-block-clear" title="Remove every blocked user">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  <span>Clear all</span>
+                </button>`
+                    : ""
+                }
                 <input type="file" id="ms-block-import-file" class="ms-blocklist-file" accept="application/json,.json" />
               </div>
               <div class="ms-blocklist-io-status" id="ms-block-io-status" hidden></div>
@@ -8038,6 +8089,32 @@ async function render_mass_send_panel(root) {
       });
     });
   });
+  root.querySelector("#ms-block-clear")?.addEventListener("click", async (ev) => {
+    // Two-click confirm: no native dialog, no modal for a simple wipe.
+    let btn = ev.currentTarget;
+    let label = btn.querySelector("span");
+    if (btn.dataset.confirm !== "1") {
+      btn.dataset.confirm = "1";
+      btn.classList.add("is-confirm");
+      if (label) label.textContent = "Click again";
+      setTimeout(() => {
+        if (btn.dataset.confirm !== "1") return;
+        btn.dataset.confirm = "";
+        btn.classList.remove("is-confirm");
+        if (label) label.textContent = "Clear all";
+      }, 4000);
+      return;
+    }
+    let count = ms_normalize_blocked_users(cfg.blocked_users).length;
+    await refresh({
+      ...cfg,
+      blocked_users: [],
+      config_open: true,
+      blocklist_open: true,
+    });
+    let line = root.querySelector("#ms-progress-line");
+    if (line) line.textContent = `Cleared ${count} blocked user${count === 1 ? "" : "s"}.`;
+  });
 
   root.querySelectorAll('.ta-slot[data-ms-side="offer"]').forEach((el) => {
     el.addEventListener("click", async () => {
@@ -8151,11 +8228,7 @@ async function render_mass_send_panel(root) {
       }
     }
     if (!(await ms_active_tab_is_roblox())) {
-      let line = root.querySelector("#ms-progress-line");
-      if (line) {
-        line.textContent = "Switch to a Roblox tab to mass send.";
-        line.classList.add("ta-err");
-      }
+      ms_show_switch_tab_hint(root);
       return;
     }
     let confirmed = await ms_confirm_start(cfg, slot_metrics);

@@ -124,11 +124,15 @@ function trade_ad_notif_apply_scan_results(
   ignored_users,
 ) {
   state.watchableItemCount = viewer.owned.size;
-  let owned = trade_ad_notif_owned_for_scan(viewer.owned, state.disabledWantItemIds);
+  let { disabled, owned } = trade_ad_notif_match_owned(
+    viewer.owned,
+    state.disabledWantItemIds,
+    viewer,
+  );
 
   state.matches = trade_ad_notif_filter_matches_by_dismissed(
     trade_ad_notif_filter_matches_by_ignored_users(
-      trade_ad_notif_rescore_matches(state, viewer.owned, get_row, viewer.userId),
+      trade_ad_notif_rescore_matches(state, owned, get_row, viewer.userId),
       ignored_users,
     ),
     state.dismissedTrades,
@@ -146,7 +150,7 @@ function trade_ad_notif_apply_scan_results(
       trade_ad_notif_filter_matches_by_ignored_users(new_matches, ignored_users),
       state.dismissedTrades,
     ),
-    state.disabledWantItemIds,
+    disabled,
   );
   if (new_matches.length) {
     state.matches = trade_ad_notif_filter_matches_by_dismissed(
@@ -345,6 +349,49 @@ function trade_ad_notif_owned_for_scan(owned_ids, disabled_want_items) {
   return out;
 }
 
+function trade_ad_notif_with_face_keys(owned_ids, viewer) {
+  // Adds the classic face ids of owned dynamic heads, so ads that reference
+  // the face id (what Rolimons trade ads use) match the bundle we own.
+  let out =
+    owned_ids instanceof Set ? new Set(owned_ids) : new Set(owned_ids || []);
+  let face_keys = viewer?.faceKeys;
+  if (!face_keys) return out;
+  for (let bundle_id of [...out]) {
+    let face_id = face_keys[String(bundle_id)];
+    if (face_id) out.add(String(face_id));
+  }
+  return out;
+}
+
+function trade_ad_notif_expand_disabled_with_face_keys(
+  disabled_want_items,
+  viewer,
+) {
+  // Disabling a dynamic head should also disable its classic face id, since
+  // face-want ads reference that id.
+  let disabled = trade_ad_notif_disabled_want_set(disabled_want_items);
+  if (!disabled.size) return disabled_want_items;
+  let face_keys = viewer?.faceKeys;
+  if (!face_keys) return disabled_want_items;
+  let out = new Set(disabled);
+  for (let [bundle_id, face_id] of Object.entries(face_keys)) {
+    if (disabled.has(String(bundle_id))) out.add(String(face_id));
+  }
+  return Array.from(out);
+}
+
+function trade_ad_notif_match_owned(owned_ids, disabled_want_items, viewer) {
+  let disabled = trade_ad_notif_expand_disabled_with_face_keys(
+    disabled_want_items,
+    viewer,
+  );
+  let owned = trade_ad_notif_with_face_keys(
+    trade_ad_notif_owned_for_scan(owned_ids, disabled),
+    viewer,
+  );
+  return { disabled, owned };
+}
+
 function trade_ad_notif_filter_matches_by_disabled_items(
   matches,
   disabled_want_items,
@@ -432,7 +479,11 @@ async function trade_ad_notif_rescan_feed_for_want_items(
   });
   if (!ads.length) return;
 
-  let owned = trade_ad_notif_owned_for_scan(viewer.owned, state.disabledWantItemIds);
+  let { owned } = trade_ad_notif_match_owned(
+    viewer.owned,
+    state.disabledWantItemIds,
+    viewer,
+  );
   let found = TradeAdNotificationsCore.scan_ads_for_matches(
     ads,
     owned,
@@ -680,7 +731,30 @@ async function trade_ad_notif_fetch_tradable_inventory(user_id) {
       };
     }
   }
-  return { owned, itemMeta: item_meta, slotCount: items.length };
+  // Trade ads reference dynamic heads by their classic face id; map owned
+  // bundles to those ids so face-want ads can match. UI lists stay bundle-only.
+  let face_keys = {};
+  try {
+    if (typeof fetch_rolimons_player_face_map === "function") {
+      let map = (await fetch_rolimons_player_face_map()) || {};
+      for (let [face_id, bundle] of Object.entries(map)) {
+        let bundle_key = String(bundle);
+        if (!owned.has(bundle_key)) continue;
+        face_keys[bundle_key] = String(face_id);
+        let meta = item_meta[bundle_key] || {};
+        item_meta[String(face_id)] = {
+          itemType: "Bundle",
+          name: String(meta.name || ""),
+        };
+      }
+    }
+  } catch {}
+  return {
+    owned,
+    itemMeta: item_meta,
+    slotCount: items.length,
+    faceKeys: face_keys,
+  };
 }
 
 async function trade_ad_notif_get_viewer_inventory(force_refresh) {
@@ -705,6 +779,7 @@ async function trade_ad_notif_get_viewer_inventory(force_refresh) {
       owned: cache.owned,
       itemMeta: cache.itemMeta || {},
       slotCount: Number(cache.slotCount) || cache.owned.size,
+      faceKeys: cache.faceKeys || {},
     };
   }
 
@@ -712,15 +787,23 @@ async function trade_ad_notif_get_viewer_inventory(force_refresh) {
   let owned = inv.owned;
   let item_meta = inv.itemMeta || {};
   let slot_count = inv.slotCount;
+  let face_keys = inv.faceKeys || {};
 
   trade_ad_notif_inventory_cache = {
     userId: me.id,
     owned,
     itemMeta: item_meta,
     slotCount: slot_count,
+    faceKeys: face_keys,
     fetchedAt: Date.now(),
   };
-  return { userId: me.id, owned, itemMeta: item_meta, slotCount: slot_count };
+  return {
+    userId: me.id,
+    owned,
+    itemMeta: item_meta,
+    slotCount: slot_count,
+    faceKeys: face_keys,
+  };
 }
 
 function trade_ad_notif_feed_total(feed, ads) {
@@ -862,10 +945,12 @@ async function trade_ad_notif_load_more_once() {
   }
 
   let offset = Math.max(0, Number(state.feedScanOffset) || 0);
-  let want_ids = trade_ad_notif_want_ids_for_feed(
+  let { disabled, owned: match_owned } = trade_ad_notif_match_owned(
     viewer.owned,
     state.disabledWantItemIds,
+    viewer,
   );
+  let want_ids = trade_ad_notif_want_ids_for_feed(match_owned, disabled);
   let feed;
   try {
     feed = await trade_ad_notif_fetch_feed({
@@ -953,10 +1038,12 @@ async function trade_ad_notif_poll_once(options) {
 
     let ignored_users = trade_ad_notif_normalize_ignored_users(state.ignoredUsers);
     state.ignoredUsers = ignored_users;
-    let want_ids = trade_ad_notif_want_ids_for_feed(
+    let { disabled, owned: match_owned } = trade_ad_notif_match_owned(
       viewer.owned,
       state.disabledWantItemIds,
+      viewer,
     );
+    let want_ids = trade_ad_notif_want_ids_for_feed(match_owned, disabled);
     let since_created = Math.max(
       0,
       Math.floor(Number(state.lastScannedCreatedAt) || 0) -
@@ -1020,11 +1107,16 @@ async function trade_ad_notif_poll_once(options) {
 
     if (!had_fresh) {
       state.watchableItemCount = viewer.owned.size;
+      let { owned: match_owned } = trade_ad_notif_match_owned(
+        viewer.owned,
+        state.disabledWantItemIds,
+        viewer,
+      );
       state.matches = trade_ad_notif_filter_matches_by_dismissed(
         trade_ad_notif_filter_matches_by_ignored_users(
           trade_ad_notif_rescore_matches(
             state,
-            viewer.owned,
+            match_owned,
             get_row,
             viewer.userId,
           ),
@@ -1375,11 +1467,16 @@ function trade_ad_notif_handle_message(message, respond) {
             ctx.get_row,
             ignored_users,
           );
+          let { owned: match_owned } = trade_ad_notif_match_owned(
+            ctx.viewer.owned,
+            next.disabledWantItemIds,
+            ctx.viewer,
+          );
           next.matches = trade_ad_notif_filter_matches_by_dismissed(
             trade_ad_notif_filter_matches_by_ignored_users(
               trade_ad_notif_rescore_matches(
                 next,
-                ctx.viewer.owned,
+                match_owned,
                 ctx.get_row,
                 ctx.viewer.userId,
               ),

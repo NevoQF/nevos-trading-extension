@@ -1111,8 +1111,7 @@
       }
 
       html.nte-trade-page-theme .trades-container .btn-primary-md,
-      html.nte-trade-page-theme .trades-container .btn-primary-sm,
-      html.nte-trade-page-theme .trades-container .nte-analyze-trade-btn:not(.foundation-web-button) {
+      html.nte-trade-page-theme .trades-container .btn-primary-sm {
         background-color: var(--nte-trade-accent) !important;
         border-color: var(--nte-trade-accent) !important;
         color: var(--nte-trade-bg) !important;
@@ -1126,7 +1125,8 @@
 
       html.nte-trade-page-theme .trades-container .btn-control-md,
       html.nte-trade-page-theme .trades-container .btn-secondary-md,
-      html.nte-trade-page-theme .trades-container .nte-history-btn:not(.foundation-web-button) {
+      html.nte-trade-page-theme .trades-container .nte-history-btn:not(.foundation-web-button),
+      html.nte-trade-page-theme .trades-container .nte-analyze-trade-btn:not(.foundation-web-button) {
         background-color: var(--nte-trade-surface) !important;
         border-color: var(--nte-trade-border-soft) !important;
         color: var(--nte-trade-text) !important;
@@ -1134,7 +1134,8 @@
 
       html.nte-trade-page-theme .trades-container .btn-control-md:hover,
       html.nte-trade-page-theme .trades-container .btn-secondary-md:hover,
-      html.nte-trade-page-theme .trades-container .nte-history-btn:not(.foundation-web-button):hover {
+      html.nte-trade-page-theme .trades-container .nte-history-btn:not(.foundation-web-button):hover,
+      html.nte-trade-page-theme .trades-container .nte-analyze-trade-btn:not(.foundation-web-button):hover {
         border-color: var(--nte-trade-accent) !important;
         color: var(--nte-trade-accent) !important;
       }
