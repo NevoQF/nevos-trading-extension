@@ -85,6 +85,14 @@
       .nte-ih-btn{
         max-height:32px;
       }
+      .nte-pt-wrap{position:relative;display:inline-block}
+      .nte-pt-menu{position:absolute;right:0;top:calc(100% + 6px);z-index:1050;width:min(360px,92vw);max-height:420px;overflow:auto;padding:6px;border-radius:12px;background:#24262a;border:1px solid rgba(255,255,255,.1);box-shadow:0 14px 40px rgba(0,0,0,.45);text-align:left}
+      .nte-pt-head{padding:6px 8px 8px;font-size:12px;color:rgba(255,255,255,.55)}
+      .nte-pt-row{display:block;width:100%;padding:8px;border:0;border-radius:8px;background:transparent;color:#eee;text-align:left;cursor:pointer;font:inherit}
+      .nte-pt-row:hover{background:rgba(255,255,255,.07)}
+      .nte-pt-items{display:block;font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .nte-pt-meta{display:block;margin-top:2px;font-size:12px;color:rgba(255,255,255,.55)}
+      .nte-pt-empty{padding:12px 10px;font-size:13px;color:rgba(255,255,255,.7)}
       .nte-rp-btn.is-busy,
       .nte-ih-btn.is-busy{opacity:.72;pointer-events:none}
 
@@ -555,7 +563,135 @@
     return true;
   }
 
+  // Player pages: "Recent Trades" dropdown built from posted trade proofs.
+  function player_name_from_page() {
+    let h1 = document.querySelector("h1");
+    let text = h1?.childNodes?.[0]?.textContent || h1?.textContent || "";
+    return text.trim().split(/\s+/)[0] || "";
+  }
+
+  function proof_summary(content) {
+    let lines = String(content || "")
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    let pick = (re) =>
+      (lines.find((line) => re.test(line)) || "").replace(re, "").trim();
+    return {
+      items: lines[0] || "Trade",
+      values: lines.find((line) => /\d\s*k?\s*(?:vs?|\/)\s*\d/i.test(line)) || "",
+      sender: pick(/^S\s*:\s*/i),
+      receiver: pick(/^R\s*:\s*/i),
+    };
+  }
+
+  function close_player_menu() {
+    document.querySelector(".nte-pt-menu")?.remove();
+    document
+      .querySelector(".nte-pt-btn")
+      ?.setAttribute("aria-expanded", "false");
+  }
+
+  async function open_player_slide(response, name, index) {
+    close_player_menu();
+    open_modal_shell(name);
+    let title = modal?.querySelector(".nte-rp-brand-title");
+    if (title) title.textContent = "Recent Trades";
+    slides = build_slides(response);
+    slide_index = Math.max(
+      0,
+      slides.findIndex((slide) => slide.proof_index === index),
+    );
+    restore_stage_shell();
+    await render_slide();
+  }
+
+  async function toggle_player_menu(btn) {
+    if (document.querySelector(".nte-pt-menu")) return close_player_menu();
+    let name = player_name_from_page();
+    let menu = document.createElement("div");
+    menu.className = "nte-pt-menu";
+    menu.innerHTML = `<div class="nte-pt-empty">Loading recent trades…</div>`;
+    btn.after(menu);
+    btn.setAttribute("aria-expanded", "true");
+    let response = await send_message({ type: "getPlayerProofs", name });
+    if (!menu.isConnected) return;
+    let results = Array.isArray(response?.results) ? response.results : [];
+    if (!response?.success) {
+      menu.innerHTML = `<div class="nte-pt-empty">${esc(response?.error || "Could not load trades right now.")}</div>`;
+      return;
+    }
+    if (!results.length) {
+      menu.innerHTML = `<div class="nte-pt-empty">No posted trade proofs for ${esc(name)} yet.</div>`;
+      return;
+    }
+    menu.innerHTML =
+      `<div class="nte-pt-head">Recent trades · from trade proofs</div>` +
+      results
+        .slice(0, 15)
+        .map((proof, index) => {
+          let info = proof_summary(proof.content);
+          let sent = info.sender.toLowerCase() === name.toLowerCase();
+          let other = sent ? info.receiver : info.sender;
+          let meta = [
+            info.values,
+            other ? `with ${other}` : "",
+            format_age(proof.timestamp),
+          ].filter(Boolean);
+          return `<button type="button" class="nte-pt-row" data-index="${index}">
+            <span class="nte-pt-items">${esc(info.items)}</span>
+            <span class="nte-pt-meta">${esc(meta.join(" · "))}</span>
+          </button>`;
+        })
+        .join("");
+    menu.addEventListener("click", (event) => {
+      let row = event.target.closest(".nte-pt-row");
+      if (!row) return;
+      open_player_slide(response, name, Number(row.dataset.index)).catch(
+        () => show_status("error", "Could not load proofs right now."),
+      );
+    });
+  }
+
+  function inject_player_button() {
+    let host = find_action_host();
+    if (!host) return false;
+    if (host.querySelector(".nte-pt-btn")) return true;
+    let wrap = document.createElement("div");
+    wrap.className = "nte-pt-wrap";
+    let btn = document.createElement("a");
+    btn.href = "#";
+    // Same look as Rolimons' own "Trade Ads" / "History" buttons beside it.
+    let sibling = host.querySelector("a.btn");
+    btn.className = `${(sibling?.className || "btn btn-flat-light-blue").replace(/m[rl]-\S+/g, "")} mr-2 nte-pt-btn`;
+    btn.setAttribute("role", "button");
+    btn.setAttribute("aria-expanded", "false");
+    btn.innerHTML = `<span class="text-nowrap">Recent Trades</span>`;
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggle_player_menu(btn).catch(() => close_player_menu());
+    });
+    wrap.appendChild(btn);
+    host.prepend(wrap);
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".nte-pt-wrap")) close_player_menu();
+    });
+    return true;
+  }
+
+  function boot_player() {
+    ensure_styles();
+    if (inject_player_button()) return;
+    let tries = 0;
+    let timer = setInterval(() => {
+      tries += 1;
+      if (inject_player_button() || tries > 40) clearInterval(timer);
+    }, 250);
+  }
+
   function boot() {
+    if (/^\/player\/\d+/i.test(location.pathname || "")) return boot_player();
     if (!asset_id_from_path()) return;
     ensure_styles();
     if (inject_button()) return;

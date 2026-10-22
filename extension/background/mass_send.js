@@ -155,6 +155,21 @@ const ms_trade_daily_limit_snapshot_ttl_ms = 10 * 60 * 1000;
 const ms_trade_daily_limit_record_max_age_ms =
   ms_trade_daily_limit_window_ms + 3600000;
 
+// Roblox's 100/24h limit is per account, so its records are kept per signed-in user.
+// Not the 5-minute user cache: right after switching accounts it still names the old one.
+let ms_daily_limit_uid_memo = { uid: 0, at: 0 };
+async function ms_trade_daily_limit_key(base) {
+  if (Date.now() - ms_daily_limit_uid_memo.at > 15000) {
+    let uid = 0;
+    try {
+      uid = Number((await fetch_authenticated_user())?.id) || 0;
+    } catch {}
+    ms_daily_limit_uid_memo = { uid, at: Date.now() };
+  }
+  let uid = ms_daily_limit_uid_memo.uid;
+  return uid > 0 ? `${base}:${uid}` : base;
+}
+
 function ms_prune_trade_daily_limit_records(records, now = Date.now()) {
   let out = {};
   for (let [id, ts] of Object.entries(records || {})) {
@@ -184,33 +199,29 @@ function ms_trade_daily_limit_trade_id(trade) {
 }
 
 async function ms_load_trade_daily_limit_records() {
+  let counter_key = await ms_trade_daily_limit_key(ms_trade_daily_limit_counter_key);
+  let sent_key = await ms_trade_daily_limit_key(ms_trade_daily_limit_sent_key);
   let raw =
     typeof get_local_values === "function"
-      ? await get_local_values([
-          ms_trade_daily_limit_counter_key,
-          ms_trade_daily_limit_sent_key,
-        ])
+      ? await get_local_values([counter_key, sent_key])
       : {};
   return {
-    counter: ms_prune_trade_daily_limit_records(
-      raw?.[ms_trade_daily_limit_counter_key],
-    ),
-    sent: ms_prune_trade_daily_limit_records(
-      raw?.[ms_trade_daily_limit_sent_key],
-    ),
+    counter: ms_prune_trade_daily_limit_records(raw?.[counter_key]),
+    sent: ms_prune_trade_daily_limit_records(raw?.[sent_key]),
   };
 }
 
 async function ms_record_trade_daily_limit_send(trade_id) {
   let id = String(trade_id ?? "").trim();
   if (!id || typeof get_local_value !== "function") return;
+  let sent_key = await ms_trade_daily_limit_key(ms_trade_daily_limit_sent_key);
   let records = ms_prune_trade_daily_limit_records(
-    (await get_local_value(ms_trade_daily_limit_sent_key)) || {},
+    (await get_local_value(sent_key)) || {},
   );
   if (records[id]) return;
   records[id] = Date.now();
   if (typeof set_local_value === "function") {
-    await set_local_value(ms_trade_daily_limit_sent_key, records);
+    await set_local_value(sent_key, records);
   }
 }
 
@@ -252,7 +263,9 @@ async function ms_fetch_outbound_trades_for_daily_limit(cutoff) {
 
 async function ms_read_trade_daily_limit_snapshot() {
   if (typeof get_local_value !== "function") return null;
-  let snap = await get_local_value(ms_trade_daily_limit_snapshot_key);
+  let snap = await get_local_value(
+    await ms_trade_daily_limit_key(ms_trade_daily_limit_snapshot_key),
+  );
   if (!snap || typeof snap !== "object") return null;
   let fetched_at = Number(snap.fetched_at) || 0;
   if (
@@ -283,7 +296,7 @@ async function ms_read_trade_daily_limit_snapshot() {
 async function ms_write_trade_daily_limit_snapshot(state) {
   if (typeof set_local_value !== "function" || !state) return;
   try {
-    await set_local_value(ms_trade_daily_limit_snapshot_key, {
+    await set_local_value(await ms_trade_daily_limit_key(ms_trade_daily_limit_snapshot_key), {
       count: state.count,
       remaining: state.remaining,
       max: state.max,
@@ -461,7 +474,9 @@ async function ms_get_trade_daily_limit() {
   } catch (err) {
     let stale = null;
     if (typeof get_local_value === "function") {
-      let snap = await get_local_value(ms_trade_daily_limit_snapshot_key);
+      let snap = await get_local_value(
+        await ms_trade_daily_limit_key(ms_trade_daily_limit_snapshot_key),
+      );
       if (snap && typeof snap === "object") {
         let max = Math.max(1, Number(snap.max) || ms_trade_daily_limit_max);
         let count = Math.min(max, Math.max(0, Number(snap.count) || 0));
@@ -619,11 +634,13 @@ async function ms_fetch_tradable_items(user_id, options = {}) {
   let limit = "25";
   let status_source = options.statusSource || "ms";
   let report_status = options.reportStatus === true;
+  // Picker loads are read-only; a stale Stop flag must not empty them.
+  let ignore_abort = options.ignoreAbort === true;
   if (report_status && typeof nte_inventory_load_status === "function") {
     nte_inventory_load_status(status_source, "Loading your items…");
   }
   for (let page = 0; page < max_pages; page++) {
-    if (ms_abort) break;
+    if (ms_abort && !ignore_abort) break;
     let params = new URLSearchParams({
       limit,
       sortOrder: "Desc",
@@ -641,7 +658,7 @@ async function ms_fetch_tradable_items(user_id, options = {}) {
       );
     } else {
       for (let attempt = 0; attempt < 3; attempt++) {
-        if (ms_abort) break;
+        if (ms_abort && !ignore_abort) break;
         try {
           res = await fetch(url, { credentials: "include" });
         } catch {
@@ -651,7 +668,7 @@ async function ms_fetch_tradable_items(user_id, options = {}) {
         if (attempt < 2) await ms_sleep(350 * (attempt + 1));
       }
     }
-    if (!res || ms_abort) break;
+    if (!res || (ms_abort && !ignore_abort)) break;
     if (res.status === 401 || res.status === 403) return items;
     if (!res.ok) {
       if (res.status === 429 && !items.length) {
@@ -877,11 +894,18 @@ function ms_filter_owners_by_owned_days(candidates, max_owned_days) {
   }
   let now = Math.floor(Date.now() / 1000);
   let max_age = days * 86400;
+  // Faces have Owned Since for most owners but not all; letting the rest through made the
+  // filter look broken. Only keep undated owners when the item has almost no dates at all.
+  let dated = candidates.filter((row) => ms_parse_owned_since(row?.owned_since) != null).length;
+  let keep_undated = dated < candidates.length * 0.5;
   let out = [];
   for (let row of candidates) {
     let owned_since = ms_parse_owned_since(row?.owned_since);
-    // Missing Owned Since → keep (can't verify).
-    if (owned_since != null && now - owned_since > max_age) continue;
+    if (owned_since == null) {
+      if (keep_undated) out.push(row);
+      continue;
+    }
+    if (now - owned_since > max_age) continue;
     out.push(row);
   }
   return out;
@@ -1023,6 +1047,7 @@ async function ms_inventory_for_picker() {
   let raw = await ms_fetch_tradable_items(self_id, {
     reportStatus: true,
     statusSource: "ms",
+    ignoreAbort: true,
   });
   let item_data =
     typeof get_cached_item_data === "function" ? await get_cached_item_data() : null;
@@ -1298,6 +1323,10 @@ function ms_is_totp_retryable_code_error(err) {
   );
 }
 
+function ms_is_stale_challenge_error(err) {
+  return /invalid challenge id/i.test(String(err?.message || err || ""));
+}
+
 async function ms_wait_for_fresh_totp(secret, avoid_code, step_sec = 30) {
   let avoid = String(avoid_code || "").replace(/\D/g, "");
   while (!ms_abort) {
@@ -1571,7 +1600,10 @@ function ms_extract_challenge_info(resp) {
   let action_type = "Generic";
   if (metadata_header) {
     try {
-      let decoded = JSON.parse(atob(metadata_header));
+      // Roblox may send base64url (- and _, no padding), which atob rejects.
+      let b64 = metadata_header.replace(/-/g, "+").replace(/_/g, "/").replace(/[^A-Za-z0-9+/=]/g, "");
+      while (b64.length % 4) b64 += "=";
+      let decoded = JSON.parse(atob(b64));
       challenge_id = String(decoded?.challengeId || "");
       if (decoded?.actionType) action_type = String(decoded.actionType);
     } catch {
@@ -1685,7 +1717,9 @@ async function ms_verify_2fa({
       }),
     },
   );
-  if (!continue_resp.ok) {
+  // Roblox sometimes 404s "continue" for a challenge it already accepted;
+  // the verified token in the send headers is still worth one try.
+  if (!continue_resp.ok && continue_resp.status !== 404) {
     let err_text = await continue_resp.text().catch(() => "");
     throw new Error(
       `2FA continue failed (${continue_resp.status})${err_text ? `: ${err_text.slice(0, 120)}` : ""}`,
@@ -1707,6 +1741,7 @@ async function ms_send_trade(
   request_ids,
   offer_robux = 0,
   request_robux = 0,
+  allow_stale_retry = true,
 ) {
   let offer_payload = ms_copy_instance_ids(offer_ids);
   let request_payload = ms_copy_instance_ids(request_ids);
@@ -1781,6 +1816,20 @@ async function ms_send_trade(
   if (ms_is_challenge_response(resp, data)) {
     let info = ms_extract_challenge_info(resp);
     let challenge_csrf = resp.headers.get("x-csrf-token") || csrf;
+    let challenge_type = String(resp.headers.get("rblx-challenge-type") || "")
+      .replace(/-/g, "")
+      .toLowerCase();
+    if (challenge_type && challenge_type !== "twostepverification") {
+      // Captcha / proof-of-work / device checks can't be solved from here.
+      return {
+        resp,
+        data,
+        csrf: challenge_csrf,
+        error: new Error(
+          `Roblox asked for a security check (${challenge_type}) instead of 2FA. Send one trade by hand on roblox.com to clear it, then start again.`,
+        ),
+      };
+    }
     if (!info) {
       return {
         resp,
@@ -1834,6 +1883,19 @@ async function ms_send_trade(
         });
         break;
       } catch (err) {
+        // Challenge expired before verify: re-send once to get a fresh challenge.
+        if (allow_stale_retry && !ms_abort && ms_is_stale_challenge_error(err)) {
+          return ms_send_trade(
+            challenge_csrf,
+            self_id,
+            recipient_id,
+            offer_ids,
+            request_ids,
+            offer_robux,
+            request_robux,
+            false,
+          );
+        }
         if (!ms_is_totp_retryable_code_error(err)) {
           return {
             resp,

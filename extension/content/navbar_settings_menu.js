@@ -197,7 +197,67 @@
     else menu.appendChild(li);
   }
 
+  // Roblox's newer nav renders the gear menu as a portal popover with no
+  // #settings-popover-menu, so clone its Settings row to keep the native look.
+  function find_popover_settings_link() {
+    for (const a of document.querySelectorAll('a[href$="/my/account"]')) {
+      if (a.closest("#settings-popover-menu, .nte-settings-clone")) continue;
+      if (!a.closest('[role="menu"], [role="dialog"], [data-radix-popper-content-wrapper], [data-state="open"]'))
+        continue;
+      return a;
+    }
+    return null;
+  }
+
+  function ensure_popover_menu_item() {
+    const link = find_popover_settings_link();
+    if (!link) return;
+    const item = link.closest('li, [role="menuitem"]') || link;
+    const parent = item.parentElement;
+    if (!parent || parent.querySelector(":scope > .nte-settings-clone")) return;
+
+    const clone = item.cloneNode(true);
+    clone.classList.add("nte-settings-clone");
+    clone.removeAttribute("id");
+    clone.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+    const anchor = clone.matches("a") ? clone : clone.querySelector("a");
+    if (anchor) anchor.setAttribute("href", "#");
+
+    let label = null;
+    const walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (n.nodeValue.trim() && (!label || n.nodeValue.trim().length > label.nodeValue.trim().length))
+        label = n;
+    }
+    if (label) label.nodeValue = "Trading Extension";
+
+    const icon = clone.querySelector("svg, [class*='icon']");
+    const logo_url = get_logo_url();
+    if (icon && logo_url) {
+      const logo = document.createElement("img");
+      logo.src = logo_url;
+      logo.alt = "";
+      logo.width = 20;
+      logo.height = 20;
+      logo.style.borderRadius = "5px";
+      icon.replaceWith(logo);
+    }
+
+    clone.addEventListener(
+      "click",
+      (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        open_extension_settings();
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      },
+      true,
+    );
+    parent.insertBefore(clone, item);
+  }
+
   ensure_settings_menu_item();
+  ensure_popover_menu_item();
 
   let raf = 0;
   const observer = new MutationObserver(() => {
@@ -205,6 +265,7 @@
     raf = requestAnimationFrame(() => {
       raf = 0;
       ensure_settings_menu_item();
+      ensure_popover_menu_item();
     });
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });

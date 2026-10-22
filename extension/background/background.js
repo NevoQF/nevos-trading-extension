@@ -61,6 +61,8 @@ function is_nte_api_decoy_response(body) {
 if (typeof importScripts === "function") {
   importScripts("../shared/build_variant.js");
   importScripts("../shared/rolimons_item_details.js");
+  importScripts("../shared/nte_sales_core.js");
+  importScripts("trade_notification_card.js");
   importScripts("trade_ads.js");
   if (typeof nte_is_lite !== "function" || !nte_is_lite()) {
     importScripts("../shared/trade_ad_notifications_core.js");
@@ -72,7 +74,7 @@ if (typeof importScripts === "function") {
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
@@ -162,6 +164,7 @@ const duplicate_trade_warning_hours_key = "duplicate_trade_warning_hours";
 const duplicate_trade_warning_hours_default = 24;
 const trade_cache_ttl_ms = 5 * 24 * 60 * 60 * 1000;
 const trade_cache_max_entries = 2000;
+const trade_rap_fresh_ms = 30 * 60 * 1000;
 const trade_notification_sent_key = "nte_trade_notification_sent_ids";
 const trade_notification_sent_ttl_ms = 7 * 24 * 60 * 60 * 1000;
 const trade_notification_sent_max_entries = 1000;
@@ -181,7 +184,7 @@ function normalize_colorblind_mode_profile(value) {
 
 function extension_notification_icon_url(icon_url) {
   if (!icon_url) return chrome.runtime.getURL("assets/icons/logo128.png");
-  if (/^https?:\/\//i.test(icon_url)) return icon_url;
+  if (/^(https?:\/\/|data:image\/)/i.test(icon_url)) return icon_url;
   return chrome.runtime.getURL(String(icon_url).replace(/^\//, ""));
 }
 
@@ -1051,7 +1054,7 @@ function ensure_notification_click_handler() {
 
     on_clicked.addListener((notification_id) => {
       if (notification_id.startsWith(trade_notification_prefix)) {
-        chrome.tabs.create({ url: "https://www.roblox.com/trades" });
+        chrome.tabs.create({ url: trade_notification_tab_url(notification_id) });
         return;
       }
       if (notification_id.startsWith(trade_ads_notification_prefix)) {
@@ -1066,6 +1069,25 @@ function ensure_notification_click_handler() {
         }
         return;
       }
+    });
+
+    api.onButtonClicked?.addListener(async (notification_id, index) => {
+      if (!notification_id.startsWith(trade_notification_prefix)) return;
+      chrome.notifications.clear(notification_id);
+      if (index === 0) {
+        chrome.tabs.create({ url: trade_notification_tab_url(notification_id) });
+        return;
+      }
+      let area = chrome.storage.session || chrome.storage.local;
+      let saved = (await area.get(trade_notification_users_key))[
+        trade_notification_users_key
+      ];
+      let user_id = Number(saved?.[notification_id]) || 0;
+      chrome.tabs.create({
+        url: user_id
+          ? `https://www.roblox.com/users/${user_id}/profile`
+          : trade_notification_tab_url(notification_id),
+      });
     });
 
     notification_click_handler_registered = true;
@@ -1220,6 +1242,9 @@ function patch_trade_offer_pricing(offer, item_data) {
 function apply_fresh_pricing_to_trade(trade, item_data) {
   if (!trade || typeof trade !== "object") return trade;
   if (!item_data?.items) return trade;
+  // Rolimons RAP can lag Roblox by hours, so a recent payload keeps its own.
+  let fetched_at = Number(trade.__nte_fetched_at) || 0;
+  if (fetched_at && Date.now() - fetched_at < trade_rap_fresh_ms) return trade;
 
   let next = { ...trade };
 
@@ -1602,14 +1627,15 @@ async function show_trade_notification(
 
   try {
     let thumbnail_response = await fetch(
-      `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${trade.user.id}&size=48x48&format=Png&isCircular=true`,
+      `https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${trade.user.id}&size=150x150&format=Png&isCircular=true`,
       { credentials: "include" },
     );
     let thumbnail_data = await thumbnail_response.json();
-    if (thumbnail_data?.data?.[0]?.imageUrl) {
-      icon_url = thumbnail_data.data[0].imageUrl;
-    }
+    let remote = thumbnail_data?.data?.[0]?.imageUrl;
+    // Inline the avatar: notification icons from rbxcdn don't always load.
+    if (remote) icon_url = (await nte_fetch_data_url(remote)) || remote;
   } catch {}
+  let card_url = null;
 
   let message = title;
 
@@ -1644,29 +1670,66 @@ async function show_trade_notification(
         `${indicator} ${diff_str} (${diff_pct_str})\n` +
         `Yours: ${format_number(your_value)} (${your_count} item${your_count !== 1 ? "s" : ""})\n` +
         `Theirs: ${format_number(their_value)} (${their_count} item${their_count !== 1 ? "s" : ""})`;
+      if (nte_rich_notifications_supported()) {
+        card_url = await build_trade_notification_card(
+          get_trade_notification_offer_pair(trade_detail, my_user_id),
+          trade_stats,
+        );
+        // The card already shows both sides; keep the text to the verdict.
+        if (card_url) message = `${indicator} ${diff_str} (${diff_pct_str})`;
+      }
     }
   }
 
   let notification_id = `${trade_notification_prefix}${trade_type}_${trade.id}`;
-  chrome.notifications.create(
-    notification_id,
-    {
-      type: "basic",
-      iconUrl: extension_notification_icon_url(icon_url),
-      title: title,
-      message: message,
-      priority: 2,
-    },
-    () => {
-      if (chrome.runtime.lastError) {
-        console.info(
-          "Nevos Trading Extension: notification create failed",
-          chrome.runtime.lastError,
-        );
+  let basic = {
+    type: "basic",
+    iconUrl: extension_notification_icon_url(icon_url),
+    title: title,
+    message: message,
+    priority: 2,
+  };
+  let rich = nte_rich_notifications_supported()
+    ? {
+        ...basic,
+        ...(card_url ? { type: "image", imageUrl: card_url } : {}),
+        buttons: [{ title: "View trade" }, { title: "View profile" }],
       }
-    },
-  );
+    : null;
+  if (rich) await remember_trade_notification_user(notification_id, trade);
+  let create = (opts, on_error) =>
+    chrome.notifications.create(notification_id, opts, () => {
+      if (chrome.runtime.lastError) on_error(chrome.runtime.lastError);
+    });
+  create(rich || basic, (err) => {
+    // Image/buttons unsupported here: show the plain text version instead.
+    if (rich) return create(basic, (e) => console.info("Nevos Trading Extension: notification create failed", e));
+    console.info("Nevos Trading Extension: notification create failed", err);
+  });
   return true;
+}
+
+const trade_notification_users_key = "nte_trade_notification_users";
+
+// Button clicks can arrive after the service worker restarted, so keep the
+// partner id per notification in session storage.
+async function remember_trade_notification_user(notification_id, trade) {
+  try {
+    let area = chrome.storage.session || chrome.storage.local;
+    let saved = (await area.get(trade_notification_users_key))[
+      trade_notification_users_key
+    ] || {};
+    saved[notification_id] = Number(trade?.user?.id) || 0;
+    let keys = Object.keys(saved);
+    if (keys.length > 50) delete saved[keys[0]];
+    await area.set({ [trade_notification_users_key]: saved });
+  } catch {}
+}
+
+function trade_notification_tab_url(notification_id) {
+  let type = notification_id.slice(trade_notification_prefix.length).split("_")[0];
+  let tab = { inbound: "Inbound", completed: "Completed", inactive: "Inactive" }[type];
+  return `https://www.roblox.com/trades${tab ? `?tab=${tab}` : ""}`;
 }
 
 async function get_inbound_trade_webhook_settings() {
@@ -1955,6 +2018,7 @@ async function poll_inbound_trades() {
           );
           if (detail_resp.ok) {
             detail = await detail_resp.json();
+            detail.__nte_fetched_at = Date.now();
             detail.status = trade.status || "Open";
             detail.tradeType = "inbound";
             cache_trade_detail(cached_trades, trade.id, detail);
@@ -2080,8 +2144,10 @@ async function fetch_trade_page(
 
     let notification_checked_at = Date.now();
     await new Promise((r) => setTimeout(r, TRADE_STATUS_DETAIL_DELAY_MS));
+    // v2 like Roblox's own page: a cached v1 body can't be served to it, and
+    // v1 rejects trades that contain bundles.
     let full_response = await fetch_trade_api(
-      `https://trades.roblox.com/v1/trades/${trade.id}`,
+      `https://trades.roblox.com/v2/trades/${trade.id}`,
       {
         credentials: "include",
       },
@@ -2092,7 +2158,13 @@ async function fetch_trade_page(
     }
     if (full_response.status !== 200) continue;
 
-    let full_trade = await full_response.json();
+    // v2 has no id/user/created; keep the list row's copy of those.
+    let full_trade = {
+      ...trade,
+      ...(await full_response.json()),
+      __nte_list_trade: trade,
+      __nte_fetched_at: Date.now(),
+    };
     full_trade.tradeType = trade_type;
     cache_trade_detail(cached_trades, trade.id, full_trade);
     dirty = true;
@@ -2406,6 +2478,53 @@ const trade_history_user_cache_max_entries = 512;
 const trade_history_ciiid_cache_max_entries = 1024;
 const trade_history_thumb_cache_max_entries = 2048;
 const item_proofs_api_url = "https://nevos-extension.com/api/proofs/search";
+const player_ad_tiers_api_url =
+  "https://nevos-extension.com/api/rolimons/player-ad-tiers";
+
+// Trade proofs where the player was sender or receiver (newest first).
+async function fetch_player_proofs(name) {
+  let player = String(name || "").trim();
+  if (!/^[A-Za-z0-9_]{3,20}$/.test(player)) {
+    return { success: false, error: "Could not read this player's name." };
+  }
+  let cache_key = `player:${player.toLowerCase()}`;
+  let cached = get_trade_history_cached_value(item_proofs_cache, cache_key);
+  if (cached !== null) return cached;
+  let res = await fetch(
+    `https://nevos-extension.com/api/proofs/player/${encodeURIComponent(player)}`,
+    { method: "POST", headers: nte_api_headers() },
+  );
+  if (!res.ok) throw new Error(`Trade lookup failed (${res.status}).`);
+  let body = await parse_json_response_safe(res, "Player proofs");
+  if (!body || is_nte_api_decoy_response(body))
+    throw new Error("Trade lookup failed.");
+  return set_trade_history_cached_value(
+    item_proofs_cache,
+    cache_key,
+    {
+      success: true,
+      results: Array.isArray(body.results) ? body.results : [],
+    },
+    item_proofs_cache_ttl_ms,
+    item_proofs_cache_max_entries,
+  );
+}
+
+// Trade-ad count tier per player (0/10/100/1000/10000) from RoliBadges.
+async function fetch_player_ad_tiers(ids) {
+  let list = [...new Set((ids || []).map(String))]
+    .filter((id) => /^\d+$/.test(id))
+    .slice(0, 30);
+  if (!list.length) return {};
+  let res = await fetch(`${player_ad_tiers_api_url}?ids=${list.join(",")}`, {
+    headers: nte_api_headers(),
+    cache: "no-store",
+  });
+  if (!res.ok) return {};
+  let body = await parse_json_response_safe(res, "Player ad tiers");
+  if (!body?.ok || is_nte_api_decoy_response(body)) return {};
+  return body.players || {};
+}
 const item_proofs_cache_ttl_ms = 10 * 60 * 1000;
 const item_proofs_cache_max_entries = 256;
 const item_proofs_max_results = 12;
@@ -3426,9 +3545,20 @@ async function get_trade_history(message) {
       .join(",")
       .toLowerCase();
   }
-  let payload = asset_ids.length
+  // Void keys dynamic heads by their classic face id, not the bundle id.
+  let face_map = await fetch_rolimons_player_face_map().catch(() => ({}));
+  let bundle_by_face = {};
+  let query_ids = asset_ids.map((id) => {
+    let face = Object.keys(face_map).find(
+      (key) => String(face_map[key]) === String(id),
+    );
+    if (!face) return id;
+    bundle_by_face[face] = id;
+    return face;
+  });
+  let payload = query_ids.length
     ? await fetch_trade_history_api(
-        { mode: "asset", asset_ids, ciiid },
+        { mode: "asset", asset_ids: query_ids, ciiid },
         message?.limit || 6,
       )
     : { ok: true, items: [], trades: {} };
@@ -3439,7 +3569,7 @@ async function get_trade_history(message) {
       item?.asset_id ?? item?.assetId,
     );
     if (!asset_id) continue;
-    by_asset[asset_id] = item;
+    by_asset[bundle_by_face[asset_id] || asset_id] = item;
   }
 
   let user_ids = [];
@@ -4093,6 +4223,59 @@ async function fetch_rolimons_player_heads(user_id) {
   };
 }
 
+// Roblox resale data for one item, for pages that can't call Roblox (Rolimons).
+let item_sales_cache = new Map();
+
+async function get_item_sales_data(message) {
+  let id = String(message?.targetId || "").trim();
+  let is_bundle = message?.itemType === "Bundle";
+  if (!/^\d+$/.test(id)) return { ok: false };
+  let key = `${is_bundle ? "b" : "a"}:${id}`;
+  let hit = item_sales_cache.get(key);
+  if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.data;
+
+  let get_json = async (url) => {
+    let res = await fetch(url, { credentials: "include" }).catch(() => null);
+    return res?.ok ? res.json().catch(() => null) : null;
+  };
+  let detail = await get_json(
+    is_bundle
+      ? `https://catalog.roblox.com/v1/bundles/${id}/details`
+      : `https://economy.roblox.com/v2/assets/${id}/details`,
+  );
+  let core = NteSalesCore;
+  let collectible_id = is_bundle
+    ? core.bundle_collectible_id(detail)
+    : core.asset_collectible_id(detail);
+  let payload = collectible_id
+    ? await get_json(
+        `https://apis.roblox.com/marketplace-sales/v1/item/${encodeURIComponent(collectible_id)}/resale-data`,
+      )
+    : null;
+  if (!is_bundle && !core.normalize_points(payload).length) {
+    let legacy = await get_json(
+      `https://economy.roblox.com/v1/assets/${id}/resale-data`,
+    );
+    if (core.normalize_points(legacy).length) payload = legacy;
+  }
+  let summary = core.compute_summary(payload || {}, 0);
+  let data = {
+    ok: !!payload,
+    lowest_price: is_bundle
+      ? core.bundle_lowest_price(detail)
+      : core.asset_lowest_price(detail),
+    summary: { ...summary, recent_sales: summary.recent_sales.slice(0, 8) },
+    points: core
+      .normalize_points(payload)
+      .slice(0, 180)
+      .map((p) => [p.time_ms, p.value]),
+  };
+  item_sales_cache.set(key, { at: Date.now(), data });
+  if (item_sales_cache.size > 300)
+    item_sales_cache.delete(item_sales_cache.keys().next().value);
+  return data;
+}
+
 let rolimons_player_face_map_cache = null;
 let rolimons_player_face_map_at = 0;
 
@@ -4384,6 +4567,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           );
           if (200 === resp.status) {
             let trade = await resp.json();
+            trade.__nte_fetched_at = Date.now();
             if (status_map[id]) trade.status = status_map[id];
             if (trade_type) trade.tradeType = trade_type;
             if (cache_trade_detail(cached, id, trade)) {
@@ -4446,6 +4630,32 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     return true;
   }
 
+  if (message?.type === "getItemSalesData") {
+    get_item_sales_data(message)
+      .then(respond)
+      .catch(() => respond({ ok: false }));
+    return true;
+  }
+
+  if (message?.type === "getPlayerProofs") {
+    fetch_player_proofs(message.name)
+      .then(respond)
+      .catch((err) =>
+        respond({
+          success: false,
+          error: err?.message || "Trades could not be loaded right now.",
+        }),
+      );
+    return true;
+  }
+
+  if (message?.type === "getPlayerAdTiers") {
+    fetch_player_ad_tiers(message.ids)
+      .then((players) => respond({ ok: true, players }))
+      .catch(() => respond({ ok: false, players: {} }));
+    return true;
+  }
+
   if (message?.type === "getItemProofs") {
     if (typeof nte_is_lite === "function" && nte_is_lite()) {
       respond({
@@ -4493,6 +4703,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       message.action,
       message.min_overpay_pct || 0,
       message.max_trade_age_ms || 0,
+      message.item_filter || null,
     );
     respond({ ok: true });
     return false;
@@ -5054,7 +5265,39 @@ function ta_trade_is_older_than(trade, max_age_ms, list_trade_type) {
   return ts <= Date.now() - max_age_ms;
 }
 
-async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) {
+// Splits a trade detail into my/their offers (v1 offers[] or v2 participants).
+function ta_split_offers(detail, my_user_id) {
+  if (detail?.offers) {
+    return {
+      my_offer: detail.offers.find((o) => o.user?.id === my_user_id),
+      their_offer: detail.offers.find((o) => o.user?.id !== my_user_id),
+    };
+  }
+  let a = detail?.participantAOffer;
+  let b = detail?.participantBOffer;
+  if (a?.user?.id === my_user_id) return { my_offer: a, their_offer: b };
+  if (b?.user?.id === my_user_id) return { my_offer: b, their_offer: a };
+  return {};
+}
+
+function ta_offer_items(offer) {
+  return (
+    offer?.userAssets ||
+    offer?.assets ||
+    offer?.userItems ||
+    offer?.items ||
+    offer?.userCollectibles ||
+    offer?.collectibles ||
+    []
+  );
+}
+
+async function ta_run_action(
+  action,
+  min_overpay_pct = 0,
+  max_trade_age_ms = 0,
+  item_filter = null,
+) {
   if (ta_state.running) return;
   ta_state = {
     running: true,
@@ -5077,6 +5320,7 @@ async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) 
     let overpaying_only = action.endsWith("_overpaying");
     let unowned_check = action.endsWith("_unowned");
     let age_filter = action === "cancel_outbound_older_than";
+    let with_item = action.endsWith("_with_item");
     let trade_type = is_inbound ? "inbound" : "outbound";
     let list_trade_type = is_inbound ? "inbound" : "outbound";
 
@@ -5141,21 +5385,7 @@ async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) 
           ta_state.skipped++;
           continue;
         }
-        let my_offer, their_offer;
-        if (detail.offers) {
-          my_offer = detail.offers.find((o) => o.user?.id === my_user_id);
-          their_offer = detail.offers.find((o) => o.user?.id !== my_user_id);
-        } else {
-          let a = detail.participantAOffer;
-          let b = detail.participantBOffer;
-          if (a?.user?.id === my_user_id) {
-            my_offer = a;
-            their_offer = b;
-          } else if (b?.user?.id === my_user_id) {
-            my_offer = b;
-            their_offer = a;
-          }
-        }
+        let { my_offer, their_offer } = ta_split_offers(detail, my_user_id);
         if (!my_offer || !their_offer) {
           ta_state.skipped++;
           continue;
@@ -5219,21 +5449,7 @@ async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) 
           continue;
         }
 
-        let my_offer, their_offer;
-        if (detail.offers) {
-          my_offer = detail.offers.find((o) => o.user?.id === my_user_id);
-          their_offer = detail.offers.find((o) => o.user?.id !== my_user_id);
-        } else {
-          let a = detail.participantAOffer;
-          let b = detail.participantBOffer;
-          if (a?.user?.id === my_user_id) {
-            my_offer = a;
-            their_offer = b;
-          } else if (b?.user?.id === my_user_id) {
-            my_offer = b;
-            their_offer = a;
-          }
-        }
+        let { my_offer, their_offer } = ta_split_offers(detail, my_user_id);
         if (!my_offer || !their_offer) {
           ta_state.skipped++;
           continue;
@@ -5296,6 +5512,52 @@ async function ta_run_action(action, min_overpay_pct = 0, max_trade_age_ms = 0) 
           continue;
         }
 
+        let result = await ta_decline_trade(trade.id, csrf);
+        if (ta_abort) {
+          ta_state.error = "Cancelled by user";
+          break;
+        }
+        if (result.csrf) csrf = result.csrf;
+        ta_state.done++;
+      }
+    } else if (with_item) {
+      ta_state.phase = "checking";
+      let item_id = Number(item_filter?.id) || 0;
+      let side = item_filter?.side || "any";
+      if (!item_id) throw new Error("Pick an item first.");
+      let auth_resp = await fetch(
+        "https://users.roblox.com/v1/users/authenticated",
+        { credentials: "include" },
+      );
+      let my_user_id = (auth_resp.ok ? await auth_resp.json() : {}).id;
+      let has_item = (offer) =>
+        ta_offer_items(offer).some(
+          (item) => ta_get_trade_item_target_id(item) === item_id,
+        );
+
+      for (let trade of trades) {
+        if (ta_abort) {
+          ta_state.error = "Cancelled by user";
+          break;
+        }
+        ta_state.checked++;
+        if (is_locked_trade(trade)) {
+          ta_state.skipped++;
+          continue;
+        }
+        let detail = await ta_get_trade_detail(trade.id, trade_cache);
+        if (ta_abort) {
+          ta_state.error = "Cancelled by user";
+          break;
+        }
+        let { my_offer, their_offer } = ta_split_offers(detail, my_user_id);
+        let match =
+          (side !== "theirs" && has_item(my_offer)) ||
+          (side !== "mine" && has_item(their_offer));
+        if (!match) {
+          ta_state.skipped++;
+          continue;
+        }
         let result = await ta_decline_trade(trade.id, csrf);
         if (ta_abort) {
           ta_state.error = "Cancelled by user";

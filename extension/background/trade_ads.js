@@ -573,6 +573,7 @@ async function trade_ads_fetch_tradable_snapshot(user_id) {
   // is not. Bundles (dynamic heads) only exist here, not in collectibles.
   // Best effort: an incomplete walk must not filter the inventory.
   let bundles = [];
+  let assets = [];
   let tradable_ids = new Set();
   let cursor = "";
   let limit = "100";
@@ -609,12 +610,11 @@ async function trade_ads_fetch_tradable_snapshot(user_id) {
         : [];
     for (let row of rows) {
       let target = Number(row?.itemTarget?.targetId);
-      if (Number.isFinite(target) && target > 0)
-        tradable_ids.add(String(target));
-      if (String(row?.itemTarget?.itemType || "") !== "Bundle") continue;
       if (!Number.isFinite(target) || target <= 0) continue;
+      tradable_ids.add(String(target));
       let instances = Array.isArray(row?.instances) ? row.instances : [row];
-      bundles.push({
+      let is_bundle = String(row?.itemTarget?.itemType || "") === "Bundle";
+      (is_bundle ? bundles : assets).push({
         assetId: target,
         name: String(row?.itemName || "").trim(),
         copyCount: Math.max(1, instances.length),
@@ -627,7 +627,7 @@ async function trade_ads_fetch_tradable_snapshot(user_id) {
       break;
     }
   }
-  return { bundles, tradableIds: tradable_ids, complete };
+  return { bundles, assets, tradableIds: tradable_ids, complete };
 }
 
 async function trade_ads_fetch_inventory_collectibles(user_id) {
@@ -685,6 +685,11 @@ async function trade_ads_fetch_inventory_collectibles(user_id) {
   let tradable = await trade_ads_fetch_tradable_snapshot(user_id);
   for (let bundle of tradable.bundles) {
     by_id.set(Number(bundle.assetId), bundle);
+  }
+  // New limiteds can be tradable before the collectibles index lists them.
+  for (let asset of tradable.assets) {
+    if (!by_id.has(Number(asset.assetId)))
+      by_id.set(Number(asset.assetId), asset);
   }
   // The collectibles index can keep items the account can no longer trade
   // (classic faces after the dynamic-head migration). Only offer what
@@ -1332,6 +1337,7 @@ async function trade_ads_build_post_body(
   let post_request_ids = await trade_ads_resolve_legacy_trade_ad_ids(
     request_item_ids || [],
     item_data,
+    { allow_duplicates: !config.request_random },
   );
 
   let body = {

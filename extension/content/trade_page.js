@@ -1007,6 +1007,7 @@
         },
     ),
       r(e.exports, "getRolimonsData", () => a),
+      r(e.exports, "isRolimonsDataReady", () => () => has_rolimons_items(n)),
       r(e.exports, "getURL", () => o),
       r(e.exports, "waitForElm", () => i),
       r(e.exports, "nthIndex", () => l),
@@ -1948,20 +1949,33 @@
       (trade_id && row_trade_raw_cache?.[String(trade_id)]) ||
       null;
     if (!trade || "object" != typeof trade) return null;
-    let want_name = (
-      card.querySelector(".item-card-name, .item-card-name-link, .item-name, .text-overflow")
-        ?.textContent || ""
-    )
-      .trim()
-      .toLowerCase();
-    let want_asset =
-      card
-        .querySelector("thumbnail-2d, .thumbnail-2d-container")
-        ?.getAttribute("thumbnail-target-id") ||
-      card.querySelector('a[href*="/catalog/"], a[href*="/bundles/"]')?.href?.match(
-        /\/(?:catalog|bundles)\/(\d+)/,
-      )?.[1] ||
-      "";
+    let card_key = (el) => ({
+      name: (
+        el.querySelector(".item-card-name, .item-card-name-link, .item-name, .text-overflow")
+          ?.textContent || ""
+      )
+        .trim()
+        .toLowerCase(),
+      asset:
+        el
+          .querySelector("thumbnail-2d, .thumbnail-2d-container")
+          ?.getAttribute("thumbnail-target-id") ||
+        el.querySelector('a[href*="/catalog/"], a[href*="/bundles/"]')?.href?.match(
+          /\/(?:catalog|bundles)\/(\d+)/,
+        )?.[1] ||
+        "",
+    });
+    let { name: want_name, asset: want_asset } = card_key(card);
+    // Two copies of one item look identical, so the Nth such card takes the Nth matching item.
+    let same_cards = [
+      ...(card.closest(".trades-list-detail, .trade-list-detail-offer, main") || document)
+        .querySelectorAll(card.matches(".item-card-container") ? ".item-card-container" : card.tagName),
+    ].filter((el) => {
+      let key = card_key(el);
+      return (want_asset && key.asset === want_asset) || (want_name && key.name === want_name);
+    });
+    let ordinal = Math.max(0, same_cards.indexOf(card));
+    let matches = [];
     let items = [];
     if (Array.isArray(trade.offers)) {
       for (let offer of trade.offers) {
@@ -1991,11 +2005,12 @@
       let name = String(item?.name || item?.itemName || "")
         .trim()
         .toLowerCase();
-      if (want_asset && asset && want_asset === asset)
-        return uaid || ciiid || null;
-      if (want_name && name && want_name === name) return uaid || ciiid || null;
+      let hit =
+        (want_asset && asset && want_asset === asset) ||
+        (want_name && name && want_name === name);
+      if (hit && (uaid || ciiid)) matches.push(uaid || ciiid);
     }
-    return null;
+    return matches[ordinal] || matches[0] || null;
   }
   function read_card_react_trade_item(card) {
     if (!(card instanceof Element)) return null;
@@ -2612,7 +2627,10 @@
   }
   async function p() {
     let mount = get_trade_win_loss_mount_point();
-    if (!(await c.getOption("Trade Win/Loss Stats")))
+    if (
+      !(await c.getOption("Trade Win/Loss Stats")) ||
+      !c.isRolimonsDataReady()
+    )
       return clear_trade_win_loss_retry(), h();
     let t = !(await c.getOption("Disable Win/Loss Stats RAP"));
     let show_usd = !!(await c.getOption("Show Routility USD Values"));
@@ -6952,6 +6970,8 @@
               ?.remove(),
             element.remove();
       })();
+    // Without item data every value is 0; wait for it instead of painting zeros.
+    if (!c.isRolimonsDataReady()) return;
     k();
     if ("details" === c.getPageType()) {
       let e = document.querySelector(".trades-container");
@@ -9379,7 +9399,7 @@
           };
           let t = await fetch_detail(`https://trades.roblox.com/v2/trades/${e}`);
           200 === t.status
-            ? (r = await t.json())
+            ? ((r = await t.json()), (r.__nte_fetched_at = Date.now()))
             : 429 === t.status
               ? (row_next_request_at = Math.max(
                   row_next_request_at,
@@ -9719,6 +9739,7 @@
     if (btn) {
       if (btn.nextElementSibling !== gear)
         gear.insertAdjacentElement("beforebegin", btn);
+      mount_trade_header_search_button(gear, btn);
       return;
     }
     btn = document.createElement("button");
@@ -9752,6 +9773,41 @@
       }
     });
     gear.insertAdjacentElement("beforebegin", btn);
+    mount_trade_header_search_button(gear, btn);
+  }
+  // Search icon beside refresh: opens/closes the item search above the rows.
+  function mount_trade_header_search_button(gear, refresh_btn) {
+    let btn = document.getElementById("nteTradeHeaderSearchBtn");
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.type = "button";
+      btn.id = "nteTradeHeaderSearchBtn";
+      btn.className = gear.className;
+      btn.setAttribute("aria-label", "Search trades by item");
+      btn.title = "Search trades by item";
+      let layer = document.createElement("div");
+      layer.setAttribute("aria-hidden", "true");
+      layer.className =
+        "absolute inset-[0] transition-colors group-hover/interactable:bg-[var(--color-state-hover)] group-active/interactable:bg-[var(--color-state-press)] group-disabled/interactable:bg-none";
+      let icon = document.createElement("span");
+      icon.className =
+        "icon icon-regular-magnifying-glass size-600 content-emphasis";
+      icon.setAttribute("aria-hidden", "true");
+      btn.append(layer, icon);
+      btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!document.getElementById("nteTradeListSearchInput"))
+          return show_trade_list_search_input();
+        hide_trade_list_search_input();
+        trade_filter_state.value = "all";
+        sync_trade_list_filter_ui_state();
+        apply_trade_list_filter();
+        L();
+      });
+    }
+    if (btn.nextElementSibling !== refresh_btn)
+      refresh_btn.insertAdjacentElement("beforebegin", btn);
   }
   function get_trade_list_scroll_element() {
     return (
@@ -12877,7 +12933,9 @@
     }
   }
   async function L_inner() {
-    let e = await c.getOption("Values on Trade Lists");
+    // Rows painted before item data loads would keep "0 0" boxes for good.
+    let e =
+      c.isRolimonsDataReady() && (await c.getOption("Values on Trade Lists"));
     let show_partner_value = await c.getOption(
       partner_value_on_trade_lists_option_name,
     );
@@ -13491,6 +13549,7 @@
             if (bg_fetch_abort || fetch_token !== bg_fetch_token) break;
             if (200 === resp.status) {
               let trade = await resp.json();
+              trade.__nte_fetched_at = Date.now();
               if (list_map[t.id])
                 trade = {
                   ...list_map[t.id],
@@ -14458,138 +14517,13 @@
     panel.style.left = `${Math.round(left)}px`;
     panel.style.top = `${Math.round(top)}px`;
   }
-  function parse_trade_sales_time(value) {
-    if (null == value || "" === value) return NaN;
-    if ("number" == typeof value) return value < 1e12 ? 1e3 * value : value;
-    if (/^\d+$/.test(String(value))) {
-      let parsed = parseInt(value, 10);
-      return parsed < 1e12 ? 1e3 * parsed : parsed;
-    }
-    return new Date(value).getTime();
-  }
-  function format_trade_sales_date(value) {
-    let time = parse_trade_sales_time(value);
-    return Number.isFinite(time)
-      ? new Intl.DateTimeFormat(void 0, {
-          month: "short",
-          day: "numeric",
-          // Sale points are UTC day buckets; formatting them in the viewer's
-          // timezone shifted every date back a day west of UTC.
-          timeZone: "UTC",
-        }).format(new Date(time))
-      : "Unknown";
-  }
-  function trade_sales_average(values, fallback = 0) {
-    let nums = values
-      .map((v) => parseFloat(v))
-      .filter((v) => Number.isFinite(v));
-    return nums.length
-      ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length)
-      : fallback;
-  }
-  function trade_sales_median(values, fallback = 0) {
-    let nums = values
-      .map((v) => parseFloat(v))
-      .filter((v) => Number.isFinite(v))
-      .sort((a, b) => a - b);
-    if (!nums.length) return fallback;
-    let mid = Math.floor(nums.length / 2);
-    return Math.round(
-      nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2,
-    );
-  }
-  function normalize_trade_sales_points(payload) {
-    if (!payload) return [];
-    let rows = [];
-    let push = (arr) => {
-      if (Array.isArray(arr)) for (let row of arr) rows.push(row);
-    };
-    push(payload.priceDataPoints);
-    push(payload.data);
-    push(payload?.resaleData?.priceDataPoints);
-    push(payload?.graphData?.dataPoints);
-    push(payload?.itemPriceData?.priceDataPoints);
-    // Roblox reports one price point per day plus a parallel per-day volume.
-    let volume_by_time = new Map();
-    let push_volumes = (arr) => {
-      if (!Array.isArray(arr)) return;
-      for (let row of arr) {
-        let time = parse_trade_sales_time(
-          row?.date ?? row?.timestamp ?? row?.time,
-        );
-        let count = parseInt(row?.value ?? row?.volume ?? row?.count ?? 0, 10);
-        if (Number.isFinite(time) && Number.isFinite(count) && count > 0)
-          volume_by_time.set(time, count);
-      }
-    };
-    push_volumes(payload.volumeDataPoints);
-    push_volumes(payload?.resaleData?.volumeDataPoints);
-    return rows
-      .map((row) => {
-        let time_ms = parse_trade_sales_time(
-          row?.date ??
-            row?.timestamp ??
-            row?.time ??
-            row?.created ??
-            row?.saleDate ??
-            row?.soldAt,
-        );
-        return {
-          value: parseInt(
-            row?.value ?? row?.price ?? row?.robux ?? row?.amount ?? 0,
-            10,
-          ),
-          time_ms,
-          volume: volume_by_time.get(time_ms) || 0,
-        };
-      })
-      .filter(
-        (row) =>
-          Number.isFinite(row.value) &&
-          row.value > 0 &&
-          Number.isFinite(row.time_ms),
-      )
-      .sort((a, b) => b.time_ms - a.time_ms);
-  }
-  function compute_trade_sales_summary(payload, fallback_rap = 0) {
-    let points = normalize_trade_sales_points(payload);
-    let rap = parseInt(payload?.recentAveragePrice ?? fallback_rap ?? 0, 10);
-    if (!Number.isFinite(rap) || rap < 0) rap = points[0]?.value || 0;
-    let now = Date.now(),
-      day_ms = 864e5,
-      values_7 = points
-        .filter((p) => now - p.time_ms <= 7 * day_ms)
-        .map((p) => p.value),
-      values_30 = points
-        .filter((p) => now - p.time_ms <= 30 * day_ms)
-        .map((p) => p.value),
-      values_prev_30 = points
-        .filter(
-          (p) =>
-            now - p.time_ms > 30 * day_ms && now - p.time_ms <= 60 * day_ms,
-        )
-        .map((p) => p.value),
-      avg_7 = trade_sales_average(values_7, rap),
-      avg_30 = trade_sales_average(values_30, avg_7 || rap),
-      prev_30 = trade_sales_average(values_prev_30, avg_30 || rap),
-      median_30 = trade_sales_median(values_30, avg_30 || rap),
-      trend_30 =
-        prev_30 > 0 ? Math.round(((avg_30 - prev_30) / prev_30) * 100) : 0,
-      recent_sales = points.map((point) => ({
-        date_text: format_trade_sales_date(point.time_ms),
-        value: point.value,
-        volume: point.volume || 0,
-      }));
-    return {
-      rap,
-      avg_7,
-      avg_30,
-      median_30,
-      trend_30,
-      recent_sales,
-      is_probably_projected: median_30 > 0 && rap / median_30 > 1.5,
-    };
-  }
+  // Sales math lives in shared/nte_sales_core.js (also used by the background).
+  const parse_trade_sales_time = NteSalesCore.parse_time;
+  const format_trade_sales_date = NteSalesCore.format_date;
+  const trade_sales_average = NteSalesCore.average;
+  const trade_sales_median = NteSalesCore.median;
+  const normalize_trade_sales_points = NteSalesCore.normalize_points;
+  const compute_trade_sales_summary = NteSalesCore.compute_summary;
   function format_trade_sales_hover_usd(value) {
     let numeric = Number(value) || 0;
     return `$${((numeric * 3) / 1e3).toFixed(2)}`;
@@ -14708,44 +14642,10 @@
     nte_trade_bundle_detail_cache.set(key, out);
     return out;
   }
-  function parse_lowest_resale_price_from_economy_v2(detail) {
-    if (!detail) return null;
-    let c = detail.CollectiblesItemDetails || detail.collectiblesItemDetails;
-    let lp =
-      c?.CollectibleLowestResalePrice ??
-      c?.collectibleLowestResalePrice ??
-      detail.CollectibleLowestResalePrice ??
-      detail.collectibleLowestResalePrice;
-    let n = parseInt(lp, 10);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }
-  function parse_lowest_resale_price_from_bundle_detail(detail) {
-    if (!detail) return null;
-    let c = detail.collectibleItemDetail || detail.CollectibleItemDetail;
-    let lp =
-      c?.lowestResalePrice ??
-      c?.lowestPrice ??
-      c?.LowestResalePrice ??
-      c?.LowestPrice ??
-      null;
-    let n = parseInt(lp, 10);
-    return Number.isFinite(n) && n > 0 ? n : null;
-  }
-  function extract_collectible_item_id_from_economy_v2(detail) {
-    if (!detail) return null;
-    let cid = detail.CollectibleItemId ?? detail.collectibleItemId ?? null;
-    if (null == cid) return null;
-    let s = String(cid).trim();
-    return s ? s : null;
-  }
-  function extract_collectible_item_id_from_bundle_detail(detail) {
-    if (!detail) return null;
-    let c = detail.collectibleItemDetail || detail.CollectibleItemDetail;
-    let cid = c?.collectibleItemId ?? c?.CollectibleItemId ?? null;
-    if (null == cid) return null;
-    let s = String(cid).trim();
-    return s ? s : null;
-  }
+  const parse_lowest_resale_price_from_economy_v2 = NteSalesCore.asset_lowest_price;
+  const parse_lowest_resale_price_from_bundle_detail = NteSalesCore.bundle_lowest_price;
+  const extract_collectible_item_id_from_economy_v2 = NteSalesCore.asset_collectible_id;
+  const extract_collectible_item_id_from_bundle_detail = NteSalesCore.bundle_collectible_id;
   function escape_html_attr(text) {
     return String(text || "")
       .replace(/&/g, "&amp;")
@@ -17263,10 +17163,15 @@
   let trade_daily_limit_request_token = 0;
   let trade_daily_limit_cache = null;
   let trade_daily_limit_state = { count: 0, at_limit: false, reset_at: null };
-  const trade_daily_limit_counter_storage_key =
-    "nte_trade_daily_limit_counter_trade_ids";
-  const trade_daily_limit_sent_storage_key =
-    "nte_trade_daily_limit_sent_trade_ids";
+  // Roblox's 100/24h limit is per account, so its records are kept per signed-in user.
+  function trade_daily_limit_user_key(base) {
+    let uid = document.querySelector('meta[name="user-data"]')?.getAttribute("data-userid");
+    return /^\d+$/.test(uid || "") ? `${base}:${uid}` : base;
+  }
+  const trade_daily_limit_counter_storage_key = () =>
+    trade_daily_limit_user_key("nte_trade_daily_limit_counter_trade_ids");
+  const trade_daily_limit_sent_storage_key = () =>
+    trade_daily_limit_user_key("nte_trade_daily_limit_sent_trade_ids");
   const trade_daily_limit_record_max_age_ms =
     trade_daily_limit_window_ms + 3600000;
   let trade_daily_limit_counter_trade_ids_memory = null;
@@ -17301,9 +17206,9 @@
     try {
       records = await new Promise((resolve) => {
         chrome.storage.local.get(
-          [trade_daily_limit_counter_storage_key],
+          [trade_daily_limit_counter_storage_key()],
           (result) => {
-            resolve(result?.[trade_daily_limit_counter_storage_key] || {});
+            resolve(result?.[trade_daily_limit_counter_storage_key()] || {});
           },
         );
       });
@@ -17318,9 +17223,9 @@
     try {
       records = await new Promise((resolve) => {
         chrome.storage.local.get(
-          [trade_daily_limit_sent_storage_key],
+          [trade_daily_limit_sent_storage_key()],
           (result) => {
-            resolve(result?.[trade_daily_limit_sent_storage_key] || {});
+            resolve(result?.[trade_daily_limit_sent_storage_key()] || {});
           },
         );
       });
@@ -17344,7 +17249,7 @@
     invalidate_trade_daily_limit_cache();
     try {
       chrome.storage.local.set(
-        { [trade_daily_limit_counter_storage_key]: records },
+        { [trade_daily_limit_counter_storage_key()]: records },
         () => {},
       );
     } catch {}
@@ -17362,7 +17267,7 @@
     invalidate_trade_daily_limit_cache();
     try {
       chrome.storage.local.set(
-        { [trade_daily_limit_sent_storage_key]: records },
+        { [trade_daily_limit_sent_storage_key()]: records },
         () => {},
       );
     } catch {}
@@ -17597,7 +17502,8 @@
     );
   }
 
-  const trade_daily_limit_snapshot_key = "nte_trade_daily_limit_snapshot";
+  const trade_daily_limit_snapshot_key = () =>
+    trade_daily_limit_user_key("nte_trade_daily_limit_snapshot");
 
   function persist_trade_daily_limit_snapshot(count) {
     let used = Math.min(
@@ -17615,7 +17521,7 @@
     };
     try {
       chrome.storage.local.set(
-        { [trade_daily_limit_snapshot_key]: snapshot },
+        { [trade_daily_limit_snapshot_key()]: snapshot },
         () => {},
       );
     } catch {}
@@ -20646,6 +20552,10 @@
     let items = [];
     let offer_el = get_history_offer_element(item_side);
     let cards = get_offer_collectible_cards(offer_el);
+    // A slot can match twice (wrapper + inner card); keep the outer one.
+    cards = cards.filter(
+      (card) => !cards.some((other) => other !== card && other.contains(card)),
+    );
     let seen = new Set();
     let hold_verified =
       get_current_trade_tab() === "inbound" ||
@@ -20671,9 +20581,11 @@
         card.querySelector(".text-overflow");
       let name = name_el?.textContent?.trim() || "Unknown Item";
       let thumb = get_card_item_thumb_url(card);
-      let dedupe_key = ciiid || `${name}|${thumb}`;
-      if (seen.has(dedupe_key)) continue;
-      seen.add(dedupe_key);
+      // Two copies of one item share name/thumb, so only dedupe by instance.
+      if (ciiid) {
+        if (seen.has(ciiid)) continue;
+        seen.add(ciiid);
+      }
       let held_since = hold_verified
         ? nte_history_extract_hold_since(cached_item)
         : 0;

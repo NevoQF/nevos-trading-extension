@@ -6,6 +6,19 @@
   let trade_limit = "100",
     trade_detail_request_seq = 0;
 
+  // Short local trace of trade-detail loads, for the intermittent "selected trade never
+  // loads" report. Stays in this page's localStorage; nothing is sent anywhere.
+  const TRACE_KEY = "nte_trade_detail_trace";
+  function trace(trade_id, step) {
+    try {
+      let log = JSON.parse(localStorage.getItem(TRACE_KEY) || "[]");
+      log.push(`${new Date().toISOString().slice(11, 23)} ${trade_id} ${step}`);
+      localStorage.setItem(TRACE_KEY, JSON.stringify(log.slice(-40)));
+    } catch {}
+  }
+
+  trace("-", `page load ${location.search}`);
+
   function fast_trade_loading_enabled() {
     return (
       document.documentElement?.getAttribute("data-nte-fast-trade-loading") !==
@@ -162,6 +175,8 @@
 
   function dispatch_trade_detail_network_result(trade_id, trade) {
     if (!trade_id || !trade || "object" != typeof trade) return;
+    // Stamp live payloads so cache pricing keeps Roblox's own (fresher) RAP.
+    trade = { ...trade, __nte_fetched_at: Date.now() };
     try {
       document.dispatchEvent(
         new CustomEvent("nru_trade_detail_network_result", {
@@ -240,12 +255,18 @@
     } catch {}
   }
 
+  // Roblox asks /v2/trades/{id}; a cached v1 body ({offers: [...]}) never
+  // renders and leaves the detail spinner stuck, so only serve the v2 shape.
+  function is_servable_trade(trade) {
+    return !!(trade && trade.participantAOffer && trade.participantBOffer);
+  }
+
   async function get_cached_trade_response(input, init) {
     if ("GET" !== get_request_method(input, init)) return null;
     let trade_id = get_trade_detail_id(get_request_url(input));
     if (!trade_id) return null;
     let trade = await request_cached_trade_detail(trade_id);
-    if (!trade || (!trade.participantAOffer && !trade.participantBOffer && !Array.isArray(trade.offers))) return null;
+    if (!is_servable_trade(trade)) return null;
     null == trade.tradeId && (trade = { ...trade, tradeId: parseInt(trade_id, 10) || trade_id });
     return new Response(JSON.stringify(trade), {
       status: 200,
@@ -300,6 +321,7 @@
           cached_response = null;
         }
       }
+      if (trade_id) trace(trade_id, cached_response ? "fetch: cache hit" : "fetch: network");
       if (cached_response) return cached_response;
       let decline_id =
         "POST" === get_request_method(input, init)
@@ -307,6 +329,7 @@
           : "";
       if (trade_id) dispatch_trade_detail_network_start(trade_id);
       let response = await original_fetch.call(this, normalize_request(input), init);
+      if (trade_id) trace(trade_id, `fetch: network ${response?.status}`);
       if (decline_id && response?.ok) dispatch_self_declined_trade(decline_id);
       if (trade_id && response?.ok) {
         try {
@@ -431,30 +454,41 @@
       xhr.getAllResponseHeaders = () => all_headers;
     } catch {}
 
+    // dispatchEvent also runs the on* handlers, so calling them directly too fired each twice.
     setTimeout(() => {
-      try {
-        xhr.onreadystatechange && xhr.onreadystatechange(new Event("readystatechange"));
-      } catch {}
-      try {
-        xhr.dispatchEvent(new Event("readystatechange"));
-      } catch {}
-      try {
-        xhr.onload && xhr.onload(new Event("load"));
-      } catch {}
-      try {
-        xhr.dispatchEvent(new Event("load"));
-      } catch {}
-      try {
-        xhr.onloadend && xhr.onloadend(new Event("loadend"));
-      } catch {}
-      try {
-        xhr.dispatchEvent(new Event("loadend"));
-      } catch {}
+      for (let type of ["readystatechange", "load", "loadend"]) {
+        try {
+          xhr.dispatchEvent(
+            "readystatechange" === type ? new Event(type) : new ProgressEvent(type),
+          );
+        } catch {}
+      }
     }, 0);
   }
 
   let original_open = XMLHttpRequest.prototype.open,
-    original_send = XMLHttpRequest.prototype.send;
+    original_send = XMLHttpRequest.prototype.send,
+    original_abort = XMLHttpRequest.prototype.abort;
+  // A detail request held for the cache lookup is not really sent yet, so if Roblox
+  // cancels it (e.g. the trade list changes under it) the browser fires no abort
+  // events. Roblox's loader then waits forever: the "selected trade never loads"
+  // spinner. Fire the events a real cancelled request would.
+  XMLHttpRequest.prototype.abort = function (...args) {
+    let held = null != this.__nru_held_seq && this.__nru_held_seq === this.__nru_request_seq;
+    this.__nru_held_seq = null;
+    let result = original_abort.apply(this, args);
+    if (held) {
+      trace(get_trade_detail_id(this.__nru_xhr_request_meta?.url) || "?", "xhr: cancelled while checking cache");
+      for (let type of ["readystatechange", "abort", "loadend"]) {
+        try {
+          this.dispatchEvent(
+            "readystatechange" === type ? new Event(type) : new ProgressEvent(type),
+          );
+        } catch {}
+      }
+    }
+    return result;
+  };
   XMLHttpRequest.prototype.open = function (method, url, ...rest) {
     let raw_url =
       "string" == typeof url
@@ -515,18 +549,25 @@
       !1 !== meta.rest?.[0]
     ) {
       let request_seq = xhr.__nru_request_seq;
+      xhr.__nru_held_seq = request_seq;
+      trace(trade_id, "xhr: requested, checking cache");
       let settled = !1;
       let send_real = (reason) => {
         if (settled) return;
         settled = !0;
+        if (xhr.__nru_held_seq === request_seq) xhr.__nru_held_seq = null;
         // The caller may have aborted or reopened this XHR while the cache
         // lookup ran — never write to a dead request.
-        if (xhr.__nru_request_seq !== request_seq || xhr.readyState === 0)
+        if (xhr.__nru_request_seq !== request_seq || xhr.readyState === 0) {
+          trace(trade_id, `xhr: skipped send (reopened=${xhr.__nru_request_seq !== request_seq} state=${xhr.readyState})`);
           return;
+        }
         if (reason) console.debug(`NTE trade cache: ${reason}`);
+        trace(trade_id, `xhr: network${reason ? " (" + reason + ")" : ""}`);
         dispatch_trade_detail_network_start(trade_id);
         try {
           xhr.addEventListener("loadend", () => {
+            trace(trade_id, `xhr: network done ${xhr.status}`);
             if (!(xhr.status >= 200 && xhr.status < 300)) return;
             try {
               let payload =
@@ -546,12 +587,12 @@
       request_cached_trade_detail(trade_id)
         .then((trade) => {
           if (settled) return;
-          if (
-            trade &&
-            (trade.participantAOffer ||
-              trade.participantBOffer ||
-              Array.isArray(trade.offers))
-          ) {
+          // Cancelled or reopened while we looked: leave it to the caller.
+          if (xhr.__nru_held_seq !== request_seq) {
+            settled = !0;
+            return;
+          }
+          if (is_servable_trade(trade)) {
             try {
               respond_with_cached_xhr(
                 xhr,
@@ -561,7 +602,9 @@
                   : trade,
                 { "x-nru-trade-cache": "hit" },
               );
+              trace(trade_id, "xhr: cache hit");
               settled = !0;
+              if (xhr.__nru_held_seq === request_seq) xhr.__nru_held_seq = null;
               return;
             } catch (err) {
               console.debug(
@@ -580,6 +623,7 @@
       setTimeout(() => send_real("lookup stalled, using network"), 650);
       return void 0;
     }
+    if (trade_id) trace(trade_id, "xhr: passthrough");
     return original_send.apply(xhr, args);
   };
 })();

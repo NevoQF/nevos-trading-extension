@@ -23,7 +23,7 @@ const chevron_svg =
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 
@@ -5795,6 +5795,19 @@ function init_settings_import_export() {
 
 const restore_btn = document.getElementById("restoreDefaultSettings");
 restore_btn.addEventListener("click", async () => {
+  // Two-click confirm so a stray click can't wipe every setting.
+  let label = restore_btn.querySelector(".btn-restore-label");
+  if (restore_btn.dataset.confirm !== "1") {
+    restore_btn.dataset.confirm = "1";
+    label.textContent = "Click again to reset";
+    setTimeout(() => {
+      if (restore_btn.dataset.confirm !== "1") return;
+      restore_btn.dataset.confirm = "";
+      label.textContent = "Reset to Defaults";
+    }, 4000);
+    return;
+  }
+  restore_btn.dataset.confirm = "";
   restore_btn.disabled = true;
   await restore_defaults();
   apply_popup_theme(popup_theme_default);
@@ -5936,6 +5949,11 @@ const ta_actions = [
     section: "inbound",
   },
   {
+    id: "cancel_inbound_with_item",
+    label: "Cancel inbound trades with an item…",
+    section: "inbound",
+  },
+  {
     id: "cancel_inbound_all",
     label: "Cancel all inbound trades",
     section: "inbound",
@@ -5948,6 +5966,11 @@ const ta_actions = [
   {
     id: "cancel_outbound_unowned",
     label: "Cancel outbound trades with unowned items",
+    section: "outbound",
+  },
+  {
+    id: "cancel_outbound_with_item",
+    label: "Cancel outbound trades with an item…",
     section: "outbound",
   },
   {
@@ -6133,6 +6156,98 @@ async function ta_show_overpay_config(action_label, on_confirm) {
     let pct = Math.max(0, parseFloat(input.value) || 0);
     overlay.remove();
     on_confirm(pct);
+  });
+}
+
+async function ta_show_item_config(action_label, on_confirm) {
+  let existing = document.querySelector(".ta-confirm-overlay");
+  if (existing) existing.remove();
+  let locked_count = await ta_get_locked_trade_count();
+  let item_data = await new Promise((resolve) =>
+    chrome.runtime.sendMessage("getData", (r) =>
+      resolve(chrome.runtime.lastError ? null : r),
+    ),
+  );
+  let rows = Object.entries(item_data?.items || {}).filter(
+    ([, row]) => Array.isArray(row) && typeof row[0] === "string",
+  );
+
+  let overlay = document.createElement("div");
+  overlay.className = "ta-confirm-overlay";
+  overlay.innerHTML = `
+    <div class="ta-confirm-box">
+      <div class="ta-confirm-title">Pick an item</div>
+      <div class="ta-confirm-msg">${escape_html(action_label.replace(/…$/, ""))}.${ta_locked_count_html(locked_count)}</div>
+      <input class="ta-item-search" type="text" placeholder="Item name or acronym" autocomplete="off" spellcheck="false" id="ta-item-input">
+      <div class="ta-item-results" id="ta-item-results"></div>
+      <div class="ta-filter-row">
+        <span class="ta-filter-label">Item is in</span>
+        <select class="ta-filter-unit-select" id="ta-item-side">
+          <option value="any" selected>either side</option>
+          <option value="theirs">their side</option>
+          <option value="mine">my side</option>
+        </select>
+      </div>
+      <div class="ta-confirm-actions">
+        <button class="ta-confirm-btn ta-confirm-cancel">Cancel</button>
+        <button class="ta-confirm-btn ta-confirm-go" disabled>Do it</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  let input = overlay.querySelector("#ta-item-input");
+  let results = overlay.querySelector("#ta-item-results");
+  let go = overlay.querySelector(".ta-confirm-go");
+  let picked = null;
+  let render = () => {
+    let q = input.value.trim().toLowerCase();
+    if (picked && input.value === picked.name) return;
+    picked = null;
+    go.disabled = true;
+    if (!q) return void (results.innerHTML = "");
+    let hits = rows
+      .filter(
+        ([, row]) =>
+          row[0].toLowerCase().includes(q) ||
+          String(row[1] || "").toLowerCase() === q,
+      )
+      .sort((a, b) => (b[1][4] || 0) - (a[1][4] || 0))
+      .slice(0, 6);
+    results.innerHTML = hits.length
+      ? hits
+          .map(
+            ([id, row]) =>
+              `<button type="button" class="ta-item-hit" data-id="${escape_html(id)}">${escape_html(row[0])}${row[1] ? ` <span>${escape_html(row[1])}</span>` : ""}</button>`,
+          )
+          .join("")
+      : `<div class="ta-item-empty">No matching items.</div>`;
+  };
+  results.addEventListener("click", (e) => {
+    let hit = e.target.closest(".ta-item-hit");
+    if (!hit) return;
+    let row = item_data.items[hit.dataset.id];
+    picked = { id: Number(hit.dataset.id), name: row[0] };
+    input.value = row[0];
+    results.innerHTML = "";
+    go.disabled = false;
+  });
+  input.addEventListener("input", render);
+  requestAnimationFrame(() => input.focus());
+
+  overlay
+    .querySelector(".ta-confirm-cancel")
+    .addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) overlay.remove();
+  });
+  go.addEventListener("click", () => {
+    if (!picked) return input.focus();
+    overlay.remove();
+    on_confirm({
+      id: picked.id,
+      side: overlay.querySelector("#ta-item-side").value,
+    });
   });
 }
 
@@ -6397,15 +6512,19 @@ function render_bulk_cancel_into(bulk_inner) {
       if (btn.disabled || btn.classList.contains("ta-running")) return;
       let is_overpay = action.id.endsWith("_overpaying");
       let is_duration = action.id === "cancel_outbound_older_than";
+      let is_item = action.id.endsWith("_with_item");
       let show = is_overpay
         ? ta_show_overpay_config
         : is_duration
           ? ta_show_duration_config
-          : ta_show_confirm;
+          : is_item
+            ? ta_show_item_config
+            : ta_show_confirm;
       show(action.label, async (param = 0) => {
         let payload = { action: action.id };
         if (is_overpay) payload.min_overpay_pct = param;
         if (is_duration) payload.max_trade_age_ms = param;
+        if (is_item) payload.item_filter = param;
         await ta_send("ta_start", payload);
         ta_start_polling();
         let p = await ta_send("ta_progress");
@@ -6442,8 +6561,10 @@ async function ms_load_inventory_session() {
     );
     ms_inventory_session_promise = null;
     if (!res?.ok) throw new Error(res?.error || "Could not load inventory");
-    ms_inventory_session_items = res.items || [];
-    return ms_inventory_session_items;
+    let items = res.items || [];
+    // Cache only real results so an empty load is retried on next open.
+    if (items.length) ms_inventory_session_items = items;
+    return items;
   })();
   return ms_inventory_session_promise;
 }

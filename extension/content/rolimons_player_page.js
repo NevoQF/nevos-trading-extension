@@ -766,7 +766,8 @@
     ]);
     // Incomplete fetches (VPN 429s mid-pagination) must not mutate the page —
     // that would strip owned items that never made it into the partial list.
-    if (!tradable_res?.complete) {
+    // Missing item data would inject cards worth 0, so wait for it too.
+    if (!tradable_res?.complete || !Object.keys(roli_items).length) {
       ran_for_user = "";
       if (!player_fix_retry_timer) {
         let wait_ms = tradable_res?.status === 429 ? 30000 : 15000;
@@ -1602,6 +1603,8 @@
 
   const TC_TRADE_STAMP_ID = "nte-roli-tc-trade";
   let tc_usd_roli = null;
+  // Off switch for the USD rows this adds to Rolimons' calculator and trade ads.
+  const TC_USD_OPTION = "USD on Rolimons Pages";
   let tc_usd_routility = null;
   let tc_usd_timer = 0;
   let tc_usd_observer = null;
@@ -1952,8 +1955,13 @@
   }
 
   async function refresh_tc_usd_data() {
+    let enabled = true;
     try {
-      tc_usd_routility = await send_message("getRoutilityData");
+      let st = await chrome.storage.local.get([TC_USD_OPTION]);
+      enabled = st[TC_USD_OPTION] !== false;
+    } catch {}
+    try {
+      tc_usd_routility = enabled ? await send_message("getRoutilityData") : null;
     } catch {
       tc_usd_routility = null;
     }
@@ -2008,7 +2016,7 @@
     usd_storage_hooked = true;
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== "local") return;
-      if (changes.data || changes.routility_data)
+      if (changes.data || changes.routility_data || changes[TC_USD_OPTION])
         refresh_tc_usd_data().catch(() => {});
     });
   }

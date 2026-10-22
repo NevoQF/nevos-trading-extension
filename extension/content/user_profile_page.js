@@ -796,10 +796,14 @@
           });
           nte_send_message(msg, function (data) {
             if (!extension_alive()) return;
-            rolimons_name_cache = undefined;
-            rolimons_data = data;
-            if (data) callback();
-            setTimeout(() => refresh_data(callback), 60000);
+            // Keep the last good data on a failed refresh; retry sooner without any.
+            let ok = !!(data?.items && Object.keys(data.items).length);
+            if (ok) {
+              rolimons_name_cache = undefined;
+              rolimons_data = data;
+              callback();
+            }
+            setTimeout(() => refresh_data(callback), ok || rolimons_data ? 60000 : 5000);
           });
         },
     );

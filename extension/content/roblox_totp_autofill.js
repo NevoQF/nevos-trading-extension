@@ -397,6 +397,39 @@
     return (code % mod).toString().padStart(digits, "0");
   }
 
+  // Roblox reuses this input id for authenticator, email, SMS and recovery-code challenges.
+  // Only an authenticator challenge takes a TOTP; filling the others is the "wrong code" report.
+  const OTHER_CHALLENGE_RE =
+    /e-?mail|correo|courriel|sms|text message|phone|tel[ée]fono|t[ée]l[ée]phone|telefon|телефон|почт|メール|電話|이메일|휴대폰|邮件|電子郵件|手机|手機/i;
+  const AUTHENTICATOR_RE =
+    /authenticat|authentificat|authentifizier|autenticad|autentica|autentik|uwierzyteln|аутентиф|認証アプリ|인증 앱|인증앱|验证器|驗證器|身份验证|xác thực|kimlik doğrulama/i;
+
+  function challenge_text(input) {
+    let el = input;
+    for (let i = 0; i < 8 && el && el.parentElement; i++) {
+      el = el.parentElement;
+      const t = String(el.innerText || "");
+      if (t.length > 40) return t.slice(0, 1200);
+    }
+    return "";
+  }
+
+  // "authenticator" | "other" | "unknown"
+  function challenge_kind(input) {
+    if (input.maxLength === 9 || input.getAttribute("inputmode") !== "numeric") return "other";
+    const text = challenge_text(input);
+    if (text.includes("@") || OTHER_CHALLENGE_RE.test(text)) return "other";
+    if (AUTHENTICATOR_RE.test(text)) return "authenticator";
+    return "unknown";
+  }
+
+  // A code typed in the last seconds of its window can expire before Roblox checks it.
+  const MIN_CODE_LIFETIME_MS = 4000;
+  function ms_left_in_step(step_sec = 30) {
+    const step_ms = step_sec * 1000;
+    return step_ms - (Date.now() % step_ms);
+  }
+
   function set_native_value(input, value) {
     try {
       const desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
@@ -418,6 +451,7 @@
   async function try_fill(input) {
     if (!input || !input.isConnected || in_flight) return;
     if (String(input.value || "").replace(/\D/g, "").length > 0) return;
+    if (challenge_kind(input) === "other") return;
 
     let st;
     try {
@@ -458,6 +492,8 @@
     in_flight = true;
     try {
       try {
+        const left = ms_left_in_step();
+        if (left < MIN_CODE_LIFETIME_MS) await new Promise((r) => setTimeout(r, left + 250));
         const code = await make_totp(secret);
         if (!code || !input.isConnected) return;
         if (String(input.value || "").replace(/\D/g, "").length > 0) return;

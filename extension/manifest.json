@@ -82,6 +82,7 @@
         "shared/nte_icons.js",
         "shared/tap_tooltip.js",
         "content/analyze_trade.js",
+        "shared/nte_sales_core.js",
         "content/trade_page.js"
       ],
       "matches": [
@@ -227,6 +228,33 @@
         "https://rolimons.com/bundle/*"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "js": [
+        "shared/browser_compat.js",
+        "shared/build_variant.js",
+        "content/rolimons_item_page.js"
+      ],
+      "matches": [
+        "https://www.rolimons.com/player/*",
+        "https://rolimons.com/player/*"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "js": [
+        "shared/browser_compat.js",
+        "content/rolimons_trade_ads_extras.js"
+      ],
+      "matches": [
+        "https://www.rolimons.com/trades",
+        "https://www.rolimons.com/trades*",
+        "https://rolimons.com/trades",
+        "https://rolimons.com/trades*",
+        "https://www.rolimons.com/itemtrades/*",
+        "https://rolimons.com/itemtrades/*"
+      ],
+      "run_at": "document_idle"
     }
   ],
   "description": "Free trading extension for Roblox traders.",
@@ -273,7 +301,7 @@
     "activeTab"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.51",
+  "version": "3.10.52",
   "web_accessible_resources": [
     {
       "matches": [
@@ -282,6 +310,7 @@
       ],
       "resources": [
         "scripts/rolimons_trade_calc_inventory_patch.js",
+        "scripts/rolimons_trade_ads_patch.js",
         "assets/routility.png",
         "assets/icons/logo.png",
         "assets/icons/logo32.png",

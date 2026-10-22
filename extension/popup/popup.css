@@ -2217,6 +2217,11 @@ body.nte-lite .header-discord-link {
   display: none;
 }
 
+.btn-restore[data-confirm="1"] {
+  color: #f87171;
+  border-color: color-mix(in srgb, #f87171 40%, var(--border));
+}
+
 body.theme-retro {
   --bg-primary: #e8e8e8;
   --bg-secondary: #d6d6d6;
@@ -9521,6 +9526,66 @@ body.is-tradeads-tab .popup {
 
 .ta-filter-unit-select:focus {
   border-color: var(--accent);
+}
+
+.ta-confirm-go:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
+.ta-item-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--bg-toggle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.ta-item-search:focus {
+  border-color: var(--accent);
+}
+
+.ta-item-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.ta-item-hit {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ta-item-hit:hover {
+  background: var(--bg-card-hover);
+}
+
+.ta-item-hit span,
+.ta-item-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.ta-item-empty {
+  padding: 4px 10px;
 }
 
 .ta-stop-btn {

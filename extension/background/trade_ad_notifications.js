@@ -629,8 +629,14 @@ function trade_ad_notif_merge_matches(existing, incoming) {
       by_id.set(key, row);
     }
   }
+  // Newest ad first; matchedAt alone puts old ads from a rescan on top.
   return Array.from(by_id.values())
-    .sort((a, b) => Number(b.matchedAt) - Number(a.matchedAt))
+    .sort(
+      (a, b) =>
+        trade_ad_notif_ad_created_at_seconds(b) -
+          trade_ad_notif_ad_created_at_seconds(a) ||
+        Number(b.matchedAt) - Number(a.matchedAt),
+    )
     .slice(0, trade_ad_notif_max_matches);
 }
 
