@@ -1821,13 +1821,12 @@ async function ms_send_trade(
       .toLowerCase();
     if (challenge_type && challenge_type !== "twostepverification") {
       // Captcha / proof-of-work / device checks can't be solved from here.
+      // Must stay a string: an Error reaches the popup as "[object Object]".
       return {
         resp,
         data,
         csrf: challenge_csrf,
-        error: new Error(
-          `Roblox asked for a security check (${challenge_type}) instead of 2FA. Send one trade by hand on roblox.com to clear it, then start again.`,
-        ),
+        error: `Roblox asked for a security check (${challenge_type}) instead of 2FA, which mass send can't do. Send one trade by hand on roblox.com, then start again. If it keeps happening, Roblox's Enhanced Protection setting may be on.`,
       };
     }
     if (!info) {
@@ -2198,7 +2197,10 @@ async function ms_run(config) {
       }
 
       if (result.error) {
-        ms_state.error = result.error;
+        ms_state.error =
+          typeof result.error === "string"
+            ? result.error
+            : result.error?.message || String(result.error);
         ms_state.failed++;
         break;
       }

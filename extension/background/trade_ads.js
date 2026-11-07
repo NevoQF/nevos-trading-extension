@@ -281,22 +281,12 @@ function trade_ads_pick_random_requests(
 }
 
 function trade_ads_clamp_requests(offer_ids, request_ids, item_data) {
-  let items = item_data?.items || {};
-  let get_val = (id) => trade_ads_effective_value(items[String(id)]);
-  let offer_sum = (offer_ids || []).reduce((s, id) => s + get_val(id), 0);
-  let cap = Math.max(0, Math.floor(offer_sum * 1.8));
   let ids = (request_ids || [])
     .map(Number)
     .filter((n) => Number.isFinite(n) && n > 0)
     .slice(0, 4);
-  let sum = ids.reduce((s, id) => s + get_val(id), 0);
   // Manual requests: never invent tags and never silently drop the user's picks.
-  // Rolimons rejects ads where request value is far above offer value (~1.8×).
-  if (sum > cap) {
-    throw new Error(
-      `Request value is too high for this offer (about ${sum.toLocaleString()} vs ${offer_sum.toLocaleString()} offer). Rolimons allows roughly 1.8× offer value — remove some request items or add more offer value.`,
-    );
-  }
+  // Rolimons decides what it accepts; a local value cap blocked ads it allows.
   return { ids, tags: [] };
 }
 
