@@ -11,6 +11,9 @@
   const cache = new Map();
   const pending = new Map();
   const cache_ttl_ms = 6 * 60 * 60 * 1000;
+  // Ids the profiles API doesn't return (terminated users): only native knows them.
+  const missing_ids = new Map();
+  const missing_ttl_ms = 10 * 60 * 1000;
   const profiles_url =
     "https://apis.roblox.com/user-profile-api/v1/user/profiles/get-profiles";
   const users_batch_re = /^https:\/\/users\.roblox\.com\/v1\/users\/?(?:\?|$)/i;
@@ -42,6 +45,8 @@
   function parse_user_ids(body) {
     try {
       let data = JSON.parse(body || "{}");
+      // Banned-user filtering changes the answer; let it pass through uncached.
+      if (data?.excludeBannedUsers === true) return [];
       let ids = Array.isArray(data?.userIds) ? data.userIds : [];
       return [
         ...new Set(
@@ -65,9 +70,18 @@
     return hit;
   }
 
+  function is_known_missing(id) {
+    let expires_at = missing_ids.get(String(id));
+    if (!expires_at) return false;
+    if (expires_at > now()) return true;
+    missing_ids.delete(String(id));
+    return false;
+  }
+
   function cache_set(user) {
     let id = String(user?.id || "");
     if (!id || !user?.name) return;
+    missing_ids.delete(id);
     cache.set(id, {
       id: Number(id),
       name: String(user.name || ""),
@@ -111,7 +125,7 @@
         headers,
         body: JSON.stringify({
           userIds: chunk,
-          fields: ["names.username", "names.displayName"],
+          fields: ["names.username", "names.displayName", "isVerified"],
         }),
       });
       if (!res.ok) continue;
@@ -119,7 +133,8 @@
       for (let profile of json?.profileDetails || []) {
         let id = Number(profile?.userId) || 0;
         let name = String(profile?.names?.username || "").trim();
-        if (!id || !name) continue;
+        // Without a real verified flag we'd cache false and hide checkmarks.
+        if (!id || !name || typeof profile?.isVerified !== "boolean") continue;
         let user = {
           id,
           name,
@@ -128,10 +143,14 @@
               profile?.names?.combinedName ||
               name,
           ),
-          hasVerifiedBadge: false,
+          hasVerifiedBadge: profile.isVerified,
         };
         cache_set(user);
         out.push(user);
+      }
+      // Only a successful reply proves an id is unknown to the profiles API.
+      for (let id of chunk) {
+        if (!cache.has(String(id))) missing_ids.set(String(id), now() + missing_ttl_ms);
       }
     }
     return out;
@@ -165,7 +184,8 @@
         });
       } else missing.push(id);
     }
-    if (missing.length) {
+    // A batch with a known-missing id can't be fully served, so skip the profiles call.
+    if (missing.length && !ids.some(is_known_missing)) {
       let loaded = await fetch_profiles(missing, header_info || {});
       found = found.concat(loaded);
     }
@@ -185,6 +205,17 @@
     return existing;
   }
 
+  function cache_native_rows(json) {
+    for (let row of json?.data || []) {
+      cache_set({
+        id: row?.id,
+        name: row?.name,
+        displayName: row?.displayName || row?.name,
+        hasVerifiedBadge: !!row?.hasVerifiedBadge,
+      });
+    }
+  }
+
   window.fetch = async function nte_users_api_rate_guard(input, init) {
     let url = get_request_url(input);
     let method = get_request_method(input, init);
@@ -200,20 +231,13 @@
       ids,
       request_headers_from_fetch(input, init),
     );
-    if (users.length) return make_users_response(users);
+    if (users.length === ids.length) return make_users_response(users);
 
     let response = await native_fetch(input, init);
     if (response.ok) {
       try {
         let json = await response.clone().json();
-        for (let row of json?.data || []) {
-          cache_set({
-            id: row?.id,
-            name: row?.name,
-            displayName: row?.displayName || row?.name,
-            hasVerifiedBadge: !!row?.hasVerifiedBadge,
-          });
-        }
+        cache_native_rows(json);
       } catch {}
     }
     return response;
@@ -258,7 +282,18 @@
       csrf: meta.headers["x-csrf-token"] || "",
       bat: meta.headers["x-bound-auth-token"] || "",
     }).then((users) => {
-      if (!users.length) {
+      if (users.length !== ids.length) {
+        xhr.addEventListener("load", () => {
+          try {
+            if (xhr.status !== 200) return;
+            if (!users_batch_re.test(String(xhr.responseURL || ""))) return;
+            let json =
+              xhr.responseType === "json"
+                ? xhr.response
+                : JSON.parse(xhr.responseText);
+            cache_native_rows(json);
+          } catch {}
+        }, { once: true });
         native_send.call(xhr, body);
         return;
       }

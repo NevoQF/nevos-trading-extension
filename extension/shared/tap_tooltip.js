@@ -121,7 +121,10 @@
     ensure_tap_tooltip_styles();
     bind_document_listeners();
     let scope = root && root.querySelectorAll ? root : document;
-    scope.querySelectorAll(selector || HOST_SELECTOR).forEach(bind_tap_tooltip_host);
+    let host_selector = selector || HOST_SELECTOR;
+    // Callers often pass the host itself, which querySelectorAll never returns.
+    if (scope !== document && scope.matches?.(host_selector)) bind_tap_tooltip_host(scope);
+    scope.querySelectorAll(host_selector).forEach(bind_tap_tooltip_host);
   }
 
   globalThis.init_tap_tooltips = init_tap_tooltips;

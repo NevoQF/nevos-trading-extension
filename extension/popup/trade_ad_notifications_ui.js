@@ -1562,7 +1562,7 @@
               <span class="ta-notif-next" id="ta-notif-next"></span>
             </div>
             <label class="ta-notif-toggle" title="Enable trade ad notifications">
-              <input type="checkbox" id="ta-notif-enabled" ${enabled ? "checked" : ""} />
+              <input type="checkbox" id="ta-notif-enabled" aria-label="Trade ad notifications" ${enabled ? "checked" : ""} />
               <span class="ta-notif-toggle-track"><span class="ta-notif-toggle-knob"></span></span>
             </label>
           </div>

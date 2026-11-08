@@ -4,7 +4,10 @@
     .filter(Boolean)
     .map((part) => part.toLowerCase());
 
-  if (!path_parts.length || "trades" !== path_parts[path_parts.length - 1]) return;
+  let last_part = path_parts[path_parts.length - 1];
+  // /users/<id>/trade is the send page: the patch only does send detection there.
+  let is_send_page = "trade" === last_part && path_parts.includes("users");
+  if (!path_parts.length || ("trades" !== last_part && !is_send_page)) return;
   if (!window.__nru_trade_detail_cache_bridge_loaded) {
     window.__nru_trade_detail_cache_bridge_loaded = true;
 

@@ -21,7 +21,7 @@
       style.textContent = `
         html.nte-analyze-trade-open{overflow:hidden!important}
         .nte-analyze-trade-modal{position:fixed!important;inset:0!important;z-index:2147483630!important;display:grid!important;place-items:center!important;padding:24px!important;background:rgba(8,10,14,.74)!important;backdrop-filter:blur(18px) saturate(120%);animation:nteAnalyzeModalIn .16s ease;pointer-events:auto!important}
-        .nte-analyze-trade-window{position:relative!important;display:flex;flex-direction:column;width:clamp(700px,84vw,1040px);height:min(92vh,940px);max-height:min(92vh,940px);overflow:hidden;border-radius:20px;background:radial-gradient(1200px 600px at 0% -20%,rgba(129,140,248,.08),transparent 55%),radial-gradient(900px 500px at 100% 120%,rgba(52,211,153,.05),transparent 50%),#181b24;border:1px solid rgba(255,255,255,.08);box-shadow:0 32px 80px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.025) inset;color:#e8eaed;font-family:'Inter','Segoe UI',Roboto,system-ui,sans-serif;font-variant-numeric:tabular-nums;animation:nteAnalyzeWindowIn .22s cubic-bezier(.2,.8,.2,1)}
+        .nte-analyze-trade-window{position:relative!important;display:flex;flex-direction:column;width:min(1040px,84vw,100%);height:min(92vh,940px);max-height:min(92vh,940px);overflow:hidden;border-radius:20px;background:radial-gradient(1200px 600px at 0% -20%,rgba(129,140,248,.08),transparent 55%),radial-gradient(900px 500px at 100% 120%,rgba(52,211,153,.05),transparent 50%),#181b24;border:1px solid rgba(255,255,255,.08);box-shadow:0 32px 80px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.025) inset;color:#e8eaed;font-family:'Inter','Segoe UI',Roboto,system-ui,sans-serif;font-variant-numeric:tabular-nums;animation:nteAnalyzeWindowIn .22s cubic-bezier(.2,.8,.2,1)}
         .light-theme .nte-analyze-trade-window{background:radial-gradient(1200px 600px at 0% -20%,rgba(99,102,241,.05),transparent 55%),#fcfcfd;border-color:rgba(15,23,42,.08);box-shadow:0 28px 70px rgba(15,23,42,.16);color:#0f172a}
         .nte-analyze-trade-topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 24px;border-bottom:1px solid rgba(255,255,255,.06);flex:0 0 auto;background:linear-gradient(180deg,rgba(255,255,255,.02),transparent)}
         .light-theme .nte-analyze-trade-topbar{border-bottom-color:rgba(15,23,42,.07);background:linear-gradient(180deg,rgba(15,23,42,.015),transparent)}
@@ -33,7 +33,7 @@
         .nte-analyze-trade-brand-text{min-width:0;display:flex;flex-direction:column;gap:4px}
         .nte-analyze-trade-brand-title{font-size:17px;font-weight:800;letter-spacing:-.015em;line-height:1;color:#f3f4f6}
         .light-theme .nte-analyze-trade-brand-title{color:#0f172a}
-        .nte-analyze-trade-brand-sub{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.12em;color:#6b7280;line-height:1}
+        .nte-analyze-trade-brand-sub{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.12em;color:#9ca3af;line-height:1}
         .nte-analyze-trade-close{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:10px;border:0;background:transparent;color:#9ca3af;cursor:pointer;font:inherit;font-size:22px;line-height:1;transition:background-color .15s,color .15s}
         .light-theme .nte-analyze-trade-close{color:#64748b}
         .nte-analyze-trade-close:hover{background:rgba(255,255,255,.06);color:#f3f4f6}
@@ -62,7 +62,7 @@
         .light-theme .nte-analyze-trade-verdict-action{color:#475569}
         .nte-analyze-trade-reasons{padding:20px 22px;border-radius:15px;background:#222632;border:1px solid rgba(255,255,255,.06)}
         .light-theme .nte-analyze-trade-reasons{background:#f8fafc;border-color:rgba(15,23,42,.07)}
-        .nte-analyze-trade-reasons-title{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.12em;color:#6b7280;margin-bottom:14px}
+        .nte-analyze-trade-reasons-title{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.12em;color:#9ca3af;margin-bottom:14px}
         .nte-analyze-trade-reasons-title:before{content:"";width:18px;height:1px;background:currentColor;opacity:.5}
         .nte-analyze-trade-reasons-title:after{content:"";flex:1;height:1px;background:currentColor;opacity:.18}
         .nte-analyze-trade-reason-list{display:flex;flex-direction:column;gap:12px;margin:0;padding:0;list-style:none}
@@ -82,13 +82,13 @@
         .nte-analyze-trade-side.is-receive:before{background:#10b981}
         .nte-analyze-trade-side-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid rgba(255,255,255,.05)}
         .light-theme .nte-analyze-trade-side-head{border-bottom-color:rgba(15,23,42,.06)}
-        .nte-analyze-trade-side-kicker{font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.1em;color:#6b7280}
+        .nte-analyze-trade-side-kicker{font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.1em;color:#9ca3af}
         .nte-analyze-trade-side-title{margin-top:5px;font-size:16px;font-weight:800;letter-spacing:-.025em;color:#e5e7eb}
         .light-theme .nte-analyze-trade-side-title{color:#0f172a}
         .nte-analyze-trade-side-totals{text-align:right}
         .nte-analyze-trade-side-total{font-size:18px;font-weight:850;letter-spacing:-.025em;line-height:1;color:#e5e7eb}
         .light-theme .nte-analyze-trade-side-total{color:#0f172a}
-        .nte-analyze-trade-side-rap{margin-top:5px;font-size:11px;color:#6b7280}
+        .nte-analyze-trade-side-rap{margin-top:5px;font-size:11px;color:#9ca3af}
         .nte-analyze-trade-items{display:grid;align-content:start;gap:9px;flex:1 1 auto;min-height:0;overflow:auto;padding-right:2px;scrollbar-width:thin}
         .nte-analyze-trade-item{display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;align-items:center;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.05);transition:background-color .15s,border-color .15s,transform .15s}
         .light-theme .nte-analyze-trade-item{background:#fff;border-color:rgba(15,23,42,.06)}
@@ -96,7 +96,7 @@
         .light-theme .nte-analyze-trade-item:hover{background:#fafbfc;border-color:rgba(15,23,42,.1)}
         .nte-analyze-trade-thumb{width:44px;height:44px;border-radius:10px;object-fit:contain;background:#1a1d26;border:1px solid rgba(255,255,255,.05)}
         .light-theme .nte-analyze-trade-thumb{background:#e2e8f0;border-color:rgba(15,23,42,.06)}
-        .nte-analyze-trade-thumb.nte-history-thumb--empty{display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#6b7280}
+        .nte-analyze-trade-thumb.nte-history-thumb--empty{display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;color:#9ca3af}
         .nte-analyze-trade-robux-mark{display:flex;align-items:center;justify-content:center;background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.2);font-size:12px;font-weight:800;color:#f59e0b}
         .nte-analyze-trade-item-copy{min-width:0}
         .nte-analyze-trade-item-line{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
@@ -104,13 +104,14 @@
         .light-theme .nte-analyze-trade-item-name{color:#334155}
         .nte-analyze-trade-item-main{font-size:13px;font-weight:850;line-height:1.25;white-space:nowrap;color:#f3f4f6}
         .light-theme .nte-analyze-trade-item-main{color:#0f172a}
-        .nte-analyze-trade-item-meta{margin-top:3px;font-size:10px;line-height:1.35;color:#6b7280}
+        .nte-analyze-trade-item-meta{margin-top:3px;font-size:10px;line-height:1.35;color:#9ca3af}
         .nte-analyze-trade-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:auto;padding-top:14px;border-top:1px solid rgba(255,255,255,.05);flex-wrap:wrap}
         .light-theme .nte-analyze-trade-foot{border-top-color:rgba(15,23,42,.06)}
-        .nte-analyze-trade-disclaimer{display:inline-flex;align-items:center;gap:8px;font-size:11px;line-height:1.45;color:#6b7280;font-weight:500;flex:1;min-width:0}
+        .nte-analyze-trade-disclaimer{display:inline-flex;align-items:center;gap:8px;font-size:11px;line-height:1.45;color:#9ca3af;font-weight:500;flex:1;min-width:0}
         .nte-analyze-trade-disclaimer svg{flex:0 0 auto;width:13px;height:13px;opacity:.7}
         .nte-analyze-trade-credit a{display:inline-flex;align-items:center;gap:8px;padding:7px 12px;border-radius:999px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);color:#9ca3af;text-decoration:none;font-size:11px;font-weight:650;transition:opacity .15s,border-color .15s,color .15s}
-        .light-theme .nte-analyze-trade-credit a{background:#f1f5f9;border-color:rgba(15,23,42,.07);color:#64748b}
+        .light-theme .nte-analyze-trade-credit a{background:#f1f5f9;border-color:rgba(15,23,42,.07);color:#475569}
+        .light-theme .nte-analyze-trade-brand-sub,.light-theme .nte-analyze-trade-reasons-title,.light-theme .nte-analyze-trade-side-kicker,.light-theme .nte-analyze-trade-side-rap,.light-theme .nte-analyze-trade-thumb.nte-history-thumb--empty,.light-theme .nte-analyze-trade-item-meta,.light-theme .nte-analyze-trade-disclaimer{color:#6b7280}
         .nte-analyze-trade-credit a:hover{border-color:rgba(141,223,215,.32);color:#cbd5e1}
         .light-theme .nte-analyze-trade-credit a:hover{color:#334155}
         .nte-analyze-trade-credit img{width:16px;height:16px;border-radius:4px;object-fit:contain;background:transparent}
@@ -325,12 +326,9 @@
       return `
         <div class="nte-analyze-trade-topbar">
           <div class="nte-analyze-trade-brand">
-            <div class="nte-analyze-trade-brand-mark">
-              ${logo_url ? `<img src="${attr_esc(logo_url)}" alt="">` : "<span>N</span>"}
-            </div>
+            ${logo_url ? `<div class="nte-analyze-trade-brand-mark"><img src="${attr_esc(logo_url)}" alt=""></div>` : ""}
             <div class="nte-analyze-trade-brand-text">
-              <div class="nte-analyze-trade-brand-title">Nevos Trading Extension</div>
-              <div class="nte-analyze-trade-brand-sub">Trade Analysis</div>
+              <div class="nte-analyze-trade-brand-title">Trade Analysis</div>
             </div>
           </div>
           ${render_close_button()}
@@ -348,11 +346,18 @@
     }
 
     function close(btn) {
+      let was_open = !!document.querySelector(".nte-analyze-trade-modal");
       request_token++;
       remove_modal();
       if (btn) set_btn_idle(btn);
       else document.querySelectorAll(".nte-analyze-trade-btn--active,.nte-analyze-trade-btn--loading").forEach((el) => set_btn_idle(el));
       deps.assert_dominance();
+      // Only hand focus back if the modal was open; routine refreshes must not steal it.
+      if (was_open && btn?.isConnected) {
+        try {
+          btn.focus({ preventScroll: true });
+        } catch {}
+      }
     }
 
     function get_panel(btn) {
@@ -372,7 +377,32 @@
       document.body.appendChild(modal);
       document.documentElement.classList.add("nte-analyze-trade-open");
       escape_handler = (event) => {
-        if (event.key === "Escape") close(btn);
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          event.preventDefault();
+          close(btn);
+          return;
+        }
+        if (event.key !== "Tab") return;
+        // Simple focus trap: wrap Tab / Shift+Tab inside the panel.
+        let focusables = [
+          ...panel.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'),
+        ].filter((el) => el.getClientRects().length);
+        if (!focusables.length) {
+          event.preventDefault();
+          panel.focus({ preventScroll: true });
+          return;
+        }
+        let first = focusables[0];
+        let last = focusables[focusables.length - 1];
+        let active = document.activeElement;
+        if (event.shiftKey && (active === first || active === panel || !panel.contains(active))) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && (active === last || !panel.contains(active))) {
+          event.preventDefault();
+          first.focus();
+        }
       };
       document.addEventListener("keydown", escape_handler, true);
       setTimeout(() => panel.focus({ preventScroll: true }), 0);
@@ -384,6 +414,9 @@
       let modal = panel.closest(".nte-analyze-trade-modal");
       let close_btn = panel.querySelector(".nte-analyze-trade-close");
       if (close_btn) close_btn.onclick = () => close(btn);
+      panel.querySelectorAll(".nte-analyze-trade-brand-mark img").forEach((img) => {
+        img.addEventListener("error", () => img.parentElement?.remove(), { once: true });
+      });
       if (modal) {
         modal.onmousedown = (event) => {
           if (event.target === modal) close(btn);
@@ -425,9 +458,17 @@
     function get_tone(result, verdict) {
       let texts = verdict_texts(result, verdict);
       let combined = texts.join(" ").toLowerCase();
-      if (/\b(equal|even|neutral|fair|balanced|break ?even|roughly even)\b/.test(combined)) return "is-warn";
+      // Explicit booleans win over anything in the free text.
       if (verdict?.ok === true || verdict?.take === true || verdict?.accept === true) return "is-good";
       if (verdict?.ok === false || verdict?.take === false || verdict?.accept === false) return "is-bad";
+      // "even"/"fair"/"risk" in a long message is not a verdict; only trust tone/status/label fields.
+      let status_text = [verdict?.tone, verdict?.status, verdict?.label, result?.tone, result?.status, result?.label]
+        .map(text_value)
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (/\b(risky|risk|caution|careful|warning)\b/.test(status_text)) return "is-warn";
+      if (/\b(equal|even|neutral|fair|balanced|break ?even|roughly even)\b/.test(status_text)) return "is-warn";
       if (/\b(do not take|don't take|avoid|decline|reject|bad|loss|lose|losing|negative|underpay|lowball|not worth)\b/.test(combined)) return "is-bad";
       if (/\b(take|accept|good|profit|win|winning|positive|worth|favorable|recommended|green)\b/.test(combined)) return "is-good";
       return "is-warn";
@@ -456,10 +497,12 @@
     }
 
     function render_verdict_message(title, action) {
+      // The service can send one sentence as both the verdict and the action; show it once.
+      let same = String(action || "").trim().toLowerCase() === String(title || "").trim().toLowerCase();
       return `
         <div class="nte-analyze-trade-verdict-copy">
           <div class="nte-analyze-trade-verdict-title">${esc(title)}</div>
-          <div class="nte-analyze-trade-verdict-action">${esc(action)}</div>
+          ${action && !same ? `<div class="nte-analyze-trade-verdict-action">${esc(action)}</div>` : ""}
         </div>
       `;
     }
@@ -731,8 +774,17 @@
           return;
         }
         let payload = trade_data.payload;
-        if (!payload.give_item_ids.length && payload.give_robux <= 0) throw new Error("Could not read what you give from this trade.");
-        if (!payload.receive_item_ids.length && payload.receive_robux <= 0) throw new Error("Could not read what you receive from this trade.");
+        // While composing, an empty side just means nothing was added yet.
+        // The older Angular page keeps this window in the DOM, hidden, on the list view.
+        let request_window = document.querySelector(".trade-request-window");
+        let composing =
+          !!request_window &&
+          !request_window.classList.contains("ng-hide") &&
+          request_window.getClientRects().length > 0;
+        if (!payload.give_item_ids.length && payload.give_robux <= 0)
+          throw new Error(composing ? "Add the items you're offering first." : "Could not read what you give from this trade.");
+        if (!payload.receive_item_ids.length && payload.receive_robux <= 0)
+          throw new Error(composing ? "Add the items you're asking for first." : "Could not read what you receive from this trade.");
 
         let data = await new Promise((resolve) => {
           deps.send_message({ type: "analyzeTrade", ...payload }, resolve);

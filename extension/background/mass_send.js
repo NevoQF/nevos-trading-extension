@@ -24,16 +24,29 @@ let ms_state = {
   remaining: 0,
   total: 0,
   error: "",
+  last_failure: "",
   wait_until: 0,
   status: "",
   prompt: null,
 };
 let ms_abort = false;
+// Bumped on every run start and stop so a stale loop can never keep sending.
+let ms_run_seq = 0;
+// Send still in flight from a stopped run; a restart waits for it.
+let ms_pending_send = null;
+let ms_2fa_timeout_error = "";
+const ms_2fa_wait_timeout_ms = 5 * 60 * 1000;
+const ms_max_consecutive_failures = 5;
 let ms_wake = null;
 let ms_session_secret = null;
 let ms_last_used_totp = null;
 let ms_2fa_waiters = [];
 let ms_2fa_click_bound = false;
+
+// A stopped or replaced run must never send, prompt, or write ms_state.
+function ms_run_live(run_id) {
+  return !ms_abort && run_id === ms_run_seq;
+}
 
 function ms_default_state() {
   return {
@@ -45,6 +58,7 @@ function ms_default_state() {
     remaining: 0,
     total: 0,
     error: "",
+    last_failure: "",
     wait_until: 0,
     status: "",
     prompt: null,
@@ -93,12 +107,16 @@ function ms_sleep(ms) {
 
 function ms_stop_now() {
   ms_abort = true;
+  ms_run_seq++;
   if (ms_state.running) {
     ms_state.wait_until = 0;
     ms_state.error = "Cancelled by user";
     ms_state.running = false;
     ms_state.status = "Stopped";
+    ms_state.phase = "stopped";
   }
+  ms_session_secret = null;
+  ms_stop_keep_alive();
   if (ms_wake) {
     ms_wake();
     ms_wake = null;
@@ -229,7 +247,7 @@ async function ms_trade_api_fetch(url, init) {
   if (typeof fetch_trade_api === "function") {
     return fetch_trade_api(url, init);
   }
-  return fetch(url, init);
+  return fetch_with_timeout(url, init);
 }
 
 async function ms_fetch_outbound_trades_for_daily_limit(cutoff) {
@@ -660,7 +678,7 @@ async function ms_fetch_tradable_items(user_id, options = {}) {
       for (let attempt = 0; attempt < 3; attempt++) {
         if (ms_abort && !ignore_abort) break;
         try {
-          res = await fetch(url, { credentials: "include" });
+          res = await fetch_with_timeout(url, { credentials: "include" });
         } catch {
           res = null;
         }
@@ -794,7 +812,7 @@ async function ms_fetch_outbound_user_ids() {
     let url =
       "https://trades.roblox.com/v1/trades/outbound?limit=100&sortOrder=Desc";
     if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
-    let resp = await fetch(url, { credentials: "include" });
+    let resp = await fetch_with_timeout(url, { credentials: "include" });
     if (!resp.ok || ms_abort) break;
     let json = await resp.json().catch(() => null);
     if (!json) break;
@@ -816,7 +834,7 @@ async function ms_fetch_outbound_user_ids() {
 }
 
 async function ms_fetch_owners(asset_ids) {
-  let res = await fetch(mass_send_owners_api_url, {
+  let res = await fetch_with_timeout(mass_send_owners_api_url, {
     method: "POST",
     headers:
       typeof nte_api_headers === "function"
@@ -830,7 +848,7 @@ async function ms_fetch_owners(asset_ids) {
     body: JSON.stringify({ asset_ids: asset_ids.map(String) }),
     cache: "no-store",
     credentials: "omit",
-  });
+  }, 180000); // server scrapes through proxies and retries
   let payload = await res.json().catch(() => null);
   if (
     !res.ok ||
@@ -1018,7 +1036,7 @@ async function ms_fetch_username(user_id) {
   let id = Number(user_id) || 0;
   if (!(id > 0)) return "";
   try {
-    let res = await fetch(`https://users.roblox.com/v1/users/${id}`, {
+    let res = await fetch_with_timeout(`https://users.roblox.com/v1/users/${id}`, {
       credentials: "include",
     });
     if (!res.ok) return "";
@@ -1034,7 +1052,7 @@ async function ms_inventory_for_picker() {
     ? get_authenticated_user_cached()
     : null);
   if (!me?.id) {
-    let auth_res = await fetch(
+    let auth_res = await fetch_with_timeout(
       "https://users.roblox.com/v1/users/authenticated",
       { credentials: "include" },
     );
@@ -1120,25 +1138,29 @@ async function ms_inventory_for_picker() {
 
 async function ms_get_csrf() {
   if (typeof ta_get_csrf === "function") return ta_get_csrf();
-  let resp = await fetch("https://auth.roblox.com/v2/logout", {
+  let resp = await fetch_with_timeout("https://auth.roblox.com/v2/logout", {
     method: "POST",
     credentials: "include",
   });
   return resp.headers.get("x-csrf-token") || "";
 }
 
-async function ms_wait_rate_limit() {
+async function ms_wait_rate_limit(run_id) {
+  if (!ms_run_live(run_id)) return;
   let ends = Date.now() + mass_send_rate_limit_wait_ms;
   ms_state.wait_until = ends;
-  while (!ms_abort && Date.now() < ends) {
+  while (ms_run_live(run_id) && Date.now() < ends) {
     let left = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
     ms_state.status = `Ratelimited waiting ${left}s`;
     let slice = Math.min(1000, Math.max(0, ends - Date.now()));
     if (slice <= 0) break;
     await ms_sleep(slice);
   }
-  ms_state.wait_until = 0;
+  if (run_id === ms_run_seq) ms_state.wait_until = 0;
 }
+
+const ms_send_unknown_error =
+  "Roblox didn't answer in time, so the last trade may or may not have been sent. Check your outbound trades, then start again.";
 
 function ms_clamp_robux(value) {
   let n = Math.floor(Number(value));
@@ -1147,6 +1169,7 @@ function ms_clamp_robux(value) {
 }
 
 async function ms_send_trade_with_rate_limit(
+  run_id,
   csrf,
   self_id,
   recipient_id,
@@ -1155,28 +1178,36 @@ async function ms_send_trade_with_rate_limit(
   offer_robux = 0,
   request_robux = 0,
 ) {
-  let result = await ms_send_trade(
-    csrf,
-    self_id,
-    recipient_id,
-    offer_instances,
-    their_instances,
-    offer_robux,
-    request_robux,
-  );
+  let send = async () => {
+    try {
+      return await ms_send_trade(
+        csrf,
+        self_id,
+        recipient_id,
+        offer_instances,
+        their_instances,
+        offer_robux,
+        request_robux,
+        true,
+        run_id,
+      );
+    } catch (err) {
+      if (err?.ms_send_unknown)
+        return {
+          resp: { ok: false, status: 0 },
+          data: {},
+          csrf,
+          error: ms_send_unknown_error,
+        };
+      throw err;
+    }
+  };
+  let result = await send();
   csrf = result.csrf || csrf;
-  while (!ms_abort && result?.resp?.status === 429) {
-    await ms_wait_rate_limit();
-    if (ms_abort) break;
-    result = await ms_send_trade(
-      csrf,
-      self_id,
-      recipient_id,
-      offer_instances,
-      their_instances,
-      offer_robux,
-      request_robux,
-    );
+  while (ms_run_live(run_id) && result?.resp?.status === 429) {
+    await ms_wait_rate_limit(run_id);
+    if (!ms_run_live(run_id)) break;
+    result = await send();
     csrf = result.csrf || csrf;
   }
   return { ...result, csrf };
@@ -1420,16 +1451,25 @@ function ms_wait_for_popup_value() {
       resolve(null);
       return;
     }
-    ms_2fa_waiters.push(resolve);
+    let finish = (value) => {
+      clearTimeout(timer);
+      resolve(value);
+    };
+    // Null counts as cancel for every caller; the timeout error is kept for the run loop.
+    let timer = setTimeout(() => {
+      ms_2fa_waiters = ms_2fa_waiters.filter((w) => w !== finish);
+      // The run loop turns this into ms_state.error only if the run stops.
+      ms_2fa_timeout_error = "2FA code timed out. Start mass send again.";
+      ms_clear_2fa_prompt();
+      resolve(null);
+    }, ms_2fa_wait_timeout_ms);
+    ms_2fa_waiters.push(finish);
   });
 }
 
 function ms_ensure_2fa_click_handler() {
   if (ms_2fa_click_bound) return;
   ms_2fa_click_bound = true;
-  if (typeof ensure_notification_click_handler === "function") {
-    ensure_notification_click_handler();
-  }
   try {
     chrome.notifications?.onClicked?.addListener((id) => {
       if (String(id || "") !== ms_2fa_notification_id) return;
@@ -1442,6 +1482,9 @@ function ms_ensure_2fa_click_handler() {
     });
   } catch {}
 }
+
+// Must register at top level so a click still works after the worker restarted.
+ms_ensure_2fa_click_handler();
 
 async function ms_notify_2fa(kind) {
   ms_ensure_2fa_click_handler();
@@ -1498,6 +1541,7 @@ async function ms_notify_2fa(kind) {
 }
 
 async function ms_prompt_2fa_code(opts = {}) {
+  if (!ms_run_live(opts.run_id)) return null;
   let error = String(opts.error || "");
   ms_state.status = error || "Waiting for 2FA code…";
   ms_state.phase = "awaiting_2fa";
@@ -1515,7 +1559,8 @@ async function ms_prompt_2fa_code(opts = {}) {
   return String(value).replace(/\D/g, "");
 }
 
-async function ms_prompt_unlock_password() {
+async function ms_prompt_unlock_password(run_id) {
+  if (!ms_run_live(run_id)) return null;
   ms_state.status = "Unlock 2FA secret…";
   ms_state.phase = "awaiting_2fa";
   ms_state.prompt = { kind: "unlock", error: "" };
@@ -1525,7 +1570,7 @@ async function ms_prompt_unlock_password() {
   return String(value);
 }
 
-async function ms_resolve_session_secret() {
+async function ms_resolve_session_secret(run_id) {
   if (ms_session_secret) return ms_session_secret;
   let st = await chrome.storage.local.get([
     ms_totp_secret_key,
@@ -1548,7 +1593,7 @@ async function ms_resolve_session_secret() {
     );
 
   if (encrypted && enc) {
-    let password = await ms_prompt_unlock_password();
+    let password = await ms_prompt_unlock_password(run_id);
     if (!password) return null;
     try {
       ms_session_secret = await ms_decrypt_totp_secret(enc, password);
@@ -1565,13 +1610,17 @@ async function ms_resolve_session_secret() {
   return null;
 }
 
-async function ms_get_2fa_code(avoid_code = null) {
+async function ms_get_2fa_code(avoid_code = null, run_id) {
+  if (!ms_run_live(run_id)) return null;
   let secret = null;
   try {
-    secret = await ms_resolve_session_secret();
+    secret = await ms_resolve_session_secret(run_id);
   } catch {
     secret = null;
   }
+  // Unlock prompt timed out: don't start a second 5-minute manual prompt.
+  if (!secret && ms_2fa_timeout_error) return null;
+  if (!ms_run_live(run_id)) return null;
   let avoid = String(avoid_code || ms_last_used_totp || "").replace(/\D/g, "");
   if (secret) {
     let code = await ms_make_totp(secret);
@@ -1580,10 +1629,11 @@ async function ms_get_2fa_code(avoid_code = null) {
     }
     if (code) return { code, source: "secret", secret };
   }
-  let manual = await ms_prompt_2fa_code();
+  let manual = await ms_prompt_2fa_code({ run_id });
   if (!manual) return null;
   if (avoid && manual === avoid) {
     manual = await ms_prompt_2fa_code({
+      run_id,
       quiet: true,
       error: "That 2FA code was already used. Enter the next one.",
     });
@@ -1626,7 +1676,7 @@ async function ms_verify_2fa({
   code,
   action_type,
 }) {
-  let verify_resp = await fetch(
+  let verify_resp = await fetch_with_timeout(
     `https://twostepverification.roblox.com/v1/users/${user_id}/challenges/authenticator/verify`,
     {
       method: "POST",
@@ -1647,7 +1697,7 @@ async function ms_verify_2fa({
     let next = verify_resp.headers.get("x-csrf-token");
     if (next) {
       csrf = next;
-      verify_resp = await fetch(
+      verify_resp = await fetch_with_timeout(
         `https://twostepverification.roblox.com/v1/users/${user_id}/challenges/authenticator/verify`,
         {
           method: "POST",
@@ -1700,7 +1750,7 @@ async function ms_verify_2fa({
     actionType: action_type || "Generic",
   };
 
-  let continue_resp = await fetch(
+  let continue_resp = await fetch_with_timeout(
     "https://apis.roblox.com/challenge/v1/continue",
     {
       method: "POST",
@@ -1742,6 +1792,7 @@ async function ms_send_trade(
   offer_robux = 0,
   request_robux = 0,
   allow_stale_retry = true,
+  run_id = ms_run_seq,
 ) {
   let offer_payload = ms_copy_instance_ids(offer_ids);
   let request_payload = ms_copy_instance_ids(request_ids);
@@ -1778,6 +1829,7 @@ async function ms_send_trade(
     },
   };
   let do_send = async (token, challenge_headers = null) => {
+    if (!ms_run_live(run_id)) throw new Error("Cancelled by user");
     let headers = {
       Accept: "application/json",
       "Content-Type": "application/json",
@@ -1789,12 +1841,22 @@ async function ms_send_trade(
       headers["rblx-challenge-type"] = "twostepverification";
       headers["x-retry-attempt"] = "1";
     }
-    return fetch(mass_send_send_url, {
-      method: "POST",
-      credentials: "include",
-      headers,
-      body: JSON.stringify(body),
-    });
+    try {
+      return await fetch_with_timeout(
+        mass_send_send_url,
+        {
+          method: "POST",
+          credentials: "include",
+          headers,
+          body: JSON.stringify(body),
+        },
+        60000,
+      );
+    } catch (err) {
+      // The trade may have gone through; the caller reports it as unknown.
+      if (err?.name === "TimeoutError") err.ms_send_unknown = true;
+      throw err;
+    }
   };
 
   let resp = await do_send(csrf, null);
@@ -1837,10 +1899,11 @@ async function ms_send_trade(
         error: ms_2fa_failed_error("missing challenge data"),
       };
     }
+    if (!ms_run_live(run_id)) throw new Error("Cancelled by user");
     ms_state.status = "Solving 2FA…";
     let code_info = null;
     try {
-      code_info = await ms_get_2fa_code();
+      code_info = await ms_get_2fa_code(null, run_id);
     } catch (err) {
       return {
         resp,
@@ -1861,7 +1924,7 @@ async function ms_send_trade(
     let code = String(code_info.code || "").replace(/\D/g, "");
     let secret = code_info.secret || ms_session_secret || null;
     while (!verified) {
-      if (ms_abort) {
+      if (!ms_run_live(run_id)) {
         return {
           resp,
           data,
@@ -1883,7 +1946,7 @@ async function ms_send_trade(
         break;
       } catch (err) {
         // Challenge expired before verify: re-send once to get a fresh challenge.
-        if (allow_stale_retry && !ms_abort && ms_is_stale_challenge_error(err)) {
+        if (allow_stale_retry && ms_run_live(run_id) && ms_is_stale_challenge_error(err)) {
           return ms_send_trade(
             challenge_csrf,
             self_id,
@@ -1893,6 +1956,7 @@ async function ms_send_trade(
             offer_robux,
             request_robux,
             false,
+            run_id,
           );
         }
         if (!ms_is_totp_retryable_code_error(err)) {
@@ -1918,6 +1982,7 @@ async function ms_send_trade(
         }
         secret = null;
         let next = await ms_prompt_2fa_code({
+          run_id,
           quiet: true,
           error: invalid
             ? "That 2FA code is invalid. Enter a new one."
@@ -1942,6 +2007,7 @@ async function ms_send_trade(
         error: ms_2fa_failed_error("verification failed"),
       };
     }
+    if (!ms_run_live(run_id)) throw new Error("Cancelled by user");
     ms_clear_2fa_prompt();
     ms_state.phase = "sending";
     csrf = verified.csrf || challenge_csrf;
@@ -2007,7 +2073,10 @@ async function ms_send_trade(
 
 async function ms_run(config) {
   if (ms_state.running) return;
+  let run_id = ++ms_run_seq;
+  let is_stale = () => run_id !== ms_run_seq;
   ms_abort = false;
+  ms_2fa_timeout_error = "";
   ms_session_secret = null;
   ms_state = {
     ...ms_default_state(),
@@ -2049,7 +2118,7 @@ async function ms_run(config) {
       ? get_authenticated_user_cached()
       : null);
     if (!me?.id) {
-      let auth_res = await fetch(
+      let auth_res = await fetch_with_timeout(
         "https://users.roblox.com/v1/users/authenticated",
         { credentials: "include" },
       );
@@ -2070,7 +2139,7 @@ async function ms_run(config) {
       offer_assets,
       { item_data },
     );
-    if (ms_abort) throw new Error("Cancelled by user");
+    if (ms_abort || is_stale()) throw new Error("Cancelled by user");
     if (!offer_resolved?.ok) {
       throw new Error(
         offer_resolved?.error || "One or more offer items are not available to trade.",
@@ -2084,15 +2153,22 @@ async function ms_run(config) {
     ms_state.phase = "owners";
     ms_state.status = "Loading owners…";
     let owners = await ms_fetch_owners(request_assets);
-    if (ms_abort) throw new Error("Cancelled by user");
+    if (ms_abort || is_stale()) throw new Error("Cancelled by user");
 
     ms_state.phase = "filtering";
     ms_state.status = "Filtering recipients…";
     let candidates = ms_filter_owners_by_hours(owners, hours, self_id);
     candidates = ms_filter_owners_by_owned_days(candidates, max_owned_days);
     candidates = ms_filter_blocked_users(candidates, blocked_users);
+    if (ms_pending_send) {
+      await Promise.race([
+        ms_pending_send,
+        new Promise((r) => setTimeout(r, 65000)),
+      ]);
+      ms_pending_send = null;
+    }
     let outbound = await ms_fetch_outbound_user_ids();
-    if (ms_abort) throw new Error("Cancelled by user");
+    if (ms_abort || is_stale()) throw new Error("Cancelled by user");
     candidates = candidates.filter((row) => !outbound.has(row.user_id));
 
     let avoid_days = Math.max(
@@ -2126,7 +2202,9 @@ async function ms_run(config) {
 
     ms_state.phase = "sending";
     let used_offer_ids = new Set();
+    let consecutive_failures = 0;
     for (let i = 0; i < candidates.length; i++) {
+      if (is_stale()) return;
       if (ms_abort) {
         ms_state.error = "Cancelled by user";
         break;
@@ -2138,6 +2216,7 @@ async function ms_run(config) {
           offer_assets,
           { item_data, used_ids: used_offer_ids },
         );
+        if (is_stale()) return;
         if (ms_abort) {
           ms_state.error = "Cancelled by user";
           break;
@@ -2162,6 +2241,7 @@ async function ms_run(config) {
         request_assets,
         { item_data },
       );
+      if (is_stale()) return;
       if (ms_abort) {
         ms_state.error = "Cancelled by user";
         break;
@@ -2181,7 +2261,8 @@ async function ms_run(config) {
         throw new Error("Offer items changed while sending. Stopped to avoid a bad trade.");
       }
 
-      let result = await ms_send_trade_with_rate_limit(
+      let send_promise = ms_send_trade_with_rate_limit(
+        run_id,
         csrf,
         self_id,
         recipient_id,
@@ -2190,7 +2271,10 @@ async function ms_run(config) {
         offer_robux,
         request_robux,
       );
+      ms_pending_send = send_promise.catch(() => {});
+      let result = await send_promise;
       csrf = result.csrf || csrf;
+      if (is_stale()) return;
       if (ms_abort) {
         ms_state.error = "Cancelled by user";
         break;
@@ -2198,9 +2282,10 @@ async function ms_run(config) {
 
       if (result.error) {
         ms_state.error =
-          typeof result.error === "string"
+          ms_2fa_timeout_error ||
+          (typeof result.error === "string"
             ? result.error
-            : result.error?.message || String(result.error);
+            : result.error?.message || String(result.error));
         ms_state.failed++;
         break;
       }
@@ -2235,6 +2320,7 @@ async function ms_run(config) {
           offer_robux,
           request_robux,
         });
+        consecutive_failures = 0;
       } else {
         let roblox_msg = ms_trade_error_message(result.data);
         if (ms_is_skip_recipient_error(roblox_msg)) {
@@ -2242,6 +2328,17 @@ async function ms_run(config) {
           continue;
         }
         ms_state.failed++;
+        consecutive_failures++;
+        ms_state.last_failure =
+          roblox_msg || `Roblox error ${result.resp.status}`;
+        if (result.resp.status === 401) {
+          ms_state.error = "Sign in to Roblox again, then restart.";
+          break;
+        }
+        if (consecutive_failures >= ms_max_consecutive_failures) {
+          ms_state.error = `Stopped after ${ms_max_consecutive_failures} failed sends: ${ms_state.last_failure}`;
+          break;
+        }
       }
       ms_state.remaining = Math.max(0, target_sends - ms_state.sent);
 
@@ -2251,6 +2348,7 @@ async function ms_run(config) {
       }
     }
 
+    if (is_stale()) return;
     if (!ms_state.error) {
       ms_state.status = "Done";
       ms_state.phase = "done";
@@ -2259,11 +2357,13 @@ async function ms_run(config) {
       ms_state.status = ms_state.error;
     }
   } catch (err) {
+    if (is_stale()) return;
     ms_state.error = err?.message || String(err);
     ms_state.status = ms_state.error;
     ms_state.phase = "error";
   }
 
+  if (is_stale()) return;
   ms_session_secret = null;
   ms_state.running = false;
   ms_stop_keep_alive();

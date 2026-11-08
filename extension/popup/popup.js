@@ -29,6 +29,7 @@ const option_groups = nte_filter_option_groups(
 
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
+    if (tab.classList.contains("active")) return;
     document
       .querySelectorAll(".tab")
       .forEach((item) => item.classList.remove("active"));
@@ -39,6 +40,8 @@ document.querySelectorAll(".tab").forEach((tab) => {
     document
       .getElementById(`panel-${tab.dataset.tab}`)
       .classList.remove("hidden");
+    const reset_btn = document.getElementById("restoreDefaultSettings");
+    if (reset_btn) reset_btn.hidden = tab.dataset.tab !== "options";
     if (tab.dataset.tab === "tradeactions") {
       render_actions_tab();
     }
@@ -727,6 +730,7 @@ function open_inbound_trade_notification_settings_modal(current) {
           </div>
           ${webhook_block}
         </div>
+        <p class="inbound-notif-error" id="inbound-notif-error" role="alert" hidden></p>
         <div class="inbound-notif-settings-actions">
           <button type="button" class="inbound-notif-btn inbound-notif-btn-cancel" data-role="cancel">Cancel</button>
           <button type="button" class="inbound-notif-btn inbound-notif-btn-save" data-role="save">Save</button>
@@ -756,6 +760,17 @@ function open_inbound_trade_notification_settings_modal(current) {
     let gain_pills = Array.from(
       overlay.querySelectorAll(".inbound-notif-pill"),
     );
+
+    let error_el = overlay.querySelector("#inbound-notif-error");
+
+    function show_error(message, focus_el) {
+      error_el.textContent = message;
+      error_el.hidden = false;
+      focus_el?.focus();
+    }
+    overlay.addEventListener("input", () => {
+      error_el.hidden = true;
+    });
 
     function close(result = null) {
       overlay.remove();
@@ -855,13 +870,11 @@ function open_inbound_trade_notification_settings_modal(current) {
       );
 
       if (webhook_enabled && !webhook_url) {
-        window.alert("Enter a valid Discord webhook URL.");
-        webhook_url_input.focus();
+        show_error("Enter a valid Discord webhook URL.", webhook_url_input);
         return;
       }
       if (ping_enabled && !discord_id) {
-        window.alert("Enter a valid Discord user ID.");
-        discord_id_input.focus();
+        show_error("Enter a valid Discord user ID.", discord_id_input);
         return;
       }
 
@@ -887,8 +900,7 @@ function open_inbound_trade_notification_settings_modal(current) {
           webhook_url_input.value,
         );
         if (!webhook_url) {
-          window.alert("Enter a Discord webhook URL first.");
-          webhook_url_input.focus();
+          show_error("Enter a Discord webhook URL first.", webhook_url_input);
           return;
         }
         let webhook_enabled = !!webhook_enabled_input.checked;
@@ -897,8 +909,7 @@ function open_inbound_trade_notification_settings_modal(current) {
           discord_id_input.value,
         );
         if (ping_enabled && !discord_id) {
-          window.alert("Enter a valid Discord user ID to test a ping.");
-          discord_id_input.focus();
+          show_error("Enter a valid Discord user ID to test a ping.", discord_id_input);
           return;
         }
 
@@ -918,7 +929,7 @@ function open_inbound_trade_notification_settings_modal(current) {
           });
           set_test_btn_state(result?.ok ? "Sent!" : "Failed");
           test_btn.style.color = result?.ok ? "#22c55e" : "#ef4444";
-          if (!result?.ok && result?.error) window.alert(result.error);
+          if (!result?.ok && result?.error) show_error(String(result.error));
         } catch {
           set_test_btn_state("Error");
           test_btn.style.color = "#ef4444";
@@ -938,38 +949,91 @@ function open_inbound_trade_notification_settings_modal(current) {
   });
 }
 
+function open_duplicate_trade_warning_hours_modal(current) {
+  return new Promise((resolve) => {
+    document.getElementById("dup-hours-overlay")?.remove();
+    let overlay = document.createElement("div");
+    overlay.id = "dup-hours-overlay";
+    overlay.className = "inbound-notif-settings-overlay";
+    overlay.innerHTML = `
+      <div class="inbound-notif-settings-card" role="dialog" aria-modal="true" aria-labelledby="dup-hours-title">
+        <div class="inbound-notif-settings-head">
+          <div>
+            <h3 id="dup-hours-title" class="inbound-notif-settings-title">Duplicate trade warning</h3>
+            <p class="inbound-notif-settings-subtitle">Warn if you already sent this person a trade within this many hours.</p>
+          </div>
+          <button type="button" class="inbound-notif-settings-close" aria-label="Close">✕</button>
+        </div>
+        <div class="inbound-notif-settings-body">
+          <label class="inbound-notif-input-wrap">
+            <span>Hours (1 to 168)</span>
+            <input id="dup-hours-input" type="number" min="1" max="168" step="1" inputmode="numeric" value="${escape_html_attr(current)}" />
+          </label>
+        </div>
+        <p class="inbound-notif-error" id="dup-hours-error" role="alert" hidden></p>
+        <div class="inbound-notif-settings-actions">
+          <button type="button" class="inbound-notif-btn inbound-notif-btn-cancel" data-role="cancel">Cancel</button>
+          <button type="button" class="inbound-notif-btn inbound-notif-btn-save" data-role="save">Save</button>
+        </div>
+      </div>
+    `;
+    document.body.append(overlay);
+    let input = overlay.querySelector("#dup-hours-input");
+    let error_el = overlay.querySelector("#dup-hours-error");
+
+    function close(result = null) {
+      overlay.remove();
+      resolve(result);
+    }
+    function save() {
+      let value = Number(String(input.value).trim());
+      if (!String(input.value).trim() || !Number.isInteger(value) || value < 1 || value > 168) {
+        error_el.textContent = "Enter a whole number from 1 to 168.";
+        error_el.hidden = false;
+        input.focus();
+        return;
+      }
+      close(value);
+    }
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) close(null);
+    });
+    overlay
+      .querySelector(".inbound-notif-settings-close")
+      .addEventListener("click", () => close(null));
+    overlay
+      .querySelector('[data-role="cancel"]')
+      .addEventListener("click", () => close(null));
+    overlay.querySelector('[data-role="save"]').addEventListener("click", save);
+    input.addEventListener("input", () => {
+      error_el.hidden = true;
+    });
+    overlay.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close(null);
+      } else if (event.key === "Enter" && event.target === input) {
+        event.preventDefault();
+        save();
+      }
+    });
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
+  });
+}
+
 async function prompt_duplicate_trade_warning_hours() {
   let saved = await get_storage([duplicate_trade_warning_hours_key]);
   let current = normalize_duplicate_trade_warning_hours(
     saved[duplicate_trade_warning_hours_key],
   );
-
-  while (true) {
-    let response = window.prompt(
-      "Warn if you already sent this person a trade within how many hours?\nExamples: 1, 12, 24, 72",
-      String(current),
-    );
-
-    if (response === null) return current;
-
-    let trimmed = String(response || "").trim();
-    if (!trimmed) {
-      current = duplicate_trade_warning_hours_default;
-      break;
-    }
-
-    let parsed = Number(trimmed.replace(/h/gi, ""));
-    if (!Number.isFinite(parsed) || parsed < 1) {
-      window.alert("Enter a whole number of hours like 1, 12, 24, or 72.");
-      continue;
-    }
-
-    current = normalize_duplicate_trade_warning_hours(parsed);
-    break;
-  }
-
-  await set_storage({ [duplicate_trade_warning_hours_key]: current });
-  return current;
+  let chosen = await open_duplicate_trade_warning_hours_modal(current);
+  if (chosen == null) return current;
+  await set_storage({ [duplicate_trade_warning_hours_key]: chosen });
+  return chosen;
 }
 
 function normalize_popup_theme(value) {
@@ -1524,7 +1588,7 @@ function show_test_notification(name) {
     {
       type: "basic",
       iconUrl: chrome.runtime.getURL("assets/icons/logo128.png"),
-      title: "Nevos Trading Extension",
+      title: "Trading Extension",
       message: `${name} enabled`,
       priority: 2,
     },
@@ -1550,8 +1614,35 @@ function sync_mobile_popup_class() {
   document.body.classList.toggle("is-mobile-browser", mobile);
 }
 
+const notifications_blocked_text =
+  "Notifications are blocked for this browser. Allow them in your browser's site settings.";
+
+function get_notification_permission_level() {
+  return new Promise((resolve) => {
+    if (!chrome.notifications?.getPermissionLevel) return resolve(null);
+    try {
+      chrome.notifications.getPermissionLevel((level) => {
+        chrome.runtime.lastError;
+        resolve(level || null);
+      });
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+// Why maybe_request_notifications() came back false.
+async function notifications_failure_text() {
+  if (!chrome.notifications?.create)
+    return "This browser doesn't support extension notifications.";
+  if ((await get_notification_permission_level()) === "denied")
+    return notifications_blocked_text;
+  return "Notifications permission wasn't granted.";
+}
+
 async function maybe_request_notifications() {
   if (!chrome.notifications?.create) return false;
+  if ((await get_notification_permission_level()) === "denied") return false;
   let manifest_permissions = chrome.runtime?.getManifest?.()?.permissions;
   if (
     Array.isArray(manifest_permissions) &&
@@ -1604,6 +1695,7 @@ function create_toggle(option, checked) {
   input.type = "checkbox";
   input.id = id;
   input.checked = checked;
+  input.setAttribute("aria-label", option.name.replace("(Beta)", "").trim());
 
   const track = document.createElement("span");
   track.className = "toggle-track";
@@ -1612,7 +1704,22 @@ function create_toggle(option, checked) {
 
   label.append(input, track, thumb);
 
+  const show_notifications_blocked_note = async () => {
+    const text = await notifications_failure_text();
+    const holder = label.closest(".option-row")?.querySelector(".option-label");
+    if (!holder || holder.querySelector(".option-note-text--blocked")) return;
+    const note = document.createElement("span");
+    note.className = "option-note-text option-note-text--blocked";
+    note.setAttribute("role", "status");
+    note.textContent = text;
+    holder.append(note);
+  };
+
   input.addEventListener("change", async () => {
+    label
+      .closest(".option-row")
+      ?.querySelector(".option-note-text--blocked")
+      ?.remove();
     if (option.name === colorblind_mode_option_name) {
       let saved = await ensure_colorblind_mode_settings();
       let profile = normalize_colorblind_mode_profile(
@@ -1647,6 +1754,7 @@ function create_toggle(option, checked) {
       } else {
         input.checked = false;
         await set_option_value(option.name, false);
+        await show_notifications_blocked_note();
       }
       return;
     }
@@ -1660,6 +1768,7 @@ function create_toggle(option, checked) {
       } else {
         input.checked = false;
         await set_option_value(option.name, false);
+        await show_notifications_blocked_note();
       }
       return;
     }
@@ -1964,7 +2073,10 @@ function create_option_mode_menu({ aria_label, active, choices, on_change }) {
   }
 
   function on_key_down(event) {
-    if (event.key === "Escape") close_menu();
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    close_menu();
   }
 
   choices.forEach((choice) => {
@@ -2324,7 +2436,17 @@ function format_trade_ad_countdown(ms_remaining) {
   return "Posting an ad in " + parts.join(" ");
 }
 
-async function trade_ads_save_merged_config(patch) {
+// Every config write goes through one chain so concurrent saves can't overwrite each other.
+let trade_ads_save_chain = Promise.resolve();
+function trade_ads_save_merged_config(patch) {
+  let run = trade_ads_save_chain.then(() =>
+    trade_ads_save_merged_config_now(patch),
+  );
+  trade_ads_save_chain = run.catch(() => {});
+  return run;
+}
+
+async function trade_ads_save_merged_config_now(patch) {
   let prev =
     (await get_storage([trade_ads_config_storage_key]))[
       trade_ads_config_storage_key
@@ -2449,6 +2571,8 @@ function trade_ads_attach_picker(root, opts) {
   let pick_slot_index =
     Number.isFinite(Number(slotIndex)) ? Number(slotIndex) : -1;
   let show_tags = side === "request" && allowTags !== false;
+  document.querySelectorAll(".ta-overlay").forEach((el) => el.remove());
+  let opener = document.activeElement;
   let overlay = document.createElement("div");
   overlay.className = "ta-overlay";
   let ph =
@@ -2531,11 +2655,32 @@ function trade_ads_attach_picker(root, opts) {
 
   function close() {
     overlay.remove();
+    if (opener && opener.isConnected) return opener.focus();
+    // onPick redraws the panel: re-find the equivalent slot once it exists.
+    let { side, msSide, index } = opener?.dataset || {};
+    if (index == null) return;
+    let sel = msSide
+      ? `.ta-slot[data-ms-side="${msSide}"][data-index="${index}"]`
+      : `.ta-slot[data-side="${side}"][data-index="${index}"]`;
+    let refocus = () => document.querySelector(sel)?.focus();
+    requestAnimationFrame(() => {
+      refocus();
+      setTimeout(() => {
+        if (document.activeElement === document.body) refocus();
+      }, 150);
+    });
   }
 
+  overlay.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    e.stopPropagation();
+    close();
+  });
   overlay.addEventListener("click", (e) => {
     if (e.target === overlay) close();
   });
+  input.focus();
   overlay.querySelector(".ta-sheet-close").addEventListener("click", close);
 
   function apply_picker_tools() {
@@ -3051,6 +3196,8 @@ function trade_ads_mount_notifications_panel(root) {
 function trade_ads_bind_category_picks(root) {
   let active = trade_ads_get_active_category(root);
   root.querySelectorAll(".ta-category-pick").forEach((btn) => {
+    if (btn.dataset.taBound === "1") return;
+    btn.dataset.taBound = "1";
     btn.addEventListener("click", () => {
       trade_ads_set_active_category(root, btn.dataset.taCategory);
       if (btn.dataset.taCategory === "notifs") {
@@ -3169,6 +3316,16 @@ async function render_trade_ads_composer(root, status) {
   }
 
   function slot_html(side, i, id, random_each_post) {
+    const base_label = `${side === "offer" ? "Offer" : "Request"} slot ${i + 1}`;
+    const slot_label = escape_html(
+      `${base_label}: ${
+        id == null
+          ? "empty"
+          : typeof id === "string" && id.startsWith("tag:")
+            ? `${id.slice(4)} tag`
+            : slot_metrics[String(id)]?.name || `item ${id}`
+      }`,
+    );
     if (random_each_post) {
       let hint =
         side === "offer" ? "Random offers each post" : "Random each post";
@@ -3178,12 +3335,12 @@ async function render_trade_ads_composer(root, status) {
       if (typeof id === "string" && id.startsWith("tag:")) {
         let tag = id.slice(4);
         let img = `https://www.rolimons.com/images/tradetag${tag}-420.png`;
-        return `<div class="ta-slot ta-slot-tag" data-side="${side}" data-index="${i}" data-tag="${tag}"><div class="ta-slot-tag-img-wrap"><img src="${img}" alt="${tag}" decoding="async" /></div><button type="button" class="ta-slot-clear" data-side="${side}" data-index="${i}" aria-label="Clear">×</button></div>`;
+        return `<div class="ta-slot ta-slot-tag" role="button" tabindex="0" aria-label="${slot_label}" data-side="${side}" data-index="${i}" data-tag="${tag}"><div class="ta-slot-tag-img-wrap"><img src="${img}" alt="${tag}" decoding="async" /></div><button type="button" class="ta-slot-clear" data-side="${side}" data-index="${i}" aria-label="Clear ${escape_html(base_label.toLowerCase())}">×</button></div>`;
       }
       let aid = Number(id);
-      return `<div class="ta-slot" data-side="${side}" data-index="${i}"><div class="ta-slot-thumb-wrap"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" /><button type="button" class="ta-slot-clear" data-side="${side}" data-index="${i}" aria-label="Clear">×</button></div></div>`;
+      return `<div class="ta-slot" role="button" tabindex="0" aria-label="${slot_label}" data-side="${side}" data-index="${i}"><div class="ta-slot-thumb-wrap"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" /><button type="button" class="ta-slot-clear" data-side="${side}" data-index="${i}" aria-label="Clear ${escape_html(base_label.toLowerCase())}">×</button></div></div>`;
     }
-    return `<div class="ta-slot ta-slot-is-empty" data-side="${side}" data-index="${i}"><span class="ta-slot-empty">${side === "offer" ? "Offer" : "Want"}</span></div>`;
+    return `<div class="ta-slot ta-slot-is-empty" role="button" tabindex="0" aria-label="${slot_label}" data-side="${side}" data-index="${i}"><span class="ta-slot-empty">${side === "offer" ? "Offer" : "Request"}</span></div>`;
   }
 
   let rows = "";
@@ -3253,7 +3410,7 @@ async function render_trade_ads_composer(root, status) {
   }
   let recent_posts_html = `
     <div class="ta-recent-posts">
-      <button type="button" class="ta-recent-toggle" id="ta-recent-toggle">
+      <button type="button" class="ta-recent-toggle" id="ta-recent-toggle" aria-expanded="false" aria-controls="ta-recent-list">
         <span>Recent posts</span>
         <svg class="ta-recent-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </button>
@@ -3267,8 +3424,8 @@ async function render_trade_ads_composer(root, status) {
       ? "random offer"
       : `${preset.offer_slots.filter((x) => x != null).length} offer`;
     let request_count = preset.request_random
-      ? "random want"
-      : `${preset.request_slots.filter((x) => x != null).length} want`;
+      ? "random request"
+      : `${preset.request_slots.filter((x) => x != null).length} request`;
     let robux = Number(preset.offer_robux) > 0 ? ` + ${format_number(preset.offer_robux)} R$` : "";
     return `${offer_count}${robux} · ${request_count}`;
   }
@@ -3294,7 +3451,7 @@ async function render_trade_ads_composer(root, status) {
         </div>
         <label class="ta-preset-rotate-wrap" title="Rotate through saved presets">
           <span class="ta-switch">
-            <input type="checkbox" id="ta-preset-rotate" ${cfg.preset_rotation_enabled ? "checked" : ""} />
+            <input type="checkbox" id="ta-preset-rotate" aria-label="Rotate through saved presets" ${cfg.preset_rotation_enabled ? "checked" : ""} />
             <span class="ta-switch-knob" aria-hidden="true"></span>
           </span>
         </label>
@@ -3342,7 +3499,7 @@ async function render_trade_ads_composer(root, status) {
         </label>
       </div>
       <div class="ta-row">
-        <label class="ta-toggle-pill"><input type="checkbox" id="ta-notify-post" ${cfg.notify_on_post !== false ? "checked" : ""}/> Windows notification when a trade ad posts</label>
+        <label class="ta-toggle-pill"><input type="checkbox" id="ta-notify-post" ${cfg.notify_on_post !== false ? "checked" : ""}/> Browser notification when a trade ad posts</label>
       </div>
     </div>
 
@@ -3354,7 +3511,7 @@ async function render_trade_ads_composer(root, status) {
         </div>
         <label class="ta-schedule-switch-wrap" title="Turn automatic posting on or off">
           <span class="ta-switch">
-            <input type="checkbox" id="ta-schedule-live" ${!cfg.posting_paused ? "checked" : ""} />
+            <input type="checkbox" id="ta-schedule-live" aria-label="Automatic posting" ${!cfg.posting_paused ? "checked" : ""} />
             <span class="ta-switch-knob" aria-hidden="true"></span>
           </span>
         </label>
@@ -3390,6 +3547,10 @@ async function render_trade_ads_composer(root, status) {
         : ""
     }</div>
   `;
+
+  panel
+    .querySelectorAll('.ta-slot[role="button"]')
+    .forEach(make_keyboard_activatable);
 
   async function trade_ads_save_and_render(patch) {
     await trade_ads_save_merged_config(patch);
@@ -3503,7 +3664,7 @@ async function render_trade_ads_composer(root, status) {
             slots[idx] = id;
             void render_trade_ads_composer(root, {
               ...status,
-              config: { ...(status.config || {}), offer_slots: slots },
+              config: { ...(status.config || {}), ...cfg, offer_slots: slots },
               slot_item_metrics: { ...(status.slot_item_metrics || {}) },
               last_auto_error: null,
             });
@@ -3566,7 +3727,7 @@ async function render_trade_ads_composer(root, status) {
             slots[idx] = id;
             void render_trade_ads_composer(root, {
               ...status,
-              config: { ...(status.config || {}), request_slots: slots },
+              config: { ...(status.config || {}), ...cfg, request_slots: slots },
               slot_item_metrics: { ...(status.slot_item_metrics || {}) },
             });
             await trade_ads_save_merged_config({ request_slots: slots });
@@ -3594,7 +3755,7 @@ async function render_trade_ads_composer(root, status) {
         if (prevId != null) delete sm[String(prevId)];
         void render_trade_ads_composer(root, {
           ...status,
-          config: { ...(status.config || {}), offer_slots: slots },
+          config: { ...(status.config || {}), ...cfg, offer_slots: slots },
           slot_item_metrics: sm,
         });
         void trade_ads_save_merged_config({ offer_slots: slots }).then(
@@ -3615,7 +3776,7 @@ async function render_trade_ads_composer(root, status) {
         if (prevId != null) delete sm[String(prevId)];
         void render_trade_ads_composer(root, {
           ...status,
-          config: { ...(status.config || {}), request_slots: slots },
+          config: { ...(status.config || {}), ...cfg, request_slots: slots },
           slot_item_metrics: sm,
         });
         void trade_ads_save_merged_config({ request_slots: slots }).then(
@@ -3659,17 +3820,22 @@ async function render_trade_ads_composer(root, status) {
     else await render_trade_ads_tab();
   });
 
+  // Saves in place so the field keeps focus; only the offer total label is refreshed.
   panel.querySelector("#ta-robux").addEventListener("change", async (e) => {
-    await trade_ads_save_merged_config({
-      offer_robux: Math.max(0, Number(e.target.value) || 0),
-    });
-    let fresh = await trade_ads_fetch_status_from_bg();
-    if (fresh?.verified)
-      await render_trade_ads_composer(root, {
-        ...fresh,
-        last_auto_error: null,
+    let robux = ms_clamp_robux(e.target.value);
+    e.target.value = String(robux);
+    cfg = { ...cfg, offer_robux: robux };
+    await trade_ads_save_merged_config({ offer_robux: robux });
+    let sum = sum_offer_items_value();
+    let label = panel.querySelector(".ta-preview-label");
+    if (label && !cfg.offer_random) {
+      label.outerHTML = preview_side_label_line("You offer", {
+        randomMode: false,
+        showTotal: offer_has_any_pick() || robux > 0,
+        totalNum: sum != null ? sum + robux : 0,
       });
-    else await render_trade_ads_tab();
+    }
+    panel.querySelector("#ta-auto-post-err")?.remove();
   });
 
   root
@@ -3679,11 +3845,22 @@ async function render_trade_ads_composer(root, status) {
         let granted = await maybe_request_notifications();
         if (!granted) {
           e.target.checked = false;
-          cfg = await trade_ads_save_merged_config({ notify_on_post: false });
+          cfg = { ...cfg, notify_on_post: false };
+          await trade_ads_save_merged_config({ notify_on_post: false });
+          if (!root.querySelector("#ta-notify-blocked")) {
+            let note = document.createElement("div");
+            note.id = "ta-notify-blocked";
+            note.className = "option-note-text";
+            note.setAttribute("role", "status");
+            note.textContent = await notifications_failure_text();
+            e.target.closest(".ta-row")?.append(note);
+          }
           return;
         }
       }
-      cfg = await trade_ads_save_merged_config({
+      root.querySelector("#ta-notify-blocked")?.remove();
+      cfg = { ...cfg, notify_on_post: e.target.checked };
+      await trade_ads_save_merged_config({
         notify_on_post: e.target.checked,
       });
     });
@@ -3723,6 +3900,11 @@ async function render_trade_ads_composer(root, status) {
     globalThis.__nte_trade_ads_cd_timer = setInterval(tick, 1000);
   }
 
+  // 120 is the boundary: stepping down from 120 uses 5, stepping up uses 15, so +/- reverse.
+  function interval_step(minutes, direction = 1) {
+    return (direction < 0 ? minutes > 120 : minutes >= 120) ? 15 : 5;
+  }
+
   function sync_schedule_ui() {
     let paused = !!cfg.posting_paused;
     let card = panel.querySelector(".ta-schedule-card");
@@ -3743,9 +3925,19 @@ async function render_trade_ads_composer(root, status) {
     if (hum)
       hum.textContent = format_trade_ads_duration(cfg.auto_interval_minutes);
     let minus = panel.querySelector("#ta-min-interval");
-    if (minus)
+    let plus = panel.querySelector("#ta-plus-interval");
+    let step = interval_step(cfg.auto_interval_minutes);
+    let step_down = interval_step(cfg.auto_interval_minutes, -1);
+    if (minus) {
       minus.disabled =
         cfg.auto_interval_minutes <= trade_ads_interval_min_popup;
+      minus.setAttribute("aria-label", `Subtract ${step_down} minutes`);
+    }
+    if (plus) {
+      plus.disabled =
+        cfg.auto_interval_minutes >= trade_ads_interval_max_popup;
+      plus.setAttribute("aria-label", `Add ${step} minutes`);
+    }
     refresh_trade_ads_next_run(root, paused, status.next_auto_post_due_at);
   }
 
@@ -3754,20 +3946,27 @@ async function render_trade_ads_composer(root, status) {
   root
     .querySelector("#ta-schedule-live")
     .addEventListener("change", async (e) => {
-      cfg = await trade_ads_save_merged_config({
+      cfg = { ...cfg, posting_paused: !e.target.checked };
+      sync_schedule_ui();
+      await trade_ads_save_merged_config({
         posting_paused: !e.target.checked,
       });
-      sync_schedule_ui();
     });
 
-  async function bump_interval(delta) {
+  // cfg is updated before the save so rapid clicks build on each other; the global save chain orders writes.
+  function bump_interval(direction) {
     let next = Math.max(
       trade_ads_interval_min_popup,
-      Math.min(trade_ads_interval_max_popup, cfg.auto_interval_minutes + delta),
+      Math.min(
+        trade_ads_interval_max_popup,
+        cfg.auto_interval_minutes +
+          direction * interval_step(cfg.auto_interval_minutes, direction),
+      ),
     );
     if (next === cfg.auto_interval_minutes) return;
-    cfg = await trade_ads_save_merged_config({ auto_interval_minutes: next });
+    cfg = { ...cfg, auto_interval_minutes: next };
     sync_schedule_ui();
+    trade_ads_save_merged_config({ auto_interval_minutes: next }).catch(() => {});
   }
 
   root
@@ -3799,8 +3998,9 @@ async function render_trade_ads_composer(root, status) {
       interval_input.value = String(n);
       return;
     }
-    cfg = await trade_ads_save_merged_config({ auto_interval_minutes: n });
+    cfg = { ...cfg, auto_interval_minutes: n };
     sync_schedule_ui();
+    trade_ads_save_merged_config({ auto_interval_minutes: n }).catch(() => {});
   });
 
   panel.querySelector("#ta-post-now").addEventListener("click", async () => {
@@ -3836,7 +4036,19 @@ async function render_trade_ads_composer(root, status) {
     }
   });
 
-  panel.querySelector("#ta-disconnect").addEventListener("click", async () => {
+  panel.querySelector("#ta-disconnect").addEventListener("click", async (e) => {
+    let btn = e.currentTarget;
+    if (btn.dataset.confirm !== "1") {
+      btn.dataset.confirm = "1";
+      btn.textContent = "Click again to disconnect";
+      setTimeout(() => {
+        if (!btn.isConnected) return;
+        btn.dataset.confirm = "";
+        btn.textContent = "Disconnect Rolimons";
+      }, 4000);
+      return;
+    }
+    btn.disabled = true;
     trade_ads_reset_inventory_session();
     await new Promise((resolve) =>
       chrome.runtime.sendMessage({ type: "trade_ads_disconnect" }, resolve),
@@ -3852,6 +4064,7 @@ async function render_trade_ads_composer(root, status) {
       let chevron = recent_toggle.querySelector(".ta-recent-chevron");
       if (!list) return;
       let open = list.classList.toggle("is-open");
+      recent_toggle.setAttribute("aria-expanded", String(open));
       if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "";
     });
   }
@@ -3873,8 +4086,18 @@ async function render_trade_ads_composer(root, status) {
       if (area !== "local") return;
       if (changes.trade_ads_last_auto_error) {
         let nv = changes.trade_ads_last_auto_error.newValue;
-        if (nv == null || nv === "")
-          document.getElementById("ta-auto-post-err")?.remove();
+        let err_el = document.getElementById("ta-auto-post-err");
+        if (nv == null || nv === "") err_el?.remove();
+        else {
+          // A failure while the popup is open should show up without a re-render.
+          if (!err_el) {
+            err_el = document.createElement("div");
+            err_el.className = "ta-status-line ta-err";
+            err_el.id = "ta-auto-post-err";
+            document.getElementById("ta-post-status")?.after(err_el);
+          }
+          err_el.textContent = `Auto-post: ${String(nv).slice(0, 200)}`;
+        }
       }
       if (changes.trade_ads_last_auto_post_at?.newValue) {
         let lp = document.getElementById("ta-last-post-at");
@@ -3887,7 +4110,8 @@ async function render_trade_ads_composer(root, status) {
       if (
         changes.trade_ads_last_auto_post_at ||
         changes[trade_ads_config_storage_key] ||
-        changes.trade_ads_schedule_anchor_at
+        changes.trade_ads_schedule_anchor_at ||
+        changes.trade_ads_auto_retry_after
       ) {
         chrome.runtime.sendMessage({ type: "trade_ads_get_next_due" }, (r) => {
           if (chrome.runtime.lastError) return;
@@ -4029,13 +4253,24 @@ async function render_trade_ads_verify_flow(root, status, vu) {
         <div class="ta-card-title">Rolimons Trade Ads</div>
         ${name ? `<div class="ta-user-pill">${name}</div>` : ""}
       </div>
+      <p class="ta-lede">Post trade ads to Rolimons from here, by hand or on a timer. Connect once to link your Roblox account.</p>
       ${vu.error ? `<div class="ta-status-line ta-err" style="margin-bottom:10px">${escape_html(vu.error)}</div>` : ""}
-      <button type="button" class="ta-btn ta-btn-primary" id="ta-auto-verify" style="width:100%;">Start Posting</button>
+      <button type="button" class="ta-btn ta-btn-primary" id="ta-auto-verify" style="width:100%;">Connect Rolimons</button>
     </div>
   `;
   panel.querySelector("#ta-auto-verify").addEventListener("click", async () => {
     await trade_ads_merge_verify_ui({ step: "loading", error: "" });
     render_trade_ads_verify_flow(layout_root, status, { step: "loading" });
+  });
+}
+
+function make_keyboard_activatable(el) {
+  el.addEventListener("keydown", (event) => {
+    if (event.target !== el) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    if (event.repeat) return;
+    el.click();
   });
 }
 
@@ -4057,7 +4292,12 @@ async function render_trade_ads_tab() {
   if (!status?.roblox) {
     trade_ads_ensure_category_layout(layout_root, active);
     let panel = layout_root.querySelector("#ta-posting-inner");
-    if (panel) {
+    if (panel && (!status || status.ok === false)) {
+      panel.innerHTML = `<p class="ta-lede">Couldn't reach the extension.</p><button type="button" class="ta-btn ta-btn-secondary" id="ta-retry-status" style="width:100%;">Retry</button>`;
+      panel
+        .querySelector("#ta-retry-status")
+        .addEventListener("click", () => render_trade_ads_tab());
+    } else if (panel) {
       panel.innerHTML = `<p class="ta-lede">Sign in to Roblox in this browser, then reopen this tab.</p>`;
     }
     return;
@@ -4079,7 +4319,9 @@ async function render_trade_ads_tab() {
 
 async function refresh_all_panels() {
   await render_options();
-  await render_trade_ads_tab();
+  if (!document.getElementById("panel-tradeads")?.classList.contains("hidden")) {
+    await render_trade_ads_tab();
+  }
 }
 
 function build_option_search_text(...parts) {
@@ -4114,7 +4356,9 @@ function apply_options_search(query = "") {
       let header = section.querySelector(".section-header");
       let options_el = section.querySelector(".section-options");
       header?.classList.remove("collapsed");
+      header?.setAttribute("aria-expanded", "true");
       options_el?.classList.remove("collapsed");
+      if (options_el) options_el.inert = false;
     }
     if (show_section && (empty || visible_rows > 0 || section_match))
       any_visible = true;
@@ -4233,11 +4477,15 @@ function totp_snapshot_is_encrypted(snap) {
   );
 }
 
+let render_options_seq = 0;
+
 async function render_options() {
   const container = document.getElementById("options-container");
-  container.innerHTML = "";
+  const render_id = ++render_options_seq;
+  // Banners are collected off-DOM; the container is only swapped after the last await.
+  const banners = document.createDocumentFragment();
 
-  await append_options_prompt_banner(container, {
+  await append_options_prompt_banner(banners, {
     storageKey: nte_discord_banner_dismissed_key,
     className: "nte-discord-banner",
     closeSelector: ".nte-discord-banner-close",
@@ -4252,7 +4500,7 @@ async function render_options() {
 
   let store = get_extension_store_review_info();
   if (store) {
-    await append_options_prompt_banner(container, {
+    await append_options_prompt_banner(banners, {
       storageKey: nte_rate_banner_dismissed_key,
       className: "nte-rate-banner",
       closeSelector: ".nte-rate-banner-close",
@@ -4308,6 +4556,15 @@ async function render_options() {
     );
   });
 
+  if (render_id !== render_options_seq) return;
+  const collapsed_sections = new Set(
+    [...container.querySelectorAll(".option-section")]
+      .filter((el) => el.querySelector(".section-header.collapsed"))
+      .map((el) => el.dataset.sectionTitle),
+  );
+  const saved_scrolls = get_scroll_positions(container);
+  container.replaceChildren(banners);
+
   let current_section = null;
   let current_options_el = null;
   let section_option_count = 0;
@@ -4335,9 +4592,20 @@ async function render_options() {
       const options_el = document.createElement("div");
       options_el.className = "section-options";
 
-      header.addEventListener("click", () => {
-        header.classList.toggle("collapsed");
-        options_el.classList.toggle("collapsed");
+      header.setAttribute("role", "button");
+      header.tabIndex = 0;
+      header.setAttribute("aria-expanded", "true");
+      const toggle_section = () => {
+        const is_collapsed = header.classList.toggle("collapsed");
+        options_el.classList.toggle("collapsed", is_collapsed);
+        options_el.inert = is_collapsed;
+        header.setAttribute("aria-expanded", String(!is_collapsed));
+      };
+      header.addEventListener("click", toggle_section);
+      header.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        toggle_section();
       });
 
       section.append(header, options_el);
@@ -4400,6 +4668,27 @@ async function render_options() {
   });
   ensure_options_search_bar();
   apply_options_search(document.getElementById("options-search")?.value || "");
+  let search_active = !!(document.getElementById("options-search")?.value || "").trim();
+  container.querySelectorAll(".option-section").forEach((section) => {
+    if (search_active || !collapsed_sections.has(section.dataset.sectionTitle)) return;
+    section.querySelector(".section-header")?.classList.add("collapsed");
+    section.querySelector(".section-options")?.classList.add("collapsed");
+    section.querySelector(".section-options").inert = true;
+    section.querySelector(".section-header")?.setAttribute("aria-expanded", "false");
+  });
+  saved_scrolls.forEach((top, el) => {
+    el.scrollTop = top;
+  });
+}
+
+function get_scroll_positions(from_el) {
+  const positions = new Map();
+  for (let el = from_el; el; el = el.parentElement) {
+    if (el.scrollTop > 0) positions.set(el, el.scrollTop);
+  }
+  const root = document.scrollingElement;
+  if (root && root.scrollTop > 0) positions.set(root, root.scrollTop);
+  return positions;
 }
 
 function append_roblox_totp_card(container, totp_snapshot = {}) {
@@ -4947,7 +5236,7 @@ function append_trade_page_theme_card(container, snapshot = {}) {
         <span class="nte-theme-sub" id="nte-theme-sub">Recolor the Roblox trades page.</span>
       </div>
       <label class="nte-theme-toggle" title="Enable this theme">
-        <input type="checkbox" id="nte-theme-enabled" />
+        <input type="checkbox" id="nte-theme-enabled" aria-label="Enable theme" />
         <span></span>
       </label>
     </div>
@@ -5445,7 +5734,11 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   name_cancel_btn.addEventListener("click", clear_pending_upload);
   name_input.addEventListener("keydown", (event) => {
     if (event.key === "Enter") save_pending_upload();
-    if (event.key === "Escape") clear_pending_upload();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      clear_pending_upload();
+    }
   });
 
   upload_el.addEventListener("change", () => {
@@ -5511,7 +5804,7 @@ function append_trade_page_theme_card(container, snapshot = {}) {
 }
 
 function restore_defaults() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const updates = {};
     option_groups.forEach((option) => {
       if (typeof option === "string") return;
@@ -5545,9 +5838,16 @@ function restore_defaults() {
     chrome.storage.local.remove(
       [ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY],
       () => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
         chrome.storage.local.set(updates, () => {
-          if (chrome.runtime.lastError) console.info(chrome.runtime.lastError);
-          resolve();
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(updates);
         });
       },
     );
@@ -5697,28 +5997,8 @@ async function export_settings_backup() {
   set_settings_status("Settings exported. TOTP secrets are not included.", "ok");
 }
 
-async function import_settings_backup(file) {
-  if (!file) return;
-  let text = await file.text();
-  let parsed = JSON.parse(text);
-  let raw_settings =
-    parsed?.type === "nevos-trading-extension-settings"
-      ? parsed.settings
-      : parsed?.settings || parsed;
-  if (!raw_settings || typeof raw_settings !== "object" || Array.isArray(raw_settings))
-    throw new Error("Invalid settings file.");
-
-  let allowed = new Set(get_settings_backup_keys());
-  let patch = {};
-  for (let [key, value] of Object.entries(raw_settings)) {
-    if (!allowed.has(key)) continue;
-    patch[key] = normalize_imported_setting(key, value);
-  }
-  if (!Object.keys(patch).length) throw new Error("No importable settings found.");
-
-  await set_storage(patch);
-  apply_popup_theme(patch[popup_theme_storage_key]);
-  await refresh_all_panels();
+// Tells open Roblox/Rolimons tabs which settings changed after an import or reset.
+function notify_tabs_of_settings_patch(patch) {
   for (let option of option_groups) {
     if (typeof option !== "string" && option.name in patch)
       send_option_update(option.name);
@@ -5753,6 +6033,31 @@ async function import_settings_backup(file) {
     send_option_update(counter_trade_choices_option_name);
     send_option_update(counter_trade_choice_mode_key);
   }
+}
+
+async function import_settings_backup(file) {
+  if (!file) return;
+  let text = await file.text();
+  let parsed = JSON.parse(text);
+  let raw_settings =
+    parsed?.type === "nevos-trading-extension-settings"
+      ? parsed.settings
+      : parsed?.settings || parsed;
+  if (!raw_settings || typeof raw_settings !== "object" || Array.isArray(raw_settings))
+    throw new Error("Invalid settings file.");
+
+  let allowed = new Set(get_settings_backup_keys());
+  let patch = {};
+  for (let [key, value] of Object.entries(raw_settings)) {
+    if (!allowed.has(key)) continue;
+    patch[key] = normalize_imported_setting(key, value);
+  }
+  if (!Object.keys(patch).length) throw new Error("No importable settings found.");
+
+  await set_storage(patch);
+  apply_popup_theme(patch[popup_theme_storage_key]);
+  await refresh_all_panels();
+  notify_tabs_of_settings_patch(patch);
   set_settings_status("Settings imported.", "ok");
 }
 
@@ -5784,8 +6089,14 @@ function init_settings_import_export() {
     import_btn.disabled = true;
     try {
       await import_settings_backup(file);
-    } catch {
-      set_settings_status("Could not import settings. Use a valid JSON backup.", "error");
+    } catch (err) {
+      let known = ["No importable settings found.", "Invalid settings file."];
+      set_settings_status(
+        known.includes(err?.message)
+          ? err.message
+          : "Could not import settings. Use a valid JSON backup.",
+        "error",
+      );
     } finally {
       import_btn.disabled = false;
       import_file.value = "";
@@ -5799,7 +6110,7 @@ restore_btn.addEventListener("click", async () => {
   let label = restore_btn.querySelector(".btn-restore-label");
   if (restore_btn.dataset.confirm !== "1") {
     restore_btn.dataset.confirm = "1";
-    label.textContent = "Click again to reset";
+    label.textContent = "Click again to reset settings, themes and 2FA";
     setTimeout(() => {
       if (restore_btn.dataset.confirm !== "1") return;
       restore_btn.dataset.confirm = "";
@@ -5809,19 +6120,32 @@ restore_btn.addEventListener("click", async () => {
   }
   restore_btn.dataset.confirm = "";
   restore_btn.disabled = true;
-  await restore_defaults();
-  apply_popup_theme(popup_theme_default);
-  await refresh_all_panels();
-
-  restore_btn.classList.add("btn-restore-done");
-  restore_btn.querySelector(".btn-restore-label").textContent = "Restored!";
-
-  setTimeout(() => {
-    restore_btn.classList.remove("btn-restore-done");
-    restore_btn.querySelector(".btn-restore-label").textContent =
-      "Reset to Defaults";
-    restore_btn.disabled = false;
-  }, 1400);
+  let done = false;
+  try {
+    let updates = await restore_defaults();
+    done = true;
+    notify_tabs_of_settings_patch(updates);
+    apply_popup_theme(popup_theme_default);
+    restore_btn.classList.add("btn-restore-done");
+    label.textContent = "Restored!";
+    try {
+      await refresh_all_panels();
+    } catch (err) {
+      console.info("Reset refresh failed", err);
+      label.textContent = "Reset done. Reopen the popup to refresh.";
+    }
+  } catch (err) {
+    console.info("Reset to defaults failed", err);
+    label.textContent = done
+      ? "Reset done. Reopen the popup to refresh."
+      : "Reset failed. Try again";
+  } finally {
+    setTimeout(() => {
+      restore_btn.classList.remove("btn-restore-done");
+      label.textContent = "Reset to Defaults";
+      restore_btn.disabled = false;
+    }, done ? 1400 : 2500);
+  }
 });
 
 const required_origins = (() => {
@@ -5900,7 +6224,7 @@ async function render_permissions_banner() {
         <strong>Permissions required</strong>
         <span>Grant access to Roblox & Rolimons so the extension can work properly.</span>
       </div>
-      <button class="permissions-banner-btn" id="nte-grant-permissions">Grant</button>
+      <button type="button" class="permissions-banner-btn" id="nte-grant-permissions">Grant</button>
     </div>
   `;
 
@@ -5933,29 +6257,32 @@ async function render_permissions_banner() {
       });
       if (result) {
         banner.remove();
+        return;
       }
+      const hint = banner.querySelector(".permissions-banner-text span");
+      if (hint) hint.textContent = "Permission wasn't granted. Try again.";
     });
 }
 
 const ta_actions = [
   {
     id: "cancel_inbound_overpaying",
-    label: "Cancel inbound trades you're overpaying in",
+    label: "Decline inbound trades you're overpaying in",
     section: "inbound",
   },
   {
     id: "cancel_inbound_unowned",
-    label: "Cancel inbound trades with unowned items",
+    label: "Decline inbound trades with unowned items",
     section: "inbound",
   },
   {
     id: "cancel_inbound_with_item",
-    label: "Cancel inbound trades with an item…",
+    label: "Decline inbound trades with an item…",
     section: "inbound",
   },
   {
     id: "cancel_inbound_all",
-    label: "Cancel all inbound trades",
+    label: "Decline all inbound trades",
     section: "inbound",
   },
   {
@@ -6012,6 +6339,56 @@ function ta_locked_count_html(count) {
   return `<br>${count} locked trade${count === 1 ? "" : "s"} will be skipped.`;
 }
 
+function ta_confirm_verb(action_label) {
+  return /^decline/i.test(action_label) ? "decline" : "cancel";
+}
+
+function ta_confirm_label(action_label) {
+  return `${ta_confirm_verb(action_label) === "decline" ? "Decline" : "Cancel"} trades`;
+}
+
+// Dialog semantics, Escape to close, and optional initial focus on the safe (cancel) button.
+function ta_wire_dialog(overlay, title, focus_safe) {
+  let box = overlay.querySelector(".ta-confirm-box");
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-label", title);
+  let opener = document.activeElement;
+  let close = () => {
+    document.removeEventListener("keydown", on_key, true);
+    Element.prototype.remove.call(overlay);
+    if (opener?.isConnected) opener.focus();
+  };
+  // Document-level so Escape never reaches the popup's own handlers while open.
+  function on_key(e) {
+    if (!overlay.isConnected) return document.removeEventListener("keydown", on_key, true);
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      return close();
+    }
+    if (e.key !== "Tab") return;
+    let nodes = [...box.querySelectorAll("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])")].filter((n) => !n.disabled);
+    if (!nodes.length) return;
+    let first = nodes[0];
+    let last = nodes[nodes.length - 1];
+    if (!box.contains(document.activeElement)) {
+      e.preventDefault();
+      first.focus();
+    } else if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+  document.addEventListener("keydown", on_key, true);
+  // Callers remove the overlay directly; route that through the same cleanup.
+  overlay.remove = close;
+  if (focus_safe) overlay.querySelector(".ta-confirm-cancel")?.focus();
+}
+
 async function ta_show_confirm(action_label, on_confirm) {
   let existing = document.querySelector(".ta-confirm-overlay");
   if (existing) existing.remove();
@@ -6024,12 +6401,13 @@ async function ta_show_confirm(action_label, on_confirm) {
       <div class="ta-confirm-title">Are you sure?</div>
       <div class="ta-confirm-msg">${escape_html(action_label)}.<br>You can stop it at any time.${ta_locked_count_html(locked_count)}</div>
       <div class="ta-confirm-actions">
-        <button class="ta-confirm-btn ta-confirm-cancel">Cancel</button>
-        <button class="ta-confirm-btn ta-confirm-go">Do it</button>
+        <button type="button" class="ta-confirm-btn ta-confirm-cancel">Go back</button>
+        <button type="button" class="ta-confirm-btn ta-confirm-go">${escape_html(ta_confirm_label(action_label))}</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
+  ta_wire_dialog(overlay, "Are you sure?", true);
 
   overlay
     .querySelector(".ta-confirm-cancel")
@@ -6083,12 +6461,13 @@ async function ta_show_duration_config(action_label, on_confirm) {
         </span>
       </div>
       <div class="ta-confirm-actions">
-        <button class="ta-confirm-btn ta-confirm-cancel">Cancel</button>
-        <button class="ta-confirm-btn ta-confirm-go">Do it</button>
+        <button type="button" class="ta-confirm-btn ta-confirm-cancel">Go back</button>
+        <button type="button" class="ta-confirm-btn ta-confirm-go">${escape_html(ta_confirm_label(action_label))}</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
+  ta_wire_dialog(overlay, "Configure duration", false);
 
   let input = overlay.querySelector("#ta-duration-input");
   let unit = overlay.querySelector("#ta-duration-unit");
@@ -6126,19 +6505,20 @@ async function ta_show_overpay_config(action_label, on_confirm) {
       <div class="ta-confirm-title">Configure filter</div>
       <div class="ta-confirm-msg">${escape_html(action_label)}.${ta_locked_count_html(locked_count)}</div>
       <div class="ta-filter-row">
-        <span class="ta-filter-label">Only cancel if overpaying by more than</span>
+        <span class="ta-filter-label">Only ${ta_confirm_verb(action_label)} if overpaying by more than</span>
         <span class="ta-filter-input-wrap">
           <input class="ta-filter-input" type="number" min="0" max="9999" step="1" value="0" id="ta-pct-input">
           <span class="ta-filter-unit">%</span>
         </span>
       </div>
       <div class="ta-confirm-actions">
-        <button class="ta-confirm-btn ta-confirm-cancel">Cancel</button>
-        <button class="ta-confirm-btn ta-confirm-go">Do it</button>
+        <button type="button" class="ta-confirm-btn ta-confirm-cancel">Go back</button>
+        <button type="button" class="ta-confirm-btn ta-confirm-go">${escape_html(ta_confirm_label(action_label))}</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
+  ta_wire_dialog(overlay, "Configure filter", false);
 
   let input = overlay.querySelector("#ta-pct-input");
   input.addEventListener("keydown", (e) => {
@@ -6178,7 +6558,7 @@ async function ta_show_item_config(action_label, on_confirm) {
     <div class="ta-confirm-box">
       <div class="ta-confirm-title">Pick an item</div>
       <div class="ta-confirm-msg">${escape_html(action_label.replace(/…$/, ""))}.${ta_locked_count_html(locked_count)}</div>
-      <input class="ta-item-search" type="text" placeholder="Item name or acronym" autocomplete="off" spellcheck="false" id="ta-item-input">
+      <input class="ta-item-search" type="text" placeholder="Item name or acronym" aria-label="Search items" autocomplete="off" spellcheck="false" id="ta-item-input">
       <div class="ta-item-results" id="ta-item-results"></div>
       <div class="ta-filter-row">
         <span class="ta-filter-label">Item is in</span>
@@ -6189,15 +6569,19 @@ async function ta_show_item_config(action_label, on_confirm) {
         </select>
       </div>
       <div class="ta-confirm-actions">
-        <button class="ta-confirm-btn ta-confirm-cancel">Cancel</button>
-        <button class="ta-confirm-btn ta-confirm-go" disabled>Do it</button>
+        <button type="button" class="ta-confirm-btn ta-confirm-cancel">Go back</button>
+        <button type="button" class="ta-confirm-btn ta-confirm-go" disabled>${escape_html(ta_confirm_label(action_label))}</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
+  ta_wire_dialog(overlay, "Pick an item", false);
 
   let input = overlay.querySelector("#ta-item-input");
   let results = overlay.querySelector("#ta-item-results");
+  let item_empty_text = rows.length
+    ? "No matching items."
+    : "Item list isn't loaded yet. Open a Roblox page, then try again.";
   let go = overlay.querySelector(".ta-confirm-go");
   let picked = null;
   let render = () => {
@@ -6205,7 +6589,10 @@ async function ta_show_item_config(action_label, on_confirm) {
     if (picked && input.value === picked.name) return;
     picked = null;
     go.disabled = true;
-    if (!q) return void (results.innerHTML = "");
+    if (!q)
+      return void (results.innerHTML = rows.length
+        ? ""
+        : `<div class="ta-item-empty">${item_empty_text}</div>`);
     let hits = rows
       .filter(
         ([, row]) =>
@@ -6221,8 +6608,11 @@ async function ta_show_item_config(action_label, on_confirm) {
               `<button type="button" class="ta-item-hit" data-id="${escape_html(id)}">${escape_html(row[0])}${row[1] ? ` <span>${escape_html(row[1])}</span>` : ""}</button>`,
           )
           .join("")
-      : `<div class="ta-item-empty">No matching items.</div>`;
+      : `<div class="ta-item-empty">${item_empty_text}</div>`;
   };
+  if (!rows.length) {
+    results.innerHTML = `<div class="ta-item-empty">${item_empty_text}</div>`;
+  }
   results.addEventListener("click", (e) => {
     let hit = e.target.closest(".ta-item-hit");
     if (!hit) return;
@@ -6251,6 +6641,21 @@ async function ta_show_item_config(action_label, on_confirm) {
   });
 }
 
+function ta_set_btn_disabled(btn, disabled) {
+  btn.classList.toggle("is-disabled", disabled);
+  let main = btn.querySelector(".ta-btn-main");
+  if (main) main.disabled = disabled;
+}
+
+// One shared live region, announced only on start/stop/done so the 800ms polling stays silent.
+let ta_last_announced = "";
+function ta_announce(key, text) {
+  if (key === ta_last_announced) return;
+  ta_last_announced = key;
+  let region = document.getElementById("ta-live-status");
+  if (region) region.textContent = text;
+}
+
 function ta_update_buttons(progress) {
   let root = document.getElementById("trade-actions-root");
   if (!root) return;
@@ -6263,9 +6668,12 @@ function ta_update_buttons(progress) {
     let icon_wrap = btn.querySelector(".ta-btn-icon");
 
     let stop_btn = btn.querySelector(".ta-stop-btn");
+    let is_inbound = action.section === "inbound";
+    let verb_past = is_inbound ? "declined" : "cancelled";
+    let verb_ing = is_inbound ? "Declining" : "Cancelling";
 
     if (progress?.running && progress.action === action.id) {
-      btn.disabled = false;
+      ta_set_btn_disabled(btn, false);
       btn.classList.add("ta-running");
       btn.classList.remove("ta-done", "ta-error");
       let wait_sec = progress.wait_until
@@ -6282,13 +6690,14 @@ function ta_update_buttons(progress) {
           wait_suffix;
       } else if (progress.phase === "checking") {
         status_text =
-          `Checking ${progress.checked}/${progress.total} \u2014 ${progress.done} declined, ${progress.skipped} skipped` +
+          `Checking ${progress.checked}/${progress.total} \u2014 ${progress.done} ${verb_past}, ${progress.skipped} skipped` +
           wait_suffix;
       } else if (progress.phase === "declining") {
         status_text =
-          `Declining ${progress.done}/${progress.total}...` + wait_suffix;
+          `${verb_ing} ${progress.done}/${progress.total}...` + wait_suffix;
       }
       status_el.textContent = status_text;
+      ta_announce(`run:${action.id}`, `${verb_ing} trades started.`);
       if (!btn.querySelector(".ta-spinner")) {
         let existing_svg = icon_wrap.querySelector("svg");
         if (existing_svg) existing_svg.style.display = "none";
@@ -6298,6 +6707,7 @@ function ta_update_buttons(progress) {
       }
       if (!stop_btn) {
         stop_btn = document.createElement("button");
+        stop_btn.type = "button";
         stop_btn.className = "ta-stop-btn";
         stop_btn.textContent = "Stop";
         stop_btn.addEventListener("click", async (e) => {
@@ -6315,11 +6725,11 @@ function ta_update_buttons(progress) {
         btn.appendChild(stop_btn);
       }
     } else if (progress?.running) {
-      btn.disabled = true;
+      ta_set_btn_disabled(btn, true);
       status_el.textContent = "Another action is running...";
       if (stop_btn) stop_btn.remove();
     } else {
-      btn.disabled = false;
+      ta_set_btn_disabled(btn, false);
       btn.classList.remove("ta-running");
       if (stop_btn) stop_btn.remove();
       let spinner = btn.querySelector(".ta-spinner");
@@ -6334,16 +6744,19 @@ function ta_update_buttons(progress) {
         progress?.action === action.id &&
         (progress?.total > 0 || progress?.error)
       ) {
-        if (progress.error) {
+        if (progress.error === "Cancelled by user") {
+          status_el.textContent = `Stopped. ${progress.done} of ${progress.total} done`;
+        } else if (progress.error) {
           btn.classList.add("ta-error");
           status_el.textContent = `Stopped: ${progress.error} (${progress.done}/${progress.total})`;
         } else {
           btn.classList.add("ta-done");
           status_el.textContent =
             progress.skipped > 0
-              ? `Done! ${progress.done} declined, ${progress.skipped} skipped.`
-              : `Done! ${progress.done} trades declined.`;
+              ? `Done! ${progress.done} ${verb_past}, ${progress.skipped} skipped.`
+              : `Done! ${progress.done} trades ${verb_past}.`;
         }
+        ta_announce(`end:${action.id}:${status_el.textContent}`, status_el.textContent);
       } else if (!progress?.running && progress?.action !== action.id) {
         status_el.textContent = "";
         btn.classList.remove("ta-done", "ta-error");
@@ -6411,6 +6824,8 @@ function actions_set_active_category(root, category) {
 
 function actions_bind_category_picks(root) {
   root.querySelectorAll(".ta-category-pick").forEach((btn) => {
+    if (btn.dataset.taBound === "1") return;
+    btn.dataset.taBound = "1";
     btn.addEventListener("click", () => {
       actions_set_active_category(root, btn.dataset.actionsCategory);
       if (btn.dataset.actionsCategory === "mass") {
@@ -6460,6 +6875,7 @@ function render_bulk_cancel_into(bulk_inner) {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
 
   bulk_inner.innerHTML = `
+    <div id="ta-live-status" class="ta-sr-only" role="status" aria-live="polite"></div>
     <div class="ta-section ta-section-inbound">
       <div class="ta-section-title">
         <span class="ta-section-icon">${inbound_icon}</span>
@@ -6470,13 +6886,15 @@ function render_bulk_cancel_into(bulk_inner) {
           .filter((a) => a.section === "inbound")
           .map(
             (a) => `
-          <button class="ta-btn" data-ta-action="${a.id}">
-            <span class="ta-btn-icon">${cancel_icon}</span>
-            <span class="ta-btn-text">
-              <span class="ta-btn-label">${escape_html(a.label)}</span>
-              <span class="ta-btn-status"></span>
-            </span>
-          </button>
+          <div class="ta-btn" role="group" aria-label="${escape_html_attr(a.label)}" data-ta-action="${a.id}">
+            <button type="button" class="ta-btn-main">
+              <span class="ta-btn-icon">${cancel_icon}</span>
+              <span class="ta-btn-text">
+                <span class="ta-btn-label">${escape_html(a.label)}</span>
+                <span class="ta-btn-status"></span>
+              </span>
+            </button>
+          </div>
         `,
           )
           .join("")}
@@ -6492,13 +6910,15 @@ function render_bulk_cancel_into(bulk_inner) {
           .filter((a) => a.section === "outbound")
           .map(
             (a) => `
-          <button class="ta-btn" data-ta-action="${a.id}">
-            <span class="ta-btn-icon">${cancel_icon}</span>
-            <span class="ta-btn-text">
-              <span class="ta-btn-label">${escape_html(a.label)}</span>
-              <span class="ta-btn-status"></span>
-            </span>
-          </button>
+          <div class="ta-btn" role="group" aria-label="${escape_html_attr(a.label)}" data-ta-action="${a.id}">
+            <button type="button" class="ta-btn-main">
+              <span class="ta-btn-icon">${cancel_icon}</span>
+              <span class="ta-btn-text">
+                <span class="ta-btn-label">${escape_html(a.label)}</span>
+                <span class="ta-btn-status"></span>
+              </span>
+            </button>
+          </div>
         `,
           )
           .join("")}
@@ -6509,7 +6929,7 @@ function render_bulk_cancel_into(bulk_inner) {
   for (let action of ta_actions) {
     let btn = bulk_inner.querySelector(`[data-ta-action="${action.id}"]`);
     btn.addEventListener("click", () => {
-      if (btn.disabled || btn.classList.contains("ta-running")) return;
+      if (btn.classList.contains("is-disabled") || btn.classList.contains("ta-running")) return;
       let is_overpay = action.id.endsWith("_overpaying");
       let is_duration = action.id === "cancel_outbound_older_than";
       let is_item = action.id.endsWith("_with_item");
@@ -7030,19 +7450,23 @@ function ms_preset_summary(preset) {
     Number(preset.request_robux) > 0
       ? ` + ${format_number(preset.request_robux)} R$`
       : "";
-  return `${offer_count}${offer_rbx} offer · ${request_count}${request_rbx} want`;
+  return `${offer_count}${offer_rbx} offer · ${request_count}${request_rbx} request`;
 }
 
 function ms_slot_html(side, i, id, metrics) {
+  const base_label = `${side === "offer" ? "Offer" : "Request"} slot ${i + 1}`;
+  const slot_label = escape_html(
+    `${base_label}: ${id == null ? "empty" : metrics?.[String(Number(id))]?.name || `item ${id}`}`,
+  );
   if (id != null) {
     let aid = Number(id);
     let m = metrics?.[String(aid)] || {};
     let proj = m.projected
       ? `<span class="ta-slot-proj" title="Projected">PROJ</span>`
       : "";
-    return `<div class="ta-slot" data-ms-side="${side}" data-index="${i}"><div class="ta-slot-thumb-wrap"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" />${proj}<button type="button" class="ta-slot-clear" data-ms-side="${side}" data-index="${i}" aria-label="Clear">×</button></div></div>`;
+    return `<div class="ta-slot" role="button" tabindex="0" aria-label="${slot_label}" data-ms-side="${side}" data-index="${i}"><div class="ta-slot-thumb-wrap"><img src="${escape_html(trade_ads_thumb_placeholder_src)}" alt="" data-thumb-aid="${aid}" data-thumb-pending="1" decoding="async" />${proj}<button type="button" class="ta-slot-clear" data-ms-side="${side}" data-index="${i}" aria-label="Clear ${escape_html(base_label.toLowerCase())}">×</button></div></div>`;
   }
-  return `<div class="ta-slot ta-slot-is-empty" data-ms-side="${side}" data-index="${i}"><span class="ta-slot-empty">${side === "offer" ? "Offer" : "Want"}</span></div>`;
+  return `<div class="ta-slot ta-slot-is-empty" role="button" tabindex="0" aria-label="${slot_label}" data-ms-side="${side}" data-index="${i}"><span class="ta-slot-empty">${side === "offer" ? "Offer" : "Request"}</span></div>`;
 }
 
 function ms_confirm_item_row_html(id, metrics) {
@@ -7156,12 +7580,13 @@ function ms_side_label_html(title, totals, extra_class, robux_input) {
     (Number(totals?.value) || 0) + (Number(totals?.robux) || 0);
   let has_total = value > 0 || (totals?.count || 0) > 0;
   let roli_icon_url = escape_html(get_asset_url("assets/rolimons.png"));
-  let total_html = has_total
-    ? `<span class="ta-preview-label-total" title="Items + Robux">
+  let total_html =
+    has_total || robux_input?.id
+      ? `<span class="ta-preview-label-total" title="Items + Robux"${robux_input?.id ? ` data-ms-total-for="${escape_html(robux_input.id)}"` : ""}${has_total ? "" : " hidden"}>
         <img class="ta-preview-label-roli" src="${roli_icon_url}" width="15" height="15" alt="" decoding="async" />
         <span class="ta-preview-label-value">${escape_html(format_number(value))}</span>
       </span>`
-    : "";
+      : "";
   let robux_html = "";
   if (robux_input?.id) {
     let amount = ms_clamp_robux(robux_input.value);
@@ -7250,6 +7675,8 @@ function ms_field_help_html(aria, tip) {
   </span>`;
 }
 
+const ms_cancelled_by_user_error = "Cancelled by user";
+
 function ms_progress_text(progress) {
   if (!progress) return "Idle";
   if (progress.running) {
@@ -7271,7 +7698,18 @@ function ms_progress_text(progress) {
       `Sending… ${progress.sent || 0} sent, ${progress.skipped || 0} skipped, ${progress.failed || 0} failed`
     );
   }
-  if (progress.error) return `Stopped: ${progress.error}`;
+  if (progress.error) {
+    if (progress.error === ms_cancelled_by_user_error) {
+      return `Stopped. ${progress.sent || 0} sent`;
+    }
+    let reason = /^stopped/i.test(progress.error)
+      ? progress.error
+      : `Stopped: ${progress.error}`;
+    let last = progress.last_failure;
+    let last_text = String(last?.message || last || "");
+    if (last_text && !reason.includes(last_text)) reason += ` (${last_text})`;
+    return reason;
+  }
   if (progress.total > 0 || progress.sent > 0 || progress.failed > 0) {
     return `Done — ${progress.sent || 0} sent, ${progress.skipped || 0} skipped, ${progress.failed || 0} failed`;
   }
@@ -7350,7 +7788,14 @@ function ms_update_progress_ui(root, progress) {
   let run_btn = root.querySelector("#ms-run");
   if (line) {
     line.textContent = ms_progress_text(progress);
-    line.classList.toggle("ta-err", !!(progress?.error && !progress?.running));
+    line.classList.toggle(
+      "ta-err",
+      !!(
+        progress?.error &&
+        !progress?.running &&
+        progress.error !== ms_cancelled_by_user_error
+      ),
+    );
     if (/switch to a roblox tab/i.test(line.textContent))
       ms_append_go_roblox_button(line);
   }
@@ -7366,12 +7811,28 @@ function ms_update_progress_ui(root, progress) {
   ms_sync_2fa_box(root, progress);
 }
 
+const ms_max_null_polls = 10;
+
 function ms_start_polling(root) {
   if (ms_poll_timer) clearInterval(ms_poll_timer);
+  let null_polls = 0;
   ms_poll_timer = setInterval(async () => {
     let progress = await ms_send("ms_progress");
+    if (!progress) {
+      if (++null_polls < ms_max_null_polls) return;
+      clearInterval(ms_poll_timer);
+      ms_poll_timer = null;
+      let line = root.querySelector("#ms-progress-line");
+      if (line) {
+        line.textContent =
+          "Lost contact with the extension. Reopen the popup to check progress.";
+        line.classList.add("ta-err");
+      }
+      return;
+    }
+    null_polls = 0;
     ms_update_progress_ui(root, progress);
-    if (!progress?.running) {
+    if (!progress.running) {
       clearInterval(ms_poll_timer);
       ms_poll_timer = null;
     }
@@ -7413,7 +7874,7 @@ async function render_mass_send_panel(root) {
         <span class="ms-rate-gate-cta-star" aria-hidden="true">★</span>
         Rate 5 stars on ${escape_html(store.label)}
       </a>
-      <button type="button" class="ms-rate-gate-unlock${store_opened ? " is-shown" : ""}" id="ms-rate-unlock" aria-hidden="${store_opened ? "false" : "true"}">I've rated 5 stars</button>
+      <button type="button" class="ms-rate-gate-unlock${store_opened ? " is-shown" : ""}" id="ms-rate-unlock"${store_opened ? "" : " hidden"}>I've rated 5 stars</button>
     </div>`;
     bind_popup_external_links();
     let open_btn = root.querySelector("#ms-rate-open");
@@ -7422,7 +7883,7 @@ async function render_mass_send_panel(root) {
       void set_storage({ [mass_send_rate_store_opened_key]: true });
       if (!unlock_btn) return;
       unlock_btn.classList.add("is-shown");
-      unlock_btn.setAttribute("aria-hidden", "false");
+      unlock_btn.hidden = false;
     });
     unlock_btn?.addEventListener("click", async () => {
       await set_storage({
@@ -7747,7 +8208,7 @@ async function render_mass_send_panel(root) {
       <div class="ta-status-line" id="ms-progress-line">${escape_html(ms_progress_text(progress))}</div>
     </div>
     <div class="ta-recent-posts ms-recent-posts">
-      <button type="button" class="ta-recent-toggle" id="ms-recent-toggle">
+      <button type="button" class="ta-recent-toggle" id="ms-recent-toggle" aria-expanded="false" aria-controls="ms-recent-list">
         <span>Recent sends</span>
         <svg class="ta-recent-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
       </button>
@@ -7786,7 +8247,7 @@ async function render_mass_send_panel(root) {
       err.textContent = "";
     }
     let next = await ms_send("ms_progress");
-    ms_update_progress_ui(root, next);
+    if (next) ms_update_progress_ui(root, next);
   }
 
   root.querySelector("#ms-2fa-submit")?.addEventListener("click", () => {
@@ -7807,6 +8268,9 @@ async function render_mass_send_panel(root) {
     let chevron = root.querySelector("#ms-recent-toggle .ta-recent-chevron");
     if (!list) return;
     let open = list.classList.toggle("is-open");
+    root
+      .querySelector("#ms-recent-toggle")
+      .setAttribute("aria-expanded", String(open));
     if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "";
   });
 
@@ -7993,14 +8457,25 @@ async function render_mass_send_panel(root) {
     }
   }
 
+  // persist_filters saves both Robux values; here only the labels are updated, so the field keeps focus.
   async function persist_robux() {
-    let offer_robux = ms_clamp_robux(
-      root.querySelector("#ms-offer-robux")?.value,
-    );
-    let request_robux = ms_clamp_robux(
-      root.querySelector("#ms-request-robux")?.value,
-    );
-    await refresh({ ...cfg, offer_robux, request_robux });
+    await persist_filters();
+    const sides = [
+      ["#ms-offer-robux", cfg.offer_slots, cfg.offer_robux],
+      ["#ms-request-robux", cfg.request_slots, cfg.request_robux],
+    ];
+    for (const [selector, slots, robux] of sides) {
+      const input = root.querySelector(selector);
+      input?.closest(".ms-robux-chip")?.classList.toggle("is-active", robux > 0);
+      const total_el = root.querySelector(
+        `[data-ms-total-for="${selector.slice(1)}"]`,
+      );
+      if (!total_el) continue;
+      const sums = ms_sum_slot_metrics(slots, slot_metrics);
+      total_el.hidden = !(sums.value + robux > 0 || sums.count > 0);
+      const value_el = total_el.querySelector(".ta-preview-label-value");
+      if (value_el) value_el.textContent = format_number(sums.value + robux);
+    }
   }
 
   async function ms_resolve_block_query(raw) {
@@ -8159,20 +8634,25 @@ async function render_mass_send_panel(root) {
 
   async function add_blocked_user() {
     let input = root.querySelector("#ms-block-input");
-    let line = root.querySelector("#ms-progress-line");
+    let add_btn = root.querySelector("#ms-block-add");
     let query = input?.value || "";
+    let add_label = add_btn?.textContent;
+    if (add_btn) {
+      if (add_btn.disabled) return;
+      add_btn.disabled = true;
+      add_btn.textContent = "Looking up…";
+    }
+    set_blocklist_io_status("");
     try {
       let user = await ms_resolve_block_query(query);
       let blocked = ms_normalize_blocked_users(cfg.blocked_users);
       if (blocked.some((row) => row.user_id === user.user_id)) {
-        if (line) {
-          line.textContent = `${user.name} is already blocked.`;
-          line.classList.add("ta-err");
-        }
+        set_blocklist_io_status(`${user.name} is already blocked.`, "error");
         return;
       }
       blocked.push(user);
       if (input) input.value = "";
+      ms_blocklist_io_flash = { message: `Blocked ${user.name}.`, kind: "ok" };
       await refresh({
         ...cfg,
         blocked_users: blocked,
@@ -8180,9 +8660,11 @@ async function render_mass_send_panel(root) {
         blocklist_open: true,
       });
     } catch (err) {
-      if (line) {
-        line.textContent = err?.message || "Could not add that user.";
-        line.classList.add("ta-err");
+      set_blocklist_io_status(err?.message || "Could not add that user.", "error");
+    } finally {
+      if (add_btn?.isConnected) {
+        add_btn.disabled = false;
+        add_btn.textContent = add_label;
       }
     }
   }
@@ -8236,6 +8718,10 @@ async function render_mass_send_panel(root) {
     let line = root.querySelector("#ms-progress-line");
     if (line) line.textContent = `Cleared ${count} blocked user${count === 1 ? "" : "s"}.`;
   });
+
+  root
+    .querySelectorAll('.ta-slot[role="button"]')
+    .forEach(make_keyboard_activatable);
 
   root.querySelectorAll('.ta-slot[data-ms-side="offer"]').forEach((el) => {
     el.addEventListener("click", async () => {
@@ -8367,12 +8853,14 @@ async function render_mass_send_panel(root) {
         blocked_users: cfg.blocked_users,
       },
     });
-    if (start_res && start_res.ok === false) {
+    if (!start_res || start_res.ok === false) {
       let line = root.querySelector("#ms-progress-line");
       if (line) {
-        line.textContent =
-          start_res.error ||
-          "Rate the extension 5 stars to unlock Mass Sending.";
+        // The background only sends this exact error for the rate gate.
+        let rate_gated = /rate the extension/i.test(start_res?.error || "");
+        line.textContent = rate_gated
+          ? "Rate the extension 5 stars to unlock Mass Sending."
+          : start_res?.error || "Couldn't reach the extension. Try again.";
         line.classList.add("ta-err");
       }
       return;

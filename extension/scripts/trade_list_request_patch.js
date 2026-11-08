@@ -9,7 +9,12 @@
   // Short local trace of trade-detail loads, for the intermittent "selected trade never
   // loads" report. Stays in this page's localStorage; nothing is sent anywhere.
   const TRACE_KEY = "nte_trade_detail_trace";
+  let trace_enabled = false;
+  try {
+    trace_enabled = "1" === localStorage.getItem("nte_trace");
+  } catch {}
   function trace(trade_id, step) {
+    if (!trace_enabled) return;
     try {
       let log = JSON.parse(localStorage.getItem(TRACE_KEY) || "[]");
       log.push(`${new Date().toISOString().slice(11, 23)} ${trade_id} ${step}`);
@@ -30,7 +35,13 @@
     return /^(inbound|outbound|completed|inactive)$/i.test(String(value || "").trim());
   }
 
+  // Also injected on /users/<id>/trade for send detection only; list/detail handling is /trades-only.
+  function is_trades_page() {
+    return /^\/(?:[a-z]{2}(?:-[a-z]+)?\/)?trades(?:\/|$)/i.test(location.pathname);
+  }
+
   function is_trade_list_url(url) {
+    if (!is_trades_page()) return false;
     let host = String(url.hostname || "").toLowerCase();
     if ("trades.roblox.com" !== host && !host.endsWith(".trades.roblox.com")) {
       // Some clients hit same-origin proxies under www.roblox.com.
@@ -82,6 +93,7 @@
   }
 
   function get_trade_detail_id(raw_url) {
+    if (!is_trades_page()) return "";
     try {
       let url = new URL(raw_url, location.origin),
         match = "trades.roblox.com" === url.hostname && url.pathname.match(/^\/v2\/trades\/(\d+)\/?$/);
@@ -99,6 +111,33 @@
     } catch {
       return "";
     }
+  }
+
+  // POST /v1/trades/send or /v1/trades/{id}/counter -> "send" | "counter".
+  function get_trade_send_kind(raw_url) {
+    try {
+      let url = new URL(raw_url, location.origin);
+      // Same hosts as list detection: trades.roblox.com, *.trades.roblox.com, same-origin roblox.com proxies.
+      if (!/(^|\.)roblox\.com$/i.test(String(url.hostname || ""))) return "";
+      if (/^\/v[12]\/trades\/send\/?$/i.test(url.pathname)) return "send";
+      if (/^\/v[12]\/trades\/\d+\/counter\/?$/i.test(url.pathname))
+        return "counter";
+      return "";
+    } catch {
+      return "";
+    }
+  }
+
+  function dispatch_trade_sent(kind, payload) {
+    let trade_id = payload?.id ?? payload?.tradeId;
+    if (!kind || !trade_id) return;
+    try {
+      document.dispatchEvent(
+        new CustomEvent("nru_trade_sent", {
+          detail: JSON.stringify({ trade_id: String(trade_id), kind }),
+        }),
+      );
+    } catch {}
   }
 
   function dispatch_self_declined_trade(trade_id) {
@@ -327,8 +366,19 @@
         "POST" === get_request_method(input, init)
           ? get_trade_decline_id(get_request_url(input))
           : "";
+      let send_kind =
+        "POST" === get_request_method(input, init)
+          ? get_trade_send_kind(get_request_url(input))
+          : "";
       if (trade_id) dispatch_trade_detail_network_start(trade_id);
       let response = await original_fetch.call(this, normalize_request(input), init);
+      if (send_kind && response?.ok) {
+        response
+          .clone()
+          .json()
+          .then((payload) => dispatch_trade_sent(send_kind, payload))
+          .catch(() => {});
+      }
       if (trade_id) trace(trade_id, `fetch: network ${response?.status}`);
       if (decline_id && response?.ok) dispatch_self_declined_trade(decline_id);
       if (trade_id && response?.ok) {
@@ -513,7 +563,22 @@
       trade_id = get_trade_detail_id(meta.url),
       list_type =
         "GET" === meta.method ? get_trade_list_type_from_url(meta.url) : "",
-      decline_id = "POST" === meta.method ? get_trade_decline_id(meta.url) : "";
+      decline_id = "POST" === meta.method ? get_trade_decline_id(meta.url) : "",
+      send_kind = "POST" === meta.method ? get_trade_send_kind(meta.url) : "";
+    if (send_kind) {
+      try {
+        xhr.addEventListener("loadend", () => {
+          if (!(xhr.status >= 200 && xhr.status < 300)) return;
+          try {
+            let payload =
+              "json" === (xhr.responseType || "")
+                ? xhr.response
+                : JSON.parse(xhr.responseText || "null");
+            dispatch_trade_sent(send_kind, payload);
+          } catch {}
+        });
+      } catch {}
+    }
     if (decline_id) {
       try {
         xhr.addEventListener("loadend", () => {

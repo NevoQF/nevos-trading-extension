@@ -220,17 +220,26 @@
       }
     }
 
+    const WAIT_FOR_ELM_TIMEOUT_MS = 20000;
+
     function wait_for_elm(selector, parent) {
       return new Promise((resolve) => {
         let root = parent !== undefined ? parent : document;
+        let timer = null;
         function check() {
           let el = root.querySelector(selector);
           if (el) {
+            clearTimeout(timer);
             resolve(el);
             observer.disconnect();
           }
         }
         let observer = new MutationObserver(check);
+        // Give up so late matches don't inject stale data; callers get null.
+        timer = setTimeout(() => {
+          observer.disconnect();
+          resolve(null);
+        }, WAIT_FOR_ELM_TIMEOUT_MS);
         observer.observe(parent !== undefined ? root : document.body, {
           childList: true,
           subtree: true,
@@ -1108,7 +1117,7 @@
       let item_id = window.location.pathname.match(/\/catalog\/(\d+)\//)?.[1];
       if (utils.getRolimonsData().items[item_id] === undefined) return;
       let container = await utils.waitForElm(".price-container-text");
-      if (container.querySelector(".icon-rolimons") !== null) return;
+      if (!container || container.querySelector(".icon-rolimons") !== null) return;
 
       container.insertAdjacentHTML(
         "beforeend",
@@ -1150,13 +1159,14 @@
         if (utils.getRolimonsData().items[id] !== undefined) {
           if (!div.getElementsByClassName("valueSpan")[0])
             utils.createValuesSpans(div);
-          div.getElementsByClassName("valueSpan")[0].innerText = utils.commafy(
-            utils.getValueOrRAP(id),
-          );
+          // Write only on change: this re-runs whenever more cards load.
+          let span = div.getElementsByClassName("valueSpan")[0];
+          let text = utils.commafy(utils.getValueOrRAP(id));
+          if (span.textContent !== text) span.textContent = text;
         }
       }
       for (let el of document.getElementsByClassName("list-item"))
-        el.style.marginBottom = "35px";
+        if (el.style.marginBottom !== "35px") el.style.marginBottom = "35px";
     }
 
     var handle_values = async function () {
@@ -1228,7 +1238,7 @@
       }
 
       let link = document.createElement("a");
-      link.href = get_rolimons_profile_url(item_id, { isBundle: is_bundle });
+      link.href = utils.getRolimonsProfileUrl(item_id, { isBundle: is_bundle });
       link.target = "_blank";
       link.style.display = "inline-block";
       link.style.width = "28px";
@@ -1305,7 +1315,7 @@
           continue;
         }
         let link = document.createElement("a");
-        link.href = get_rolimons_profile_url(rolimons_id, {
+        link.href = utils.getRolimonsProfileUrl(rolimons_id, {
           isBundle: is_bundle,
         });
         link.target = "_blank";
@@ -1550,7 +1560,7 @@
       return;
     }
 
-    await utils.waitForElm(".user-profile-header");
+    if (!(await utils.waitForElm(".user-profile-header"))) return;
     let wrapper = ensure_profile_summary_container(user_id);
     if (!wrapper) return;
 
@@ -1566,7 +1576,7 @@
     let has_cached_inventory = profile_inventory_cache[user_id] !== undefined;
     if (!has_cached_inventory) {
       rap_label.classList.add("nte-loading-dots");
-      rap_label.innerText = "Loading";
+      set_label_text(rap_label, "Loading");
     }
 
     let inventory = has_cached_inventory
@@ -1595,10 +1605,13 @@
 
       let display_mode = await get_profile_value_display_mode();
       let display_total = display_mode === "value" ? total_value : total_rap;
-      rap_label.innerText =
+      let label_text =
         utils.commafy(display_total) +
         (display_mode === "value" ? " Value" : " RAP");
-      utils.addTooltip(rap_label, "Click to view inventory breakdown");
+      let label_changed = set_label_text(rap_label, label_text);
+      if (label_changed || !window.__nteInvData) {
+        utils.addTooltip(rap_label, "Click to view inventory breakdown");
+      }
       window.__nteInvData = {
         items: inventory,
         rolimonsData: rolimons_data,
@@ -1606,10 +1619,10 @@
         totalRAP: total_rap,
       };
     } else if (inventory === false) {
-      rap_label.innerText = "Private";
-      utils.addTooltip(rap_label, "This user's inventory is private");
-    } else {
-      rap_label.innerText = "Unavailable";
+      if (set_label_text(rap_label, "Private")) {
+        utils.addTooltip(rap_label, "This user's inventory is private");
+      }
+    } else if (set_label_text(rap_label, "Unavailable")) {
       utils.addTooltip(
         rap_label,
         "Inventory could not be loaded. Try again in a moment.",
@@ -1619,10 +1632,24 @@
     utils.initTooltips();
   }
 
+  // Writes only on change so our own edits don't re-trigger the body observer.
+  function set_label_text(el, text) {
+    if (el.textContent === text) return false;
+    el.innerText = text;
+    return true;
+  }
+
   function start_profile_observer() {
     if (profile_observer) return;
 
-    profile_observer = new MutationObserver(() => {
+    profile_observer = new MutationObserver((records) => {
+      let own_summary = document.getElementById("totalRAP")?.parentElement;
+      if (
+        own_summary &&
+        records.every((r) => own_summary.contains(r.target))
+      ) {
+        return;
+      }
       if (profile_render_timer) clearTimeout(profile_render_timer);
       profile_render_timer = setTimeout(() => {
         profile_render_timer = null;
@@ -1640,8 +1667,11 @@
   }
 
   var mobile_trade_check_cache = {};
+  var mobile_trade_click_bound = false;
+  var mobile_trade_inject = () => {};
 
   async function add_mobile_trade_button(user_id) {
+    mobile_trade_inject = () => {};
     let enabled = await utils.getOption("Mobile Trade Items Button");
     if (!enabled) return;
     let id = String(user_id || "");
@@ -1661,7 +1691,9 @@
           { credentials: "include" },
         ).catch(() => null);
         let data = resp?.ok ? await resp.json().catch(() => null) : null;
-        mobile_trade_check_cache[id] = !!data?.canTrade;
+        // Failed checks aren't cached, so a later call can retry.
+        if (!data) return;
+        mobile_trade_check_cache[id] = !!data.canTrade;
       }
     }
     let can_trade = mobile_trade_check_cache[id];
@@ -1676,8 +1708,14 @@
         );
       }
     }
-    let popover = document.getElementById("popover-link");
-    if (popover) popover.onclick = () => inject();
+    // Delegated: the popover link may render after this runs.
+    if (!mobile_trade_click_bound) {
+      mobile_trade_click_bound = true;
+      document.addEventListener("click", (ev) => {
+        if (ev.target.closest?.("#popover-link")) mobile_trade_inject();
+      }, true); // capture: Roblox popovers may stopPropagation
+    }
+    mobile_trade_inject = inject;
   }
 
   var BADGE_KEYS = [
@@ -1788,7 +1826,7 @@
         if (!resp || !resp.rolibadges) return;
         let user_badges = Object.keys(resp.rolibadges);
         let ref = await utils.waitForElm("#roblox-badges-container");
-        if (document.getElementById("roli-badges-container")) return;
+        if (!ref || document.getElementById("roli-badges-container")) return;
 
         ref.insertAdjacentHTML(
           "afterend",
@@ -1849,21 +1887,27 @@
   utils.refreshData(init);
 
   if (utils.getPageType() === "userInventory") {
-    (async () => {
-      new MutationObserver((mutations) => {
-        for (let m of mutations) {
-          if (m.type === "childList" && m.addedNodes) {
-            for (let node of m.addedNodes) {
-              if (node.classList?.contains("item-card-price")) return init();
-            }
-          }
-        }
-      }).observe(await utils.waitForElm("#assetsItems"), {
-        attributes: true,
-        childList: true,
-        subtree: true,
-      });
-    })();
+    let init_timer = 0;
+    let schedule_init = () => {
+      clearTimeout(init_timer);
+      init_timer = setTimeout(init, 150);
+    };
+    // Values used to go missing on many loads:
+    // - Angular can replace #assetsItems itself, so watch the body, right away.
+    // - Cards arrive as whole <li> subtrees, so look inside added nodes.
+    // - Coalesce each batch into one run.
+    new MutationObserver((mutations) => {
+      for (let m of mutations)
+        for (let node of m.addedNodes)
+          if (
+            node.nodeType === 1 &&
+            (node.classList.contains("item-card-price") ||
+              node.querySelector(".item-card-price"))
+          )
+            return schedule_init();
+    }).observe(document.body, { childList: true, subtree: true });
+    // The cards may have rendered before this observer attached.
+    if (document.querySelector(".item-card-price")) schedule_init();
   }
 
   try {
@@ -2917,7 +2961,7 @@
 
       ctx.fillStyle = dark ? "rgba(255,255,255,.72)" : "rgba(17,24,39,.62)";
       ctx.font = "800 12px Segoe UI, Arial, sans-serif";
-      let mark = "nevos trading extension";
+      let mark = "nevos-extension.com";
       let mark_w = ctx.measureText(mark).width;
       let mark_logo = 18;
       let mark_gap = 7;
@@ -3085,7 +3129,7 @@
       let mark_gap = 6;
       ctx.fillStyle = dark ? "rgba(255,255,255,.55)" : "rgba(17,24,39,.55)";
       ctx.font = "800 12px Segoe UI, Arial, sans-serif";
-      let mark = "nevos trading extension";
+      let mark = "Trading Extension";
       let mark_w = ctx.measureText(mark).width;
       let mark_total_w = mark_logo + mark_gap + mark_w;
       let mark_x = (width - mark_total_w) / 2;
@@ -3561,7 +3605,7 @@
       if (!el) return;
       var url = utils.getURL("assets/icons/logo128.png");
       el.setAttribute("src", url);
-      el.setAttribute("alt", "Nevos Trading Extension");
+      el.setAttribute("alt", "Trading Extension");
       el.setAttribute("width", "36");
       el.setAttribute("height", "36");
       el.setAttribute("decoding", "async");
@@ -3578,13 +3622,14 @@
       overlay.id = "nte-inv-modal";
       overlay.className = "nte-modal-overlay";
       overlay.innerHTML =
-        '<div class="nte-modal"><div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">nevos trading extension</a></div></div><button class="nte-modal-close">\u00d7</button></div><div class="nte-loading-modal"><div class="spinner"></div>Nevos Trading Extension is loading inventory details...</div></div>';
+        '<div class="nte-modal"><div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">Trading Extension</a></div></div><button class="nte-modal-close">\u00d7</button></div><div class="nte-loading-modal"><div class="spinner"></div>Trading Extension is loading inventory details...</div></div>';
       document.body.appendChild(overlay);
       assert_profile_dominance();
       attach_modal_logo(overlay);
       requestAnimationFrame(() => overlay.classList.add("active"));
 
       function close_modal() {
+        document.removeEventListener("keydown", esc_handler);
         hide_inv_serials_tip();
         overlay.classList.remove("active");
         setTimeout(() => overlay.remove(), 250);
@@ -3595,12 +3640,10 @@
       overlay.addEventListener("click", (ev) => {
         if (ev.target === overlay) close_modal();
       });
-      document.addEventListener("keydown", function esc(ev) {
-        if (ev.key === "Escape") {
-          close_modal();
-          document.removeEventListener("keydown", esc);
-        }
-      });
+      function esc_handler(ev) {
+        if (ev.key === "Escape") close_modal();
+      }
+      document.addEventListener("keydown", esc_handler);
 
       var enriched = [],
         seen = {};
@@ -3749,7 +3792,7 @@
 
       var modal = overlay.querySelector(".nte-modal");
       modal.innerHTML =
-        '<div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">nevos trading extension</a></div></div><button class="nte-modal-close">\u00d7</button></div>' +
+        '<div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">Trading Extension</a></div></div><button class="nte-modal-close">\u00d7</button></div>' +
         '<div class="nte-stats">' +
         '<div class="' +
         estimated_usd_card_class +

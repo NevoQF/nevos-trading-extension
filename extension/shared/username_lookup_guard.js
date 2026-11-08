@@ -63,6 +63,8 @@
   }
 
   function make_response(cached) {
+    // Failed lookups are passed through uncached (each consumer gets its own clone).
+    if (cached.passthrough) return cached.passthrough.clone();
     return new Response(JSON.stringify(cached.body || { data: [] }), {
       status: cached.status || 200,
       headers: { "Content-Type": "application/json" },
@@ -70,15 +72,11 @@
   }
 
   async function guarded_lookup(input, init, key) {
-    try {
-      let response = await native_fetch(input, init);
-      if (!response.ok) return write_cache(key, { data: [] }, miss_ttl_ms);
-      let body = await response.clone().json().catch(() => ({ data: [] }));
-      let has_result = Array.isArray(body?.data) && body.data.length > 0;
-      return write_cache(key, body && typeof body === "object" ? body : { data: [] }, has_result ? hit_ttl_ms : miss_ttl_ms);
-    } catch {
-      return write_cache(key, { data: [] }, miss_ttl_ms);
-    }
+    let response = await native_fetch(input, init);
+    if (!response.ok) return { passthrough: response };
+    let body = await response.clone().json().catch(() => ({ data: [] }));
+    let has_result = Array.isArray(body?.data) && body.data.length > 0;
+    return write_cache(key, body && typeof body === "object" ? body : { data: [] }, has_result ? hit_ttl_ms : miss_ttl_ms);
   }
 
   globalThis.fetch = function nte_guarded_fetch(input, init) {

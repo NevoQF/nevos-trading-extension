@@ -6,7 +6,19 @@ const trade_ads_roli_key = "trade_ads_roli_verification";
 const trade_ads_verify_ui_key = "trade_ads_verify_ui";
 const trade_ads_popup_tab_key = "nte_popup_last_tab";
 const trade_ads_alarm_name = "tradeAdsAutoPost";
-const trade_ads_clear_error_alarm_name = "tradeAdsClearAutoError";
+const trade_ads_auto_fail_count_key = "trade_ads_auto_fail_count";
+const trade_ads_auto_retry_after_key = "trade_ads_auto_retry_after";
+const trade_ads_retry_backoff_minutes = [2, 4, 8, 15];
+// Timestamp (0 = idle); a hung fetch must not block posting forever.
+let trade_ads_post_in_flight = 0;
+// Inventory pages can retry 429s for minutes before the 60s createad.
+const trade_ads_post_stale_ms = 15 * 60 * 1000;
+function trade_ads_post_is_busy() {
+  return (
+    trade_ads_post_in_flight > 0 &&
+    Date.now() - trade_ads_post_in_flight < trade_ads_post_stale_ms
+  );
+}
 const trade_ads_schedule_anchor_key = "trade_ads_schedule_anchor_at";
 const trade_ads_recent_posts_key = "trade_ads_recent_posts";
 const trade_ads_legacy_item_cache_key = "trade_ads_legacy_item_id_cache";
@@ -313,7 +325,7 @@ async function trade_ads_get_legacy_item_cache() {
     trade_ads_legacy_item_cache_mem = stored;
     return stored;
   }
-  let res = await fetch(trade_ads_legacy_item_details_url, {
+  let res = await fetch_with_timeout(trade_ads_legacy_item_details_url, {
     headers: { accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Rolimons v2 itemdetails failed (${res.status})`);
@@ -1404,7 +1416,19 @@ async function trade_ads_notify_post_success(_config, body, item_data) {
 }
 
 async function trade_ads_post_now(options) {
-  let auth_res = await fetch(
+  if (trade_ads_post_is_busy())
+    throw new Error("A trade ad is already being posted. Try again in a moment.");
+  let started_at = Date.now();
+  trade_ads_post_in_flight = started_at;
+  try {
+    return await trade_ads_post_now_inner(options);
+  } finally {
+    if (trade_ads_post_in_flight === started_at) trade_ads_post_in_flight = 0;
+  }
+}
+
+async function trade_ads_post_now_inner(options) {
+  let auth_res = await fetch_with_timeout(
     "https://users.roblox.com/v1/users/authenticated",
     { credentials: "include" },
   );
@@ -1457,12 +1481,28 @@ async function trade_ads_post_now(options) {
     Referer: "https://www.rolimons.com/",
   };
   if (session.cookie_header) roli_headers.cookie = session.cookie_header;
-  let response = await fetch("https://api.rolimons.com/tradeads/v1/createad", {
-    method: "POST",
-    credentials: session.credentials,
-    headers: roli_headers,
-    body: JSON.stringify(body),
-  });
+  let response;
+  try {
+    response = await fetch_with_timeout(
+      "https://api.rolimons.com/tradeads/v1/createad",
+      {
+        method: "POST",
+        credentials: session.credentials,
+        headers: roli_headers,
+        body: JSON.stringify(body),
+      },
+      60000,
+    );
+  } catch (e) {
+    if (e?.name === "TimeoutError") {
+      let err = new Error(
+        "Rolimons didn't answer in time. The ad may still have posted; check your trade ads before retrying.",
+      );
+      err.possibly_posted = true;
+      throw err;
+    }
+    throw e;
+  }
   let data = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new Error(
@@ -1485,13 +1525,10 @@ async function trade_ads_post_now(options) {
   }
   await set_local_value("trade_ads_last_auto_post_at", Date.now());
   await set_local_value(trade_ads_schedule_anchor_key, null);
-  await set_local_value("trade_ads_last_auto_error", null);
   if (rotation_hit) {
     await trade_ads_advance_rotation_preset(stored_config, rotation_hit.index);
   }
-  try {
-    await chrome.alarms.clear(trade_ads_clear_error_alarm_name);
-  } catch {}
+  await trade_ads_clear_auto_failure();
   let out = { ok: true, data, body, player_id: body.player_id };
   try {
     let recent = (await get_local_value(trade_ads_recent_posts_key)) || [];
@@ -1527,18 +1564,22 @@ async function trade_ads_post_now(options) {
   return out;
 }
 
-async function trade_ads_schedule_auto_error_clear() {
-  try {
-    await chrome.alarms.clear(trade_ads_clear_error_alarm_name);
-    await chrome.alarms.create(trade_ads_clear_error_alarm_name, {
-      delayInMinutes: 1,
-    });
-  } catch {}
+// The auto-post error stays visible until the next success, a settings change,
+// or the feature being turned off.
+async function trade_ads_clear_auto_failure() {
+  await set_local_values({
+    trade_ads_last_auto_error: null,
+    [trade_ads_auto_fail_count_key]: 0,
+    [trade_ads_auto_retry_after_key]: 0,
+  });
 }
 
 async function trade_ads_auto_post_tick() {
+  if (trade_ads_post_is_busy()) return;
   let cfg = await trade_ads_get_config_merged();
   if (cfg.posting_paused) return;
+  let retry_after = Number(await get_local_value(trade_ads_auto_retry_after_key)) || 0;
+  if (retry_after > Date.now()) return;
   let need = cfg.auto_interval_minutes * 60 * 1000;
   let now = Date.now();
   let last = await get_local_value("trade_ads_last_auto_post_at");
@@ -1557,8 +1598,19 @@ async function trade_ads_auto_post_tick() {
   try {
     await trade_ads_post_now({ source: "auto" });
   } catch (e) {
-    await set_local_value("trade_ads_last_auto_error", String(e?.message || e));
-    await trade_ads_schedule_auto_error_clear();
+    let fails = (Number(await get_local_value(trade_ads_auto_fail_count_key)) || 0) + 1;
+    let wait_ms = e?.possibly_posted
+      ? need
+      : trade_ads_retry_backoff_minutes[
+          Math.min(fails, trade_ads_retry_backoff_minutes.length) - 1
+        ] *
+        60 *
+        1000;
+    await set_local_values({
+      trade_ads_last_auto_error: String(e?.message || e),
+      [trade_ads_auto_fail_count_key]: fails,
+      [trade_ads_auto_retry_after_key]: Date.now() + wait_ms,
+    });
   }
 }
 
@@ -1566,22 +1618,24 @@ async function trade_ads_compute_next_auto_post_due_at() {
   let cfg = await trade_ads_get_config_merged();
   if (cfg.posting_paused) return null;
   let need = cfg.auto_interval_minutes * 60 * 1000;
+  let retry_after =
+    Number(await get_local_value(trade_ads_auto_retry_after_key)) || 0;
   let last = await get_local_value("trade_ads_last_auto_post_at");
   let lastN = typeof last === "number" && Number.isFinite(last) ? last : null;
-  if (lastN != null) return lastN + need;
   let anc = await get_local_value(trade_ads_schedule_anchor_key);
   let ancN = typeof anc === "number" && Number.isFinite(anc) ? anc : null;
-  if (ancN != null) return ancN + need;
-  return Date.now() + need;
+  let due = lastN != null ? lastN + need : ancN != null ? ancN + need : Date.now() + need;
+  return Math.max(due, retry_after);
 }
 
 async function trade_ads_sync_alarm() {
-  await new Promise((resolve) =>
-    chrome.alarms.clear(trade_ads_alarm_name, resolve),
-  );
   let raw = await get_local_value(trade_ads_config_key);
   let cfg = trade_ads_normalize_config(raw);
   if (cfg.posting_paused) {
+    await new Promise((resolve) =>
+      chrome.alarms.clear(trade_ads_alarm_name, resolve),
+    );
+    await trade_ads_clear_auto_failure();
     return;
   }
   let last = await get_local_value("trade_ads_last_auto_post_at");
@@ -1593,21 +1647,15 @@ async function trade_ads_sync_alarm() {
       await set_local_value(trade_ads_schedule_anchor_key, Date.now());
     }
   }
-  chrome.alarms.create(trade_ads_alarm_name, {
+  await nte_ensure_alarm(trade_ads_alarm_name, {
     delayInMinutes: 1,
     periodInMinutes: 1,
   });
 }
 
 // Message handlers
+// trade_ad_notifications_* messages are dispatched once, from background.js.
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (
-    typeof trade_ad_notif_handle_message === "function" &&
-    trade_ad_notif_handle_message(message, respond)
-  ) {
-    return true;
-  }
-
   if (message?.type === "trade_ads_get_status") {
     (async () => {
       let auth_res = await fetch(
@@ -1651,7 +1699,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         next_auto_post_due_at: await trade_ads_compute_next_auto_post_due_at(),
         recent_posts: (await get_local_value(trade_ads_recent_posts_key)) || [],
       });
-    })();
+    })().catch(() => respond(null)); // popup treats null as "extension unreachable" + Retry
     return true;
   }
 
@@ -1660,7 +1708,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       respond({
         next_auto_post_due_at: await trade_ads_compute_next_auto_post_due_at(),
       });
-    })();
+    })().catch((e) => respond({ ok: false, error: e?.message || String(e) }));
     return true;
   }
 
@@ -1671,10 +1719,28 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   ) {
     (async () => {
       let next = trade_ads_normalize_config(message.config);
+      let prev = await trade_ads_get_config_merged();
       await set_local_value(trade_ads_config_key, next);
+      // Only posting-relevant changes (or re-enabling) drop the old failure; UI-only saves keep the backoff.
+      let posting_fields = (c) =>
+        JSON.stringify([
+          c.offer_slots,
+          c.request_slots,
+          c.offer_random,
+          c.request_random,
+          c.request_demand_min,
+          c.offer_robux,
+          c.posting_paused,
+          c.auto_interval_minutes,
+          c.request_tags,
+          c.presets,
+          c.preset_rotation_enabled,
+        ]);
+      if (posting_fields(prev) !== posting_fields(next))
+        await trade_ads_clear_auto_failure();
       await trade_ads_sync_alarm();
       respond({ ok: true });
-    })();
+    })().catch((e) => respond({ ok: false, error: e?.message || String(e) }));
     return true;
   }
 
@@ -1749,7 +1815,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     (async () => {
       await set_local_value(trade_ads_roli_key, null);
       respond({ ok: true });
-    })();
+    })().catch((e) => respond({ ok: false, error: e?.message || String(e) }));
     return true;
   }
 
@@ -1938,10 +2004,6 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 
 // Alarm handlers
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === trade_ads_clear_error_alarm_name) {
-    await set_local_value("trade_ads_last_auto_error", null);
-    return;
-  }
   if (alarm.name === trade_ads_alarm_name) {
     await trade_ads_auto_post_tick();
     return;
@@ -1963,6 +2025,4 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.runtime.onStartup?.addListener(async () => {
   await trade_ads_sync_alarm();
 });
-(async () => {
-  await trade_ads_sync_alarm();
-})();
+// Initial alarm sync runs from the end of background.js (Firefox loads it last).

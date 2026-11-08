@@ -81,7 +81,9 @@
       ],
       "matches": [
         "https://www.roblox.com/trades*",
-        "https://www.roblox.com/*/trades*"
+        "https://www.roblox.com/*/trades*",
+        "https://www.roblox.com/users/*/trade*",
+        "https://www.roblox.com/*/users/*/trade*"
       ],
       "run_at": "document_start",
       "world": "MAIN"
@@ -106,6 +108,7 @@
         "shared/nte_icon_utils.js",
         "shared/nte_history_proof_styles.js",
         "shared/nte_icons.js",
+        "shared/tap_tooltip.js",
         "content/analyze_trade.js",
         "shared/nte_sales_core.js",
         "content/trade_page.js"
@@ -317,7 +320,7 @@
     "clipboardWrite"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.53",
+  "version": "3.10.54",
   "web_accessible_resources": [
     {
       "matches": [

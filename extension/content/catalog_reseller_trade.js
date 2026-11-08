@@ -78,24 +78,53 @@
     return false;
   }
 
-  async function can_trade_with(user_id) {
-    let key = String(user_id || "");
-    if (!key) return false;
-    if (can_trade_cache[key] !== undefined) return can_trade_cache[key];
+  const MAX_CAN_TRADE_REQUESTS = 3;
+  const can_trade_inflight = {};
+  const can_trade_queue = [];
+  let can_trade_active = 0;
+
+  function pump_can_trade_queue() {
+    while (can_trade_active < MAX_CAN_TRADE_REQUESTS && can_trade_queue.length) {
+      can_trade_active += 1;
+      can_trade_queue
+        .shift()()
+        .finally(() => {
+          can_trade_active -= 1;
+          pump_can_trade_queue();
+        });
+    }
+  }
+
+  async function fetch_can_trade(key) {
     try {
       let resp = await fetch(`https://trades.roblox.com/v1/users/${encodeURIComponent(key)}/can-trade-with`, {
         credentials: "include",
       });
-      if (!resp.ok) {
-        can_trade_cache[key] = false;
-        return false;
-      }
+      // Rate limits and other failures aren't cached; assume tradable so the button isn't wrongly greyed.
+      if (!resp.ok) return true;
       let data = await resp.json();
       can_trade_cache[key] = !!data?.canTrade;
+      return can_trade_cache[key];
     } catch {
-      can_trade_cache[key] = true;
+      return true;
     }
-    return can_trade_cache[key];
+  }
+
+  function can_trade_with(user_id) {
+    let key = String(user_id || "");
+    if (!key) return Promise.resolve(false);
+    if (can_trade_cache[key] !== undefined) return Promise.resolve(can_trade_cache[key]);
+    if (!can_trade_inflight[key]) {
+      can_trade_inflight[key] = new Promise((resolve) => {
+        can_trade_queue.push(() =>
+          fetch_can_trade(key).then(resolve, () => resolve(true)),
+        );
+        pump_can_trade_queue();
+      }).finally(() => {
+        delete can_trade_inflight[key];
+      });
+    }
+    return can_trade_inflight[key];
   }
 
   function remove_trade_buttons() {
@@ -135,6 +164,7 @@
     if (!can_trade) {
       link.classList.add("disabled");
       link.setAttribute("aria-disabled", "true");
+      link.title = "Can't trade with this user";
       link.addEventListener("click", (event) => event.preventDefault());
     }
     return link;

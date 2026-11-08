@@ -15,7 +15,7 @@ function nte_blob_to_data_url(blob) {
 
 async function nte_fetch_data_url(url) {
   try {
-    let res = await fetch(url);
+    let res = await fetch_with_timeout(url, {}, 5000);
     return res.ok ? await nte_blob_to_data_url(await res.blob()) : null;
   } catch {
     return null;
@@ -45,7 +45,7 @@ async function nte_card_thumb_bitmaps(items) {
       kind === "Bundle"
         ? `https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=${list}&size=150x150&format=Png&isCircular=false`
         : `https://thumbnails.roblox.com/v1/assets?assetIds=${list}&size=150x150&format=Png&isCircular=false`;
-    let data = await fetch(api)
+    let data = await fetch_with_timeout(api, {}, 5000)
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null);
     for (let row of data?.data || [])
@@ -54,7 +54,7 @@ async function nte_card_thumb_bitmaps(items) {
   await Promise.all(
     urls.map(async ([id, url]) => {
       try {
-        let res = await fetch(url);
+        let res = await fetch_with_timeout(url, {}, 5000);
         if (res.ok) out.set(id, await createImageBitmap(await res.blob()));
       } catch {}
     }),

@@ -41,6 +41,8 @@ function trade_ad_notif_default_state() {
     feedScanOffset: 0,
     feedScanFetchedAt: 0,
     feedExhausted: false,
+    // Bumped by Clear and scan resets; an in-flight poll from an older generation must not write scan results.
+    scanGeneration: 0,
     feedAdCount: 0,
     feedAdsChecked: 0,
     lastScannedCreatedAt: 0,
@@ -166,10 +168,22 @@ function trade_ad_notif_apply_scan_results(
   trade_ad_notif_sync_feed_scan_complete(state, total_count);
 }
 
+// A Clear/dismiss/settings reset bumps scanGeneration while a scan awaits the
+// network; a scan from an older generation must not overwrite that.
+async function trade_ad_notif_save_if_current(state) {
+  let fresh = await trade_ad_notif_load_state();
+  if ((Number(fresh.scanGeneration) || 0) !== (Number(state.scanGeneration) || 0))
+    return fresh;
+  await trade_ad_notif_save_state(state);
+  return state;
+}
+
 async function trade_ad_notif_backfill_feed(state, max_batches = 30) {
+  let generation = Number(state.scanGeneration) || 0;
   for (let i = 0; i < max_batches; i++) {
     if (!state.enabled || state.feedExhausted) break;
     state = await trade_ad_notif_load_more_once();
+    if ((Number(state.scanGeneration) || 0) !== generation) return state;
     if (state.lastError) {
       // Soft rate-limit: keep progress, try again on the next poll cycle.
       if (/429|rate limit|unavailable \(429\)/i.test(String(state.lastError))) {
@@ -183,7 +197,7 @@ async function trade_ad_notif_backfill_feed(state, max_batches = 30) {
   }
   if (state.enabled) {
     state.lastPollAt = Date.now();
-    await trade_ad_notif_save_state(state);
+    state = await trade_ad_notif_save_if_current(state);
   }
   return state;
 }
@@ -428,6 +442,7 @@ function trade_ad_notif_state_for_ui(state) {
 }
 
 function trade_ad_notif_reset_scan_progress(state) {
+  state.scanGeneration = (Number(state.scanGeneration) || 0) + 1;
   state.feedScanOffset = 0;
   state.feedExhausted = false;
   state.feedAdsChecked = 0;
@@ -672,7 +687,7 @@ async function trade_ad_notif_fetch_tradable_inventory(user_id) {
     let res = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        res = await fetch(url, { credentials: "include" });
+        res = await fetch_with_timeout(url, { credentials: "include" }, 30000);
       } catch {
         res = null;
       }
@@ -764,7 +779,7 @@ async function trade_ad_notif_fetch_tradable_inventory(user_id) {
 }
 
 async function trade_ad_notif_get_viewer_inventory(force_refresh) {
-  let auth_res = await fetch("https://users.roblox.com/v1/users/authenticated", {
+  let auth_res = await fetch_with_timeout("https://users.roblox.com/v1/users/authenticated", {
     credentials: "include",
   });
   if (!auth_res.ok) throw new Error("Sign in to Roblox to scan trade ads.");
@@ -946,8 +961,7 @@ async function trade_ad_notif_load_more_once() {
     state.lastError = "";
   } catch (err) {
     state.lastError = err?.message || String(err);
-    await trade_ad_notif_save_state(state);
-    return state;
+    return await trade_ad_notif_save_if_current(state);
   }
 
   let offset = Math.max(0, Number(state.feedScanOffset) || 0);
@@ -968,8 +982,7 @@ async function trade_ad_notif_load_more_once() {
     state.lastError = "";
   } catch (err) {
     state.lastError = err?.message || String(err);
-    await trade_ad_notif_save_state(state);
-    return state;
+    return await trade_ad_notif_save_if_current(state);
   }
 
   let batch = Array.isArray(feed.ads) ? feed.ads : [];
@@ -981,8 +994,7 @@ async function trade_ad_notif_load_more_once() {
 
   if (!batch.length) {
     state.feedExhausted = true;
-    await trade_ad_notif_save_state(state);
-    return state;
+    return await trade_ad_notif_save_if_current(state);
   }
 
   let ignored_users = trade_ad_notif_normalize_ignored_users(state.ignoredUsers);
@@ -1000,8 +1012,47 @@ async function trade_ad_notif_load_more_once() {
   state.feedExhausted = state.feedScanOffset >= total || feed.hasMore === false;
   trade_ad_notif_cap_feed_checked(state);
 
-  await trade_ad_notif_save_state(state);
-  return state;
+  return await trade_ad_notif_save_if_current(state);
+}
+
+const trade_ad_notif_poll_owned_fields = [
+  "seenAdIds",
+  "lastScannedCreatedAt",
+  "lastPollAt",
+  "lastError",
+  "lastFeedFetchedAt",
+  "feedScanFetchedAt",
+  "feedAdCount",
+  "feedAdsChecked",
+  "feedScanOffset",
+  "feedExhausted",
+  "viewerUserId",
+  "ownedCount",
+  "watchableItemCount",
+];
+
+// The poll awaits the network for seconds; merge only its own fields onto
+// fresh storage so concurrent toggles, dismisses and settings edits survive.
+async function trade_ad_notif_commit_poll(
+  state,
+  fields = trade_ad_notif_poll_owned_fields,
+) {
+  let fresh = await trade_ad_notif_load_state();
+  if (!fresh.enabled) return fresh;
+  if ((Number(fresh.scanGeneration) || 0) !== (Number(state.scanGeneration) || 0))
+    fields = fields.filter((key) => key === "lastPollAt" || key === "lastError");
+  for (let key of fields) fresh[key] = state[key];
+  if (fields.includes("seenAdIds")) {
+    fresh.matches = trade_ad_notif_filter_matches_by_dismissed(
+      trade_ad_notif_filter_matches_by_ignored_users(
+        state.matches,
+        fresh.ignoredUsers,
+      ),
+      fresh.dismissedTrades,
+    );
+  }
+  await trade_ad_notif_save_state(fresh);
+  return fresh;
 }
 
 async function trade_ad_notif_poll_once(options) {
@@ -1038,8 +1089,7 @@ async function trade_ad_notif_poll_once(options) {
     } catch (err) {
       state.lastError = err?.message || String(err);
       state.lastPollAt = Date.now();
-      await trade_ad_notif_save_state(state);
-      return state;
+      return await trade_ad_notif_commit_poll(state, ["lastError", "lastPollAt"]);
     }
 
     let ignored_users = trade_ad_notif_normalize_ignored_users(state.ignoredUsers);
@@ -1073,8 +1123,7 @@ async function trade_ad_notif_poll_once(options) {
       } catch (err) {
         state.lastError = err?.message || String(err);
         state.lastPollAt = Date.now();
-        await trade_ad_notif_save_state(state);
-        return state;
+        return await trade_ad_notif_commit_poll(state);
       }
 
       let ads = Array.isArray(feed.ads) ? feed.ads : [];
@@ -1138,8 +1187,7 @@ async function trade_ad_notif_poll_once(options) {
       state.lastScannedCreatedAt = max_created;
     }
     state.lastPollAt = Date.now();
-    await trade_ad_notif_save_state(state);
-    return state;
+    return await trade_ad_notif_commit_poll(state);
   } finally {
     trade_ad_notif_poll_in_flight = false;
   }
@@ -1147,8 +1195,11 @@ async function trade_ad_notif_poll_once(options) {
 
 async function trade_ad_notif_ensure_alarm() {
   try {
-    await chrome.alarms.clear(trade_ad_notif_alarm_name);
-    await chrome.alarms.create(trade_ad_notif_alarm_name, {
+    if (!(await trade_ad_notif_load_state()).enabled) {
+      await chrome.alarms.clear(trade_ad_notif_alarm_name);
+      return;
+    }
+    await nte_ensure_alarm(trade_ad_notif_alarm_name, {
       delayInMinutes: 0.1,
       periodInMinutes: 1,
     });
@@ -1179,7 +1230,9 @@ function trade_ad_notif_handle_message(message, respond) {
         state.disabledWantItemIds,
       );
       respond({ ok: true, state: trade_ad_notif_state_for_ui(state) });
-    })();
+    })().catch((err) => {
+      respond({ ok: false, error: err?.message || String(err) });
+    });
     return true;
   }
 
@@ -1205,6 +1258,7 @@ function trade_ad_notif_handle_message(message, respond) {
       let prev = await trade_ad_notif_load_state();
       let state = trade_ad_notif_default_state();
       state.enabled = prev.enabled === true;
+      state.scanGeneration = (Number(prev.scanGeneration) || 0) + 1;
       state.minOverpayAmount = prev.minOverpayAmount;
       state.minOverpayPercent = prev.minOverpayPercent;
       state.ignoredUsers = trade_ad_notif_normalize_ignored_users(
@@ -1460,6 +1514,8 @@ function trade_ad_notif_handle_message(message, respond) {
         ...prev,
         ignoredUsers: ignored_users,
         disabledWantItemIds: next_disabled,
+        // Makes an in-flight poll skip its commit instead of overwriting the rescan.
+        scanGeneration: (Number(prev.scanGeneration) || 0) + 1,
       };
 
       if (re_enabled.length && next.enabled === true) {
@@ -1507,4 +1563,3 @@ function trade_ad_notif_handle_message(message, respond) {
   return false;
 }
 
-trade_ad_notif_init_monitor();

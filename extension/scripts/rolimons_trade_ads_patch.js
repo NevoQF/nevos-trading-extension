@@ -70,6 +70,7 @@
   let btn = value_btn.cloneNode(false);
   btn.id = "nte_trade_ads_offer_robux_filter_button";
   btn.classList.add("ml-2");
+  btn.setAttribute("aria-label", "Robux filter");
   btn.innerHTML =
     '<div data-toggle="tooltip" title="Robux Filter"><svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" width="1.75em" height="1.75em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2.5 20.5 7.4v9.2L12 21.5 3.5 16.6V7.4z"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/></svg></div>';
   btn.addEventListener("click", () => window.$(modal).modal("show"));

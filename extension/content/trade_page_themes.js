@@ -37,8 +37,11 @@
   }
 
   function normalize_theme_image(value) {
-    let image = String(value || "").trim();
-    return /^data:image\/(?:png|jpe?g|webp);base64,/i.test(image) ? image : "";
+    // Whitespace inside base64 is legal for the browser; strip it so older stored images stay valid.
+    let image = String(value || "").replace(/\s+/g, "");
+    return /^data:image\/(?:png|jpe?g|webp);base64,[A-Za-z0-9+\/=]+$/i.test(image)
+      ? image
+      : "";
   }
 
   function fit_image_to_recommended(data_url, background) {

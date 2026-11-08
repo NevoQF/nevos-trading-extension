@@ -12,6 +12,7 @@
   let face_map = null;
   let face_map_time = 0;
   let face_map_promise = null;
+  let face_map_retry_at = 0;
   let name_index = null;
   let name_index_source = null;
   let thumb_cache = {};
@@ -118,22 +119,29 @@
     return item_data_promise;
   }
 
-  async function load_face_map() {
-    if (face_map && Date.now() - face_map_time < 30 * 60 * 1000) return face_map;
-    if (face_map_promise) return face_map_promise;
-    face_map_promise = (async () => {
-      const res = await send_message({ type: "rolimons_player_face_map" });
-      face_map =
-        res?.map && typeof res.map === "object"
-          ? res.map
-          : face_map && typeof face_map === "object"
-            ? face_map
-            : {};
-      face_map_time = Date.now();
-      face_map_promise = null;
-      return face_map;
-    })();
-    return face_map_promise;
+  // Never blocks a search: returns what is cached and refreshes in the background.
+  function load_face_map() {
+    const fresh = face_map && Date.now() - face_map_time < 30 * 60 * 1000;
+    if (!fresh && !face_map_promise && Date.now() >= face_map_retry_at) {
+      face_map_promise = (async () => {
+        try {
+          const res = await send_message({ type: "rolimons_player_face_map" });
+          // Background answers {ok, map:{}} on failure too: only a non-empty map counts.
+          if (res?.ok && res.map && Object.keys(res.map).length) {
+            face_map = res.map;
+            face_map_time = Date.now();
+            name_index = null;
+            name_index_source = null;
+          } else {
+            face_map_retry_at = Date.now() + 60000;
+          }
+        } catch {
+          face_map_retry_at = Date.now() + 60000;
+        }
+        face_map_promise = null;
+      })();
+    }
+    return face_map || {};
   }
 
   function resolve_catalog_target(entry_id, data, map) {
@@ -361,6 +369,19 @@
       li.${item_class} .${item_class}-chip.is-value strong {
         color: #93c5fd;
       }
+      .light-theme li.${item_class} .${item_class}-name {
+        color: #111827;
+      }
+      .light-theme li.${item_class} .${item_class}-chip {
+        background: rgba(15, 23, 42, 0.06);
+        color: rgba(55, 65, 81, 0.72);
+      }
+      .light-theme li.${item_class} .${item_class}-chip strong {
+        color: #111827;
+      }
+      .light-theme li.${item_class} .${item_class}-chip.is-value strong {
+        color: #2563eb;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -384,6 +405,8 @@
       ? `https://www.roblox.com/bundles/${entry.id}/${slug_name(entry.name)}`
       : `https://www.roblox.com/catalog/${entry.id}/${slug_name(entry.name)}`;
     a.style.cssText = "padding-left:0;";
+    // Keep search focused so blur cleanup doesn't remove the row mid-click.
+    a.addEventListener("mousedown", (e) => e.preventDefault());
 
     const icon = document.createElement("span");
     icon.className = `navbar-list-option-icon ${item_class}-icon`;

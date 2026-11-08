@@ -577,7 +577,8 @@
       );
     }
     function v(e, t) {
-      e.setAttribute("data-toggle", "tooltip"), e.setAttribute("title", t);
+      set_attr_if_changed(e, "data-toggle", "tooltip");
+      set_attr_if_changed(e, "title", String(t));
     }
     function x(e) {
       for (let element of document.querySelectorAll(`.${e}`))
@@ -794,9 +795,10 @@
       return `https://www.rolimons.com/${segment}/${encodeURIComponent(key)}`;
     }
     async function S(e, t) {
-      await i(".item-card-container");
+      // Scope waits to this offer. A Robux-only offer has no cards at call time:
+      // don't wait (and leave no 5s observer behind), just read the Robux line.
       let r = e.querySelectorAll(".item-card-container");
-      await i(".item-card-price");
+      if (r.length) await i(".item-card-price", e);
       let n = 0;
       for (let item of r) {
         let e = I(item),
@@ -806,8 +808,8 @@
       }
       let a = n,
         o_el = e.querySelector(".text-label.robux-line-value"),
-        o_text = (o_el?.innerText || o_el?.textContent || "").replace(/,/g, ""),
-        o = Math.round((parseInt(o_text, 10) || 0) / 0.7);
+        o_text = o_el?.innerText || o_el?.textContent || "",
+        o = Math.round((parse_trade_summary_number(o_text) || 0) / 0.7);
       return ((n += o), t) ? [a, o] : n;
     }
     // Angular rendered slots; the React trades UI renders .trade-request-item
@@ -938,8 +940,8 @@
               excludeBannedUsers: !1,
             }),
           });
-          if (!t.ok)
-            return set_username_id_cache(key, null, username_id_miss_ttl_ms);
+          // 429/network errors are not "not found": return null without caching.
+          if (!t.ok) return null;
           let id = ((await t.json()).data || [])[0]?.id || null;
           return set_username_id_cache(
             key,
@@ -947,7 +949,7 @@
             id ? username_id_hit_ttl_ms : username_id_miss_ttl_ms,
           );
         } catch {
-          return set_username_id_cache(key, null, username_id_miss_ttl_ms);
+          return null;
         } finally {
           delete username_id_pending[key];
         }
@@ -1277,10 +1279,10 @@
           );
           // Remount if hasAssetLink was left behind after the link was removed.
           if (card?.querySelector?.("a.nte-rolimons-thumb-link")) {
-            text_div.classList.add("hasAssetLink");
+            add_class_if_missing(text_div, "hasAssetLink");
             continue;
           }
-          text_div.classList.remove("hasAssetLink");
+          remove_class_if_present(text_div, "hasAssetLink");
           for (let old_link of text_div.querySelectorAll(
             "a.nte-rolimons-thumb-link",
           ))
@@ -1474,35 +1476,45 @@
             let item_data = a.getRolimonsData();
             let is_bundle = !!item_data?.bundleIds?.[String(e)];
             t.items.push({ itemType: is_bundle ? 2 : 1, id: e });
-          }),
+          });
+          // Reset the busy flag even if the request throws.
+          let retry = !1;
+          try {
             void 0 === n &&
               (n = document
                 .querySelector('meta[name="csrf-token"]')
                 .getAttribute("data-token"));
-          let r = await fetch(
-            "https://catalog.roblox.com/v1/catalog/items/details",
-            {
-              method: "POST",
-              headers: { "X-CSRF-TOKEN": n },
-              body: JSON.stringify(t),
-              credentials: "include",
-            },
-          );
-          if (403 === r.status && 0 === (await r.json()).code)
-            return (n = r.headers.get("X-CSRF-TOKEN")), (d = !1), c();
-          if (
-            (200 === r.status
-              ? (await r.json()).data.forEach((e) => {
+            let r = await fetch(
+              "https://catalog.roblox.com/v1/catalog/items/details",
+              {
+                method: "POST",
+                headers: { "X-CSRF-TOKEN": n },
+                body: JSON.stringify(t),
+                credentials: "include",
+              },
+            );
+            if (403 === r.status && 0 === (await r.json()).code)
+              (n = r.headers.get("X-CSRF-TOKEN")), (retry = !0);
+            else {
+              if (200 === r.status) {
+                (await r.json()).data.forEach((e) => {
                   l[e.id] = e?.assetType || "failed";
-                })
-              : Object.keys(l).forEach((e) => {
+                });
+                // Ids missing from a 200 response would otherwise be retried every pass.
+                t.items.forEach(({ id }) => {
+                  !1 === l[id] && (l[id] = "failed");
+                });
+              } else
+                Object.keys(l).forEach((e) => {
                   !1 === l[e] && (l[e] = "failed");
-                }),
-            await o(),
-            (d = !1),
-            e.length > 100)
-          )
-            return c();
+                });
+              await o();
+              retry = e.length > 100;
+            }
+          } finally {
+            d = !1;
+          }
+          if (retry) return c();
         }
       }
       var u = o;
@@ -1624,6 +1636,7 @@
           (a.className = "nte-profile-rolimons-link"),
           (a.href = href),
           (a.target = "_blank"),
+          a.setAttribute("aria-label", "Open Rolimons profile"),
           (a.style.display = "inline-flex"),
           (a.style.width = "28px"),
           (a.style.height = "28px");
@@ -1834,10 +1847,10 @@
             width:max-content;max-width:180px;padding:5px 7px;border-radius:6px;
             font-size:11px;font-weight:600;line-height:1.3;text-align:center;
             color:#f3f4f6;background:#1f2937;border:1px solid rgba(255,255,255,.14);
-            box-shadow:0 6px 18px rgba(0,0,0,.35);opacity:0;visibility:hidden;
+            box-shadow:0 6px 18px rgba(0,0,0,.35);display:none;
             pointer-events:none;z-index:50;white-space:nowrap
           }
-          .projected-flag.nte-flag-tip:hover .nte-flag-tip-text{opacity:1;visibility:visible}
+          .projected-flag.nte-flag-tip:hover .nte-flag-tip-text{display:block}
         `;
         document.head.appendChild(style);
       }
@@ -2056,8 +2069,8 @@
 
   function sync_ownership_bridge_flags() {
     let root = document.documentElement;
-    root.dataset.nteOwnershipProvider = ownership_link_provider_cache;
-    root.dataset.nteOwnershipLinks = "1";
+    set_attr_if_changed(root, "data-nte-ownership-provider", String(ownership_link_provider_cache));
+    set_attr_if_changed(root, "data-nte-ownership-links", "1");
   }
   function open_ownership_link(instance_id, event) {
     let href = ownership_link_url(instance_id);
@@ -2087,13 +2100,18 @@
     let badge = get_ownership_badge(card);
     if (!(badge instanceof Element)) return null;
     badge.style.cursor = "pointer";
-    badge.setAttribute("data-nte-uaid-link", "1");
-    badge.setAttribute("data-nte-uaid-instance-id", String(instance_id));
-    badge.setAttribute("data-nte-ownership-bound", "1");
-    badge.setAttribute("role", "link");
-    badge.setAttribute("tabindex", "0");
+    // Skip no-op writes so the refresh observer does not re-trigger itself.
+    let set_attr = (name, value) => {
+      value = String(value);
+      badge.getAttribute(name) !== value && badge.setAttribute(name, value);
+    };
+    set_attr("data-nte-uaid-link", "1");
+    set_attr("data-nte-uaid-instance-id", instance_id);
+    set_attr("data-nte-ownership-bound", "1");
+    set_attr("role", "link");
+    set_attr("tabindex", "0");
     let label = ownership_link_label();
-    badge.setAttribute("aria-label", label);
+    set_attr("aria-label", label);
     c.addTooltip(badge, label);
     return badge;
   }
@@ -2231,7 +2249,14 @@
         item_card.style.setProperty("overflow", "visible", "important");
   }
   let trade_win_loss_retry_timer = null,
-    trade_win_loss_retry_count = 0;
+    trade_win_loss_retry_count = 0,
+    trade_win_loss_last_trade_id = "",
+    trade_win_loss_rendered_trade_id = null;
+  // Inline display:flex beats the hidden attribute, so hide via style.
+  function hide_trade_win_loss_stale() {
+    let row = document.getElementById("winLossStatsContainer");
+    row && (row.style.display = "none");
+  }
   function clear_trade_win_loss_detail_mount() {
     for (let divider of document.querySelectorAll(
       '.rbx-divider[data-nte-trade-win-loss-detail-mount="1"]',
@@ -2495,6 +2520,8 @@
       else if (
         mount?.parent &&
         mount.before &&
+        // The resolver uses offer.nextSibling, which is this row once mounted.
+        mount.before !== row &&
         row.nextSibling !== mount.before
       )
         mount.parent.insertBefore(row, mount.before);
@@ -2627,6 +2654,12 @@
   }
   async function p() {
     let mount = get_trade_win_loss_mount_point();
+    let win_loss_trade_id = get_selected_list_trade_id();
+    if (win_loss_trade_id !== trade_win_loss_last_trade_id) {
+      trade_win_loss_last_trade_id = win_loss_trade_id;
+      trade_win_loss_retry_count = 0;
+      hide_trade_win_loss_stale();
+    }
     if (
       !(await c.getOption("Trade Win/Loss Stats")) ||
       !c.isRolimonsDataReady()
@@ -2638,7 +2671,12 @@
     let show_roli_value = value_source === "rolimons" || value_source === "both";
     let show_rout_value =
       value_source === "routility" || value_source === "both";
-    if (!mount) return schedule_trade_win_loss_retry();
+    // Not-ready retries for the same trade keep the chip; only another trade's chip is stale.
+    let hide_if_other_trade = () => {
+      if (trade_win_loss_rendered_trade_id !== win_loss_trade_id)
+        hide_trade_win_loss_stale();
+    };
+    if (!mount) return hide_if_other_trade(), schedule_trade_win_loss_retry();
     let n = !1,
       a = 0,
       o = !1,
@@ -2679,9 +2717,10 @@
       (show_rout_value && !rout_ready) ||
       (!show_roli_value && !show_rout_value)
     )
-      return schedule_trade_win_loss_retry();
+      return hide_if_other_trade(), schedule_trade_win_loss_retry();
     clear_trade_win_loss_retry();
-    u_amt = usd_ready ? Math.round(u_amt) : 0;
+    trade_win_loss_rendered_trade_id = win_loss_trade_id;
+    u_amt = usd_ready ? Math.round(u_amt * 100) / 100 : 0;
     rout_amt = rout_ready ? Math.round(rout_amt) : 0;
     let stacked = show_usd || (show_roli_value && show_rout_value);
     let r = ensure_trade_win_loss_container(mount, stacked);
@@ -2693,7 +2732,10 @@
         "Rolimons value" === e && ((s = i), (d = o)),
         "RAP" === e && ((s = a), (d = n)),
         "USD" === e && ((s = u_amt), (d = u_pct));
-      let pretty = (v) => `${prefix}${c.commafy(Math.abs(Math.round(v)))}`;
+      let pretty = (v) =>
+        "$" === prefix
+          ? `$${format_trade_usd_amount(v)}`
+          : `${prefix}${c.commafy(Math.abs(Math.round(v)))}`;
       let pct_text = format_trade_percent(Math.abs(d));
       let u = {
         win: {
@@ -2765,8 +2807,8 @@
         let current = r.firstElementChild;
         current.removeAttribute("data-toggle");
         current.removeAttribute("data-original-title");
-        current.setAttribute("title", tooltip);
-        current.setAttribute("aria-label", tooltip);
+        set_attr_if_changed(current, "title", tooltip);
+        set_attr_if_changed(current, "aria-label", tooltip);
         sync_trade_win_loss_send_mount(r);
         sync_trade_win_loss_detail_mount(r);
         align_trade_win_loss_container(r);
@@ -3219,6 +3261,39 @@
     );
     return legacy_value !== undefined ? !!legacy_value : true;
   }
+  // Sync mirror of the option for the list filter metrics (default on).
+  let post_tax_filter_enabled = true,
+    post_tax_filter_synced = false,
+    post_tax_filter_ready = Promise.resolve();
+  // Received Robux as the list filter and row value box both count it.
+  function get_received_robux_for_list(robux) {
+    robux = robux || 0;
+    return post_tax_filter_enabled ? Math.round(0.7 * robux) : robux;
+  }
+  function ensure_post_tax_filter_sync() {
+    if (post_tax_filter_synced) return;
+    post_tax_filter_synced = true;
+    let refresh = () =>
+      get_post_tax_trade_values_enabled()
+        .then((v) => {
+          let changed = v !== post_tax_filter_enabled;
+          post_tax_filter_enabled = v;
+          if (changed) L();
+        })
+        .catch(() => {});
+    post_tax_filter_ready = refresh();
+    try {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (
+          area === "local" &&
+          (changes[post_tax_trade_values_option_name] ||
+            changes[legacy_post_tax_trade_value_option_name])
+        )
+          refresh();
+      });
+    } catch {}
+  }
+  ensure_post_tax_filter_sync();
   async function g() {
     let use_post_tax = await get_post_tax_trade_values_enabled();
     let offers = await get_trade_offer_elements();
@@ -3436,6 +3511,12 @@
     let pct = get_trade_percent(diff, left);
     return [pct, diff];
   }
+  function format_trade_usd_amount(value) {
+    return Math.abs(value).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  }
   function y(
     show_rap,
     rap_amount,
@@ -3465,6 +3546,10 @@
         ? "rgba(248, 250, 252, 0.88)"
         : "rgba(35, 43, 52, 0.82)";
     let palette = get_trade_profit_palette();
+    // Chip fills are translucent and tuned for dark pages. On light pages, lay them
+    // over a dark base so the white text stays readable.
+    let chip_fill = (bg) =>
+      dark ? bg : `linear-gradient(${bg},${bg}),#1c1e22`;
     let pack_asset_url = (path) => chrome.runtime.getURL(path),
       rap_icon_url = pack_asset_url("elements/robux.png"),
       roli_icon_url = pack_asset_url("assets/rolimons.png"),
@@ -3485,14 +3570,14 @@
       source_label,
     ) {
       prefix = prefix || "";
+      let format_amount = (v) =>
+        "$" === prefix ? format_trade_usd_amount(v) : c.commafy(Math.abs(v));
       let state = get_trade_profit_state_meta(amount),
         equal = state.equal,
         win = state.win,
         background = equal
           ? neutral_bg
-          : win
-            ? palette.chip_gain_bg
-            : palette.chip_loss_bg,
+          : chip_fill(win ? palette.chip_gain_bg : palette.chip_loss_bg),
         border = equal
           ? neutral_border
           : win
@@ -3502,8 +3587,8 @@
         amount_text = equal
           ? "Even"
           : trade_profit_colorblind_mode
-            ? `${win ? "Gain" : "Loss"} ${amount > 0 ? "+" : "-"}${prefix}${c.commafy(Math.abs(amount))}`
-            : `${amount > 0 ? "+" : "-"}${prefix}${c.commafy(Math.abs(amount))}`,
+            ? `${win ? "Gain" : "Loss"} ${amount > 0 ? "+" : "-"}${prefix}${format_amount(amount)}`
+            : `${amount > 0 ? "+" : "-"}${prefix}${format_amount(amount)}`,
         percent_text =
           !equal && show_percent
             ? `(${format_trade_percent(percent, !0)}%)`
@@ -4052,6 +4137,10 @@
         : (n.fuzzysort = a());
   let b = {};
   let search_inv_cache = {};
+  let search_inv_cache_at = {};
+  const search_inv_cache_ttl_ms = 5 * 60 * 1000;
+  // Incomplete scans (429/5xx) are cached back-dated so they expire after this short ttl.
+  const search_inv_partial_ttl_ms = 30 * 1000;
   let search_inst_cache = {};
   let search_thumb_cache = {};
   const search_inv_cache_max_users = 4;
@@ -4083,6 +4172,7 @@
 
   function clear_trade_search_caches() {
     for (let key of Object.keys(search_inv_cache)) delete search_inv_cache[key];
+    search_inv_cache_at = {};
     for (let key of Object.keys(search_inst_cache)) delete search_inst_cache[key];
     for (let key of Object.keys(search_thumb_cache)) delete search_thumb_cache[key];
   }
@@ -4694,12 +4784,17 @@
     };
   }
   async function fetch_tradable_items(user_id) {
-    if (search_inv_cache[user_id]) return search_inv_cache[user_id];
+    if (
+      search_inv_cache[user_id] &&
+      Date.now() - (search_inv_cache_at[user_id] || 0) < search_inv_cache_ttl_ms
+    )
+      return search_inv_cache[user_id];
     if (search_inv_cache[user_id + "_loading"])
       return search_inv_cache[user_id + "_loading"];
     search_inv_cache[user_id + "_loading"] = (async () => {
       let all = [],
-        cursor = "";
+        cursor = "",
+        is_complete = !1;
       try {
         do {
           let params = new URLSearchParams({
@@ -4814,11 +4909,17 @@
             }
           }
           cursor = data.nextPageCursor || "";
+          if (!cursor) is_complete = !0;
         } while (cursor);
       } catch (err) {
         console.error("[NRU] Failed to fetch tradable items", err);
       }
+      // Readers only look at search_inv_cache, so partial results go there too,
+      // back-dated to expire after search_inv_partial_ttl_ms instead of the full ttl.
       search_inv_cache[user_id] = all;
+      search_inv_cache_at[user_id] = is_complete
+        ? Date.now()
+        : Date.now() - search_inv_cache_ttl_ms + search_inv_partial_ttl_ms;
       trim_search_inv_cache();
       delete search_inv_cache[user_id + "_loading"];
       "function" == typeof N &&
@@ -4835,7 +4936,7 @@
   }
   async function fetch_search_thumbs(items) {
     let needed = items
-      .filter((i) => !search_thumb_cache[i.itemType + ":" + i.targetId])
+      .filter((i) => !((i.itemType + ":" + i.targetId) in search_thumb_cache))
       .slice(0, 50);
     if (!needed.length) return !1;
     let asset_ids = needed
@@ -4853,11 +4954,19 @@
             credentials: "include",
           },
         )
-          .then((r) => (r.ok ? r.json() : { data: [] }))
+          .then((r) => {
+            if (!r.ok) throw new Error(`thumbnails ${r.status}`);
+            return r.json();
+          })
           .then((j) => {
             for (let d of j.data || [])
               search_thumb_cache["Asset:" + d.targetId] = d.imageUrl || "";
-          }),
+            // Ids the API omitted are cached as missing so they are not refetched.
+            for (let id of asset_ids)
+              ("Asset:" + id) in search_thumb_cache ||
+                (search_thumb_cache["Asset:" + id] = "");
+          })
+          .catch(() => {}),
       );
     }
     if (bundle_ids.length) {
@@ -4868,11 +4977,18 @@
             credentials: "include",
           },
         )
-          .then((r) => (r.ok ? r.json() : { data: [] }))
+          .then((r) => {
+            if (!r.ok) throw new Error(`thumbnails ${r.status}`);
+            return r.json();
+          })
           .then((j) => {
             for (let d of j.data || [])
               search_thumb_cache["Bundle:" + d.targetId] = d.imageUrl || "";
-          }),
+            for (let id of bundle_ids)
+              ("Bundle:" + id) in search_thumb_cache ||
+                (search_thumb_cache["Bundle:" + id] = "");
+          })
+          .catch(() => {}),
       );
     }
     await Promise.all(fetches);
@@ -4887,9 +5003,10 @@
     document.getElementById("nteDemandTierStyles")?.remove();
     document.getElementById("nteDemandTierStylesV2")?.remove();
     document.getElementById("nteDemandTierStylesV3")?.remove();
-    if (document.getElementById("nteDemandTierStylesV4")) return;
+    document.getElementById("nteDemandTierStylesV4")?.remove();
+    if (document.getElementById("nteDemandTierStylesV5")) return;
     let style = document.createElement("style");
-    style.id = "nteDemandTierStylesV4";
+    style.id = "nteDemandTierStylesV5";
     style.textContent = `
       .nte-demand-tier{font-weight:800;letter-spacing:.02em;line-height:inherit;display:inline;vertical-align:baseline}
       .nte-demand-tier.is-none{font-weight:700;opacity:.72}
@@ -4899,19 +5016,20 @@
       .nte-demand-tier.is-good{color:#d4f34a}
       .nte-demand-tier.is-high{color:#c5f167;text-shadow:0 0 10px rgba(190,230,90,.28)}
       .nte-demand-tier.is-amazing{color:#34d399;text-shadow:0 0 16px rgba(52,211,153,.4)}
-      .light-theme .nte-demand-tier.is-terrible{color:#e11d48}
-      .light-theme .nte-demand-tier.is-low{color:#ea580c}
-      .light-theme .nte-demand-tier.is-normal{color:#ca8a04}
-      .light-theme .nte-demand-tier.is-good{color:#65a30d}
-      .light-theme .nte-demand-tier.is-high{color:#5f8f2a}
+      .light-theme .nte-demand-tier.is-terrible{color:#be123c}
+      .light-theme .nte-demand-tier.is-low{color:#c2410c}
+      .light-theme .nte-demand-tier.is-normal{color:#a16207}
+      .light-theme .nte-demand-tier.is-good{color:#4d7c0f}
+      .light-theme .nte-demand-tier.is-high{color:#15803d}
       .light-theme .nte-demand-tier.is-amazing{color:#047857}
+      .light-theme .nte-demand-tier.is-none{opacity:1;color:#64748b}
       .light-theme .nte-demand-tier.is-high,.light-theme .nte-demand-tier.is-amazing{text-shadow:none}
-      .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-terrible{color:#fb7185}
-      .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-low{color:#f97316}
-      .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-normal{color:#fbbf24}
-      .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-good{color:#d4f34a}
-      .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-high{color:#c5f167}
-      .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-amazing{color:#34d399}
+      .dark-theme .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-terrible{color:#fb7185}
+      .dark-theme .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-low{color:#f97316}
+      .dark-theme .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-normal{color:#fbbf24}
+      .dark-theme .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-good{color:#d4f34a}
+      .dark-theme .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-high{color:#c5f167}
+      .dark-theme .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-amazing{color:#34d399}
       .dark-theme .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-high{text-shadow:0 0 10px rgba(190,230,90,.24)}
       .dark-theme .nte-search-overlay .nte-sr-stats strong.nte-demand-tier.is-amazing{text-shadow:0 0 12px rgba(52,211,153,.32)}
     `;
@@ -4925,8 +5043,8 @@
       style.id = "nteSearchOverlayStyle";
       document.head.appendChild(style);
     }
-    if (style.dataset.nteVer === "search-multi-5") return;
-    style.dataset.nteVer = "search-multi-5";
+    if (style.dataset.nteVer === "search-multi-6") return;
+    style.dataset.nteVer = "search-multi-6";
     style.textContent = `
       .nte-search-overlay {
         margin-top: 10px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.08);
@@ -4951,7 +5069,7 @@
         display: flex; align-items: center; justify-content: space-between; gap: 10px;
         padding: 6px 8px 10px; border-bottom: 1px solid rgba(128,128,128,0.12); margin-bottom: 4px;
       }
-      .nte-search-overlay .nte-sr-summary { font-size: 12px; color: #8a8f98; }
+      .nte-search-overlay .nte-sr-summary { font-size: 12px; color: #646a73; }
       .nte-search-overlay .nte-sr-summary strong { color: inherit; font-weight: 800; }
       .nte-search-overlay .nte-sr-header-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
       .nte-search-overlay .nte-sr-keep-open-btn,
@@ -4997,10 +5115,10 @@
       .nte-search-overlay .nte-sr-name {
         font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
-      .nte-search-overlay .nte-sr-stats { font-size: 11px; color: #888; margin-top: 2px; }
+      .nte-search-overlay .nte-sr-stats { font-size: 11px; color: #666; margin-top: 2px; }
       .nte-search-overlay .nte-sr-stats strong { color: inherit; font-weight: 800; }
       .dark-theme .nte-search-overlay .nte-sr-name { color: #e8e8e8; }
-      .dark-theme .nte-search-overlay .nte-sr-stats { color: #999; }
+      .dark-theme .nte-search-overlay .nte-sr-stats { color: #a8a8a8; }
       .dark-theme .nte-search-overlay .nte-sr-stats strong { color: #ccc; }
       .dark-theme .nte-search-overlay .nte-sr-summary { color: #a7abb2; }
       .nte-search-overlay .nte-sr-badge {
@@ -5390,13 +5508,13 @@
             )),
             t)
           );
-        return (
-          e ||
-          ((e = parseInt(
-            window.location.href.split("/").find((v) => !isNaN(parseInt(v))),
-          )),
-          e)
-        );
+        if (get_side_user_id.memo_path !== window.location.pathname) {
+          get_side_user_id.memo_path = window.location.pathname;
+          // Only a /users/<id>/ path is authoritative; /trades/<id>/... must never yield the trade id.
+          let path_user_id = parseInt(window.location.pathname.match(/users\/(\d+)\//)?.[1]);
+          if (path_user_id) e = path_user_id;
+        }
+        return e || parseInt(get_selected_trade_partner_id(null)) || 0;
       }
       function hide_native_inventory_list() {
         let panel = get_panel();
@@ -6176,11 +6294,13 @@
           if (is_side_offer_full()) return;
           add_search_item_to_trade(item, a);
         };
-        fetch_search_thumbs(visible_results).then((did_fetch) => {
-          if (!did_fetch || !overlay_el || m.value.trim().toLowerCase() !== q)
-            return;
-          refresh_search_result_thumbs();
-        });
+        fetch_search_thumbs(visible_results)
+          .then((did_fetch) => {
+            if (!did_fetch || !overlay_el || m.value.trim().toLowerCase() !== q)
+              return;
+            refresh_search_result_thumbs();
+          })
+          .catch(() => {});
       }
       function finish_search_add_success(item) {
         stop_search_status();
@@ -6833,6 +6953,7 @@
       if (!is_icon) btn.textContent = "Reloading...";
     }
     try {
+      clear_trade_search_caches();
       await run_custom_trade_bridge_action("reloadInventory", {
         side_index,
       });
@@ -8983,6 +9104,16 @@
     roblox_owned_detail_until[key] = Date.now() + ms;
   }
 
+  // Roblox's own request may fail without a result event; stale keys expire.
+  const PAGE_DETAIL_INFLIGHT_MAX_AGE_MS = 5000;
+  function is_page_detail_inflight(trade_id) {
+    let started = page_detail_inflight[trade_id];
+    if (!started) return false;
+    if (Date.now() - started < PAGE_DETAIL_INFLIGHT_MAX_AGE_MS) return true;
+    delete page_detail_inflight[trade_id];
+    return false;
+  }
+
   function is_roblox_owned_detail(trade_id) {
     let key = String(trade_id || "").trim();
     if (!key) return false;
@@ -9162,10 +9293,30 @@
     }
     return false;
   }
+  // An unloaded row is hidden only while its detail is plausibly still loading; after
+  // this long it counts as unknown (shown) so a failed fetch cannot hide it forever.
+  const trade_row_load_grace_ms = 10000;
+  const trade_row_unloaded_since = new WeakMap();
+  let trade_row_load_grace_timer = 0;
+  function is_trade_row_load_pending(row) {
+    let id = row.getAttribute("nruTradeId") || "";
+    let entry = trade_row_unloaded_since.get(row);
+    if (!entry || entry.id !== id) {
+      entry = { id, since: Date.now() };
+      trade_row_unloaded_since.set(row, entry);
+    }
+    let left = trade_row_load_grace_ms - (Date.now() - entry.since);
+    if (left > 0 && !trade_row_load_grace_timer)
+      trade_row_load_grace_timer = setTimeout(() => {
+        trade_row_load_grace_timer = 0;
+        apply_trade_list_filter();
+      }, left + 50);
+    return left > 0;
+  }
   function does_trade_row_match_search(row, query) {
     if (!query || !query.trim()) return true;
     let names = row.dataset.nteTradeItemNames;
-    if (!names) return true;
+    if (names === undefined) return !is_trade_row_load_pending(row);
     let sc = _prep_search_query(query);
     if (!sc.lq) return true;
     let start = 0,
@@ -9363,25 +9514,31 @@
     row_next_request_at = Date.now() + r + pace_ms;
     let fetch_gen = row_fetch_generation;
     setTimeout(async () => {
+      // Always free the slot and continue the queue exactly once, even on throw.
+      let released = !1;
+      let release = () => {
+        if (released) return;
+        released = !0;
+        row_active_requests--;
+        process_row_fetch_q();
+      };
+      try {
         if (fetch_gen !== row_fetch_generation) {
-          row_active_requests--;
+          release();
           t(null);
-          process_row_fetch_q();
           return;
         }
         // Let Roblox own the auto-selected detail load on tab/select races.
-        if (is_roblox_owned_detail(e) || page_detail_inflight[e]) {
+        if (is_roblox_owned_detail(e) || is_page_detail_inflight(e)) {
           let waited = await wait_for_trade_detail_cache(e, 450);
           if (fetch_gen !== row_fetch_generation) {
-            row_active_requests--;
+            release();
             t(waited || null);
-            process_row_fetch_q();
             return;
           }
           if (waited) {
-            row_active_requests--;
+            release();
             t(waited);
-            process_row_fetch_q();
             return;
           }
         }
@@ -9423,10 +9580,9 @@
         } catch {}
         if (r) {
           if (fetch_gen !== row_fetch_generation) {
-            row_active_requests--;
+            release();
             t(null);
-            process_row_fetch_q();
-            return;
+          return;
           }
           let _tab =
             new URLSearchParams(window.location.search).get("tab") || "inbound";
@@ -9453,9 +9609,14 @@
         }
         let n = set_trade_row_cached_trade(e, r);
         t(n);
-        row_active_requests--;
-        process_row_fetch_q();
-      }, r);
+        release();
+      } catch (err) {
+        console.debug("NTE trade detail queue task failed", err);
+        t(null);
+      } finally {
+        release();
+      }
+    }, r);
   }
   function is_trade_row_visible_in_scroll_view(row) {
     if (!row?.isConnected) return false;
@@ -10168,7 +10329,7 @@
       '.trades-header [aria-label="How to trade"]',
     )) {
       btn.style.setProperty("display", "none", "important");
-      btn.setAttribute("aria-hidden", "true");
+      set_attr_if_changed(btn, "aria-hidden", "true");
     }
     mount_trade_header_refresh_button();
   }
@@ -10418,7 +10579,7 @@
     document.getElementById("nteTradeTabDropdown")?.remove();
     document.getElementById("nteTradeQualityFilter")?.remove();
     document.getElementById("nteTradeTabLabel")?.remove();
-    document.body.classList.remove("nte-quality-probe");
+    remove_class_if_present(document.body, "nte-quality-probe");
   }
   function unwrap_trade_category_wrap(header) {
     let wrap = header?.querySelector?.("#nteTradeCategoryWrap");
@@ -10439,10 +10600,19 @@
         '[role="listbox"][data-state="open"]',
     );
   }
+  // Real Radix dialogs (decline/send confirmations) legitimately lock the page.
+  function trade_page_dialog_is_open() {
+    return [
+      ...document.querySelectorAll(
+        '[role="dialog"][data-state="open"], [role="alertdialog"]:not([data-state="closed"])',
+      ),
+    ].some((el) => el.getClientRects().length > 0);
+  }
   function unlock_trade_page_pointer_trap() {
     // Radix Select sets body pointer-events:none + data-scroll-locked.
     // Category remount can leave that trap after the listbox is gone
     // (scroll works, clicks die).
+    if (trade_page_dialog_is_open()) return;
     try {
       document.body?.removeAttribute?.("aria-hidden");
       document.body?.removeAttribute?.("data-scroll-locked");
@@ -10513,7 +10683,8 @@
         let pe = getComputedStyle(document.body).pointerEvents;
         let locked = document.body?.getAttribute?.("data-scroll-locked");
         if (pe !== "none" && !locked) return;
-        if (trade_category_select_is_open()) return;
+        if (trade_category_select_is_open() || trade_page_dialog_is_open())
+          return;
         unlock_trade_page_pointer_trap();
       } catch {}
     }, 500);
@@ -10656,9 +10827,11 @@
     let btn = document.getElementById("nteTradeFocusSelectedBtn");
     if (!btn) return;
     let has_selected = has_selected_trade_row();
-    btn.textContent = trade_focus_selected_only ? "Show all" : "Hide others";
-    btn.disabled = !has_selected;
-    btn.setAttribute(
+    let focus_label = trade_focus_selected_only ? "Show all" : "Hide others";
+    if (btn.textContent !== focus_label) btn.textContent = focus_label;
+    if (btn.disabled !== !has_selected) btn.disabled = !has_selected;
+    set_attr_if_changed(
+      btn,
       "aria-pressed",
       trade_focus_selected_only ? "true" : "false",
     );
@@ -10697,7 +10870,16 @@
       let row_list_changed = false;
       let class_changed = false;
       for (let mutation of mutations) {
-        if (mutation.attributeName === "class") class_changed = true;
+        if (mutation.attributeName === "class") {
+          // Hover/focus class flips must not schedule work; only `selected` does.
+          let target = mutation.target;
+          if (
+            target?.classList?.contains("trade-row") &&
+            /(^|\s)selected(\s|$)/.test(mutation.oldValue || "") !==
+              target.classList.contains("selected")
+          )
+            class_changed = true;
+        }
         if (mutation.type !== "childList") continue;
         for (let node of [...mutation.addedNodes, ...mutation.removedNodes]) {
           if (!(node instanceof Element)) continue;
@@ -10715,6 +10897,7 @@
       childList: true,
       subtree: true,
       attributes: true,
+      attributeOldValue: true,
       attributeFilter: ["class"],
     });
     let scroll = get_trade_list_scroll_element();
@@ -10936,7 +11119,7 @@
     r.style.cssText = "";
     let existing_lbl = r.querySelector(".trade-quality-label");
     if (existing_lbl) {
-      existing_lbl.classList.add("nte-trade-list-control-label");
+      add_class_if_missing(existing_lbl, "nte-trade-list-control-label");
       existing_lbl.style.paddingTop = "0";
       if (/^sort by$/i.test((existing_lbl.textContent || "").trim()))
         existing_lbl.textContent = "Sort";
@@ -10946,7 +11129,7 @@
         ".input-group-btn",
       )?.parentElement || r;
     if (right_col && right_col !== r) {
-      right_col.classList.add("nte-trade-filter-right");
+      add_class_if_missing(right_col, "nte-trade-filter-right");
       right_col.style.width = "";
       if (existing_lbl && existing_lbl.parentElement !== right_col)
         right_col.insertBefore(existing_lbl, right_col.firstChild);
@@ -10979,6 +11162,7 @@
   }
   function get_trade_row_filter_metrics(e) {
     if (!e?.offers?.[0] || !e?.offers?.[1]) return null;
+    ensure_post_tax_filter_sync();
     let t = X(e.offers[0]),
       r = X(e.offers[1]),
       n = 0,
@@ -11003,7 +11187,7 @@
     (n += s(t)),
       (a += s(r)),
       (n += e.offers[0]?.robux || 0),
-      (a += e.offers[1]?.robux || 0),
+      (a += get_received_robux_for_list(e.offers[1]?.robux)),
       (l = (e.offers[0]?.robux || 0) > 0 || (e.offers[1]?.robux || 0) > 0);
     let d = a - n,
       u = n > 0 ? Math.round((d / n) * 100) : null;
@@ -11021,15 +11205,18 @@
   }
   function set_trade_row_filter_metrics(e, t) {
     t
-      ? ((e.dataset.nteTradeReady = "1"),
-        (e.dataset.nteTradeDelta = String(t.delta || 0)),
-        (e.dataset.nteTradePct =
-          null == t.percent || !isFinite(t.percent) ? "" : String(t.percent)),
-        (e.dataset.nteTradeGiveCount = String(t.giveItemCount || 0)),
-        (e.dataset.nteTradeReceiveCount = String(t.receiveItemCount || 0)),
-        (e.dataset.nteTradeProjected = t.hasProjected ? "1" : "0"),
-        (e.dataset.nteTradeRare = t.hasRare ? "1" : "0"),
-        (e.dataset.nteTradeRobux = t.hasRobux ? "1" : "0"))
+      ? (set_attr_if_changed(e, "data-nte-trade-ready", "1"),
+        set_attr_if_changed(e, "data-nte-trade-delta", String(t.delta || 0)),
+        set_attr_if_changed(
+          e,
+          "data-nte-trade-pct",
+          null == t.percent || !isFinite(t.percent) ? "" : String(t.percent),
+        ),
+        set_attr_if_changed(e, "data-nte-trade-give-count", String(t.giveItemCount || 0)),
+        set_attr_if_changed(e, "data-nte-trade-receive-count", String(t.receiveItemCount || 0)),
+        set_attr_if_changed(e, "data-nte-trade-projected", t.hasProjected ? "1" : "0"),
+        set_attr_if_changed(e, "data-nte-trade-rare", t.hasRare ? "1" : "0"),
+        set_attr_if_changed(e, "data-nte-trade-robux", t.hasRobux ? "1" : "0"))
       : (delete e.dataset.nteTradeReady,
         delete e.dataset.nteTradeDelta,
         delete e.dataset.nteTradePct,
@@ -11056,7 +11243,7 @@
     if (e && t && "all" !== t) {
       if ("rejected" === t) filter_pass = is_trade_row_rejected(e);
       else {
-        if ("1" !== e.dataset.nteTradeReady) return false;
+        if ("1" !== e.dataset.nteTradeReady) return !is_trade_row_load_pending(e);
         let r = Number(e.dataset.nteTradeDelta || 0),
           n = Number(e.dataset.nteTradeGiveCount || 0),
           a = Number(e.dataset.nteTradeReceiveCount || 0);
@@ -11087,7 +11274,23 @@
     }
     return filter_pass;
   }
-  function sync_trade_list_empty_state(e, t) {
+  // Rows whose values/names haven't loaded can't be matched yet.
+  function count_trade_rows_loading(rows) {
+    let fv = trade_filter_state.value,
+      needs_metrics = fv && "all" !== fv && "rejected" !== fv,
+      has_search = !!(trade_search_q && trade_search_q.trim());
+    if (!needs_metrics && !has_search) return 0;
+    let loading = 0;
+    for (let row of rows)
+      if (
+        ((needs_metrics && "1" !== row.dataset.nteTradeReady) ||
+          (has_search && row.dataset.nteTradeItemNames === undefined)) &&
+        is_trade_row_load_pending(row)
+      )
+        loading++;
+    return loading;
+  }
+  function sync_trade_list_empty_state(e, t, loading = 0) {
     let r =
       document.querySelector(
         "#trade-row-scroll-container .simplebar-content",
@@ -11103,7 +11306,9 @@
       (n.style.display = "none"),
       r.appendChild(n));
     let a = get_trade_list_filter_option(trade_filter_state.value);
-    if (trade_search_q && trade_search_q.trim()) {
+    if (0 === t && loading > 0) {
+      n.textContent = `Loading trade values (${e - loading}/${e})…`;
+    } else if (trade_search_q && trade_search_q.trim()) {
       let q = trade_search_q.trim();
       n.textContent = `No trades contain "${q}".`;
     } else if (trade_focus_selected_only) {
@@ -11131,9 +11336,13 @@
       if (rows[i].style.display !== next_display)
         rows[i].style.display = next_display;
     }
+    let loading = count_trade_rows_loading(rows);
     let cnt = document.getElementById("nteTradeListFilterCount");
-    if (cnt) cnt.textContent = `Showing ${shown}/${total}`;
-    sync_trade_list_empty_state(total, shown);
+    if (cnt)
+      cnt.textContent =
+        `Showing ${shown}/${total}` +
+        (loading ? ` · Loading trade values (${total - loading}/${total})…` : "");
+    sync_trade_list_empty_state(total, shown, loading);
   }
   function apply_trade_list_filter() {
     let e =
@@ -11152,13 +11361,13 @@
       if (row.style.display !== next_display) row.style.display = next_display;
       if (visible) r++;
     }
+    let loading = count_trade_rows_loading(t);
     let cnt = document.getElementById("nteTradeListFilterCount");
-    if (cnt) cnt.textContent = `Showing ${r}/${total}`;
-    if (r === 0 && total > 0) {
-      sync_trade_list_empty_state(total, 0);
-    } else {
-      sync_trade_list_empty_state(total, r);
-    }
+    if (cnt)
+      cnt.textContent =
+        `Showing ${r}/${total}` +
+        (loading ? ` · Loading trade values (${total - loading}/${total})…` : "");
+    sync_trade_list_empty_state(total, r, loading);
     let focus_bar = document.getElementById("nteTradeFocusSelectedBar");
     if (focus_bar) {
       requestAnimationFrame(() => place_trade_focus_bar(focus_bar));
@@ -11359,16 +11568,16 @@
     chip.querySelector(".nte-trade-row-partner-value-icon")?.remove();
     chip.classList.toggle("is-muted", !!label.muted);
     chip.classList.toggle("is-private", !!label.is_private);
-    chip.dataset.ntePartnerValueSig = label.sig;
-    chip.setAttribute("aria-label", `Rolimons value ${label.text}`);
-    chip.querySelector(".nte-trade-row-partner-value-text").textContent =
-      label.text;
+    set_attr_if_changed(chip, "data-nte-partner-value-sig", String(label.sig));
+    set_attr_if_changed(chip, "aria-label", `Rolimons value ${label.text}`);
+    let chip_text = chip.querySelector(".nte-trade-row-partner-value-text");
+    if (chip_text.textContent !== label.text) chip_text.textContent = label.text;
     row
       .querySelector(".tradeListValuesBox .nte-trade-row-partner-value")
       ?.remove();
-    host.classList.add("nte-trade-row-partner-value-host");
-    if (chip.parentElement !== host) {
-      let name = host.querySelector(".text-lead, .paired-name, .trade-row-name");
+    add_class_if_missing(host, "nte-trade-row-partner-value-host");
+    let name = host.querySelector(".text-lead, .paired-name, .trade-row-name");
+    if (name ? name.nextElementSibling !== chip : chip.parentElement !== host) {
       if (name) name.insertAdjacentElement("afterend", chip);
       else host.appendChild(chip);
     }
@@ -11434,7 +11643,7 @@
       existing_hint.removeAttribute("data-toggle"),
         existing_hint.removeAttribute("title"),
         existing_hint.removeAttribute("data-original-title"),
-        existing_hint.setAttribute("aria-label", "Open Rolimons profile");
+        set_attr_if_changed(existing_hint, "aria-label", "Open Rolimons profile");
       let status_line = apply_trade_row_status_hint_row_flex(status_hint);
       (existing_hint.style.width = "18px"),
         (existing_hint.style.height = "18px"),
@@ -11637,8 +11846,8 @@
       ]) {
         shadow.appendChild(wrap);
       }
-      row.dataset.nteCtrlShadow = "1";
-      row.classList.add("nte-trade-row-lock-host");
+      set_attr_if_changed(row, "data-nte-ctrl-shadow", "1");
+      add_class_if_missing(row, "nte-trade-row-lock-host");
       return shadow;
     } catch {
       row.dataset.nteCtrlShadow = "0";
@@ -11805,7 +12014,7 @@
     if (!trade_row_lock_enabled) return;
     if (!row?.querySelector || !is_trade_row_decline_tab() || !trade_id) return;
     remember_trade_row_id(row, trade_id);
-    row.classList.add("nte-trade-row-lock-host");
+    add_class_if_missing(row, "nte-trade-row-lock-host");
     for (let avatar of row.querySelectorAll(".avatar.nte-trade-row-lock-host")) {
       avatar.classList.remove("nte-trade-row-lock-host");
     }
@@ -11901,11 +12110,25 @@
     // No value/item signature → many same-day counters with one partner collide.
     return !fp || String(fp).endsWith("|");
   }
+  // setAttribute and classList.add/remove queue a MutationRecord even when the
+  // value is unchanged, and the list observers react to those records. Row
+  // passes that rewrote the same values kept the trades page busy while idle.
+  function set_attr_if_changed(el, name, value) {
+    if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+  }
+  function add_class_if_missing(el, ...names) {
+    for (let name of names)
+      if (!el.classList.contains(name)) el.classList.add(name);
+  }
+  function remove_class_if_present(el, ...names) {
+    for (let name of names)
+      if (el.classList.contains(name)) el.classList.remove(name);
+  }
   function remember_trade_row_id(row, trade_id) {
     let id = String(trade_id || "").trim();
     if (!(row instanceof Element) || !id) return;
-    row.setAttribute("nruTradeId", id);
-    row.setAttribute("data-nte-trade-id", id);
+    set_attr_if_changed(row, "nruTradeId", id);
+    set_attr_if_changed(row, "data-nte-trade-id", id);
     let fp = get_trade_row_fingerprint(row);
     if (!fp || is_weak_trade_row_fingerprint(fp) || trade_row_fp_collisions.has(fp))
       return;
@@ -11989,7 +12212,7 @@
     if (!parked) return false;
     let did = false;
     if (parked.lock instanceof Element) {
-      row.classList.add("nte-trade-row-lock-host");
+      add_class_if_missing(row, "nte-trade-row-lock-host");
       if (trade_row_from_control(parked.lock) !== row) {
         if (append_trade_row_control(row, parked.lock)) did = true;
       }
@@ -11997,7 +12220,7 @@
         sync_trade_row_lock_position(row);
     }
     if (parked.decline instanceof Element) {
-      row.classList.add("nte-trade-row-has-decline");
+      add_class_if_missing(row, "nte-trade-row-has-decline");
       if (trade_row_from_control(parked.decline) !== row) {
         if (append_trade_row_control(row, parked.decline)) did = true;
       }
@@ -12207,7 +12430,10 @@
       btn.remove();
     }
     for (let row of [...scope.querySelectorAll(".trade-row.nte-trade-row-lock-host")]) {
-      row.classList.remove("nte-trade-row-lock-host");
+      // The class also marks the shared control mount. Stripping it while a
+      // decline button still lives there made every list pass flip it back.
+      if (!query_trade_row_control(row, ".nte-trade-row-decline-wrap"))
+        row.classList.remove("nte-trade-row-lock-host");
     }
   }
   try {
@@ -12515,35 +12741,67 @@
     if (!trade_id) return;
     ensure_trade_row_decline_button(row);
   }
-  function request_trade_row_decline(trade_id) {
+  // One request per trade id; kept until the real response so a retry after
+  // the UI timeout cannot send a duplicate decline.
+  const trade_row_decline_inflight = new Map();
+  async function request_trade_row_decline(trade_id) {
+    if (!locked_trade_ids_loaded) await load_locked_trade_ids();
     if (is_trade_row_locked(trade_id)) {
-      return Promise.resolve({
+      return {
         ok: false,
         status: 0,
         error: "This trade is locked.",
+      };
+    }
+    let key = String(trade_id || "").trim();
+    // The map holds the network promise; each caller races its own UI timeout so a
+    // retry while the request is still pending reuses it instead of re-sending.
+    let request = trade_row_decline_inflight.get(key);
+    if (!request) {
+      request = new Promise((resolve) => {
+        let settled = false;
+        let timer = 0;
+        let finish = (result) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(result || { ok: false, status: 0, error: "No response." });
+        };
+        // Safety net if the background never answers.
+        timer = setTimeout(
+          () => finish({ ok: false, status: 0, error: "No response." }),
+          60000,
+        );
+        nte_send_message(
+          { type: "trade_row_decline", trade_id },
+          function (result) {
+            finish(result);
+          },
+        );
+      });
+      trade_row_decline_inflight.set(key, request);
+      request.then(() => {
+        if (trade_row_decline_inflight.get(key) === request)
+          trade_row_decline_inflight.delete(key);
       });
     }
-    return new Promise((resolve) => {
-      let settled = false;
-      let finish = (result) => {
-        if (settled) return;
-        settled = true;
-        resolve(result || { ok: false, status: 0, error: "No response." });
-      };
-      setTimeout(() => {
-        finish({
-          ok: false,
-          status: 0,
-          error: "Decline timed out. Try again.",
-        });
-      }, 15000);
-      nte_send_message(
-        { type: "trade_row_decline", trade_id },
-        function (result) {
-          finish(result);
-        },
+    let ui_timer = 0;
+    let ui_timeout = new Promise((resolve) => {
+      ui_timer = setTimeout(
+        () =>
+          resolve({
+            ok: false,
+            status: 0,
+            error: "Decline timed out. Try again.",
+          }),
+        15000,
       );
     });
+    try {
+      return await Promise.race([request, ui_timeout]);
+    } finally {
+      clearTimeout(ui_timer);
+    }
   }
   function sync_trade_row_decline_lock(row, trade_id) {
     let btn = query_trade_row_control(row, ".nte-trade-row-decline");
@@ -12676,7 +12934,7 @@
     }
     if (wrap) {
       remember_trade_row_id(row, trade_id);
-      row.classList.add("nte-trade-row-has-decline");
+      add_class_if_missing(row, "nte-trade-row-has-decline");
       append_trade_row_control(row, wrap);
       wrap.dataset.nteTradeId = String(trade_id);
       park_trade_row_control_node(wrap, trade_id);
@@ -12687,7 +12945,7 @@
     // Create as soon as we have a trade id. Click handler still guards on cache.
     remember_trade_row_id(row, trade_id);
     prime_trade_row_decline();
-    row.classList.add("nte-trade-row-has-decline");
+    add_class_if_missing(row, "nte-trade-row-has-decline");
     wrap = document.createElement("div");
     wrap.className = "nte-trade-row-decline-wrap";
     append_trade_row_control(row, wrap);
@@ -12715,6 +12973,7 @@
       let current_row = trade_row_from_control(btn);
       let locked_id =
         wrap.dataset.nteTradeId || get_selected_trade_id_sync(current_row);
+      if (!locked_trade_ids_loaded) await load_locked_trade_ids();
       if (is_trade_row_locked(locked_id)) {
         sync_trade_row_decline_lock(current_row, locked_id);
         return;
@@ -12933,6 +13192,7 @@
     }
   }
   async function L_inner() {
+    await post_tax_filter_ready;
     // Rows painted before item data loads would keep "0 0" boxes for good.
     let e =
       c.isRolimonsDataReady() && (await c.getOption("Values on Trade Lists"));
@@ -13059,7 +13319,7 @@
       let item_names_arr = all_trade_items
         .map((it) => V(it))
         .filter(Boolean);
-      t.dataset.nteTradeItemNames = item_names_arr.join("|");
+      set_attr_if_changed(t, "data-nte-trade-item-names", item_names_arr.join("|"));
       let d = X(l.offers[0]),
         u = X(l.offers[1]);
       let o = 0,
@@ -13081,7 +13341,7 @@
           t?.recentAveragePrice,
         );
       }
-      if (((i += l.offers[1]?.robux || 0), !e)) {
+      if (((i += get_received_robux_for_list(l.offers[1]?.robux)), !e)) {
         t.querySelector(".tradeListValuesBox")?.remove();
         if (quick_decline_tab) sync_trade_row_decline_position(t);
         else if (is_trade_row_decline_tab()) sync_trade_row_lock_position(t);
@@ -13089,7 +13349,7 @@
         return;
       }
       let trade_delta = i - o,
-        list_sig = `${o}|${i}|${trade_profit_colorblind_mode ? 1 : 0}`;
+        list_sig = `${o}|${i}|${trade_profit_colorblind_mode ? 1 : 0}|${post_tax_filter_enabled ? 1 : 0}`;
       let existing_box = t.querySelector(".tradeListValuesBox");
       if (existing_box?.dataset?.nteListSig === list_sig) {
         if (is_trade_row_decline_tab())
@@ -13500,8 +13760,10 @@
       if (uncached.length) {
         start_background_trade_fetch(uncached, type);
       }
-    } catch {}
-    prefetch_running = false;
+    } catch {
+    } finally {
+      prefetch_running = false;
+    }
   }
 
   function cancel_background_trade_fetch() {
@@ -13532,7 +13794,9 @@
           (await new Promise((r) => nte_send_message("getTradeListData", r))) ||
           {};
         if (bg_fetch_abort || fetch_token !== bg_fetch_token) return;
-        for (let t of trades) {
+        let rate_limit_retries = {};
+        for (let ti = 0; ti < trades.length; ti++) {
+          let t = trades[ti];
           if (bg_fetch_abort || fetch_token !== bg_fetch_token) break;
           if (get_current_trade_tab() !== type) break;
           if (row_trade_cache[t.id]) continue;
@@ -13564,6 +13828,9 @@
               );
               set_trade_row_cached_trade(t.id, trade);
             } else if (429 === resp.status) {
+              // Retry the same trade a few times instead of dropping it.
+              rate_limit_retries[t.id] = (rate_limit_retries[t.id] || 0) + 1;
+              if (rate_limit_retries[t.id] <= 3) ti--;
               await new Promise((r) => setTimeout(r, 15000));
               continue;
             }
@@ -13996,6 +14263,8 @@
       .nte-sales-hover-sale-date{opacity:.72}
       .nte-sales-hover-sale-price{font-weight:800}
       .nte-sales-hover-sale-volume{opacity:.5;font-weight:600;margin-left:4px}
+      .light-theme .nte-sales-hover-sub,.light-theme .nte-sales-hover-note{opacity:1;color:#475569}
+      .light-theme .nte-sales-hover-sale-volume{opacity:1;color:#64748b}
       .nte-sales-hover-more{margin-top:8px}
       .nte-sales-hover-more-btn{
         appearance:none;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);color:inherit;
@@ -14144,7 +14413,7 @@
       .light-theme .nte-sales-hover-close{background:rgba(15,23,42,.05);border-color:rgba(15,23,42,.1)}
       .light-theme .nte-sales-hover-close:hover{background:rgba(15,23,42,.09);border-color:rgba(15,23,42,.16)}
       .nte-sales-hover-usd{color:#f4cc66;font-weight:800}
-      .light-theme .nte-sales-hover-usd{color:#b7791f}
+      .light-theme .nte-sales-hover-usd{color:#a16207}
       .nte-trade-row-status-line{display:inline-flex;align-items:center;flex-wrap:nowrap;gap:4px}
       .trade-row.nte-trade-row-lock-host{position:relative}
       .nte-trade-row-lock-wrap{
@@ -14535,6 +14804,9 @@
     })}`;
   }
   const trade_sales_recent_preview_count = 4;
+  // Some items have 1,000+ sales; rendering them all froze the panel for a frame or two.
+  // The chart's "All" range still covers the full history.
+  const trade_sales_recent_expanded_max = 250;
   function build_trade_sales_recent_sales_html(summary, expanded = !1) {
     let recent_sales = Array.isArray(summary?.recent_sales)
       ? summary.recent_sales
@@ -14542,7 +14814,7 @@
     if (!recent_sales.length)
       return '<div class="nte-sales-hover-note">Sale history unavailable right now.</div>';
     let visible_sales = expanded
-        ? recent_sales
+        ? recent_sales.slice(0, trade_sales_recent_expanded_max)
         : recent_sales.slice(0, trade_sales_recent_preview_count),
       toggle_html =
         recent_sales.length > trade_sales_recent_preview_count
@@ -15561,7 +15833,7 @@
     if (!card) return;
     let btn = card.querySelector(".nte-rap-signal-btn");
     let flag_host = card.querySelector(".item-card-link") || card;
-    flag_host?.classList?.remove("nte-has-rap-signal");
+    flag_host && remove_class_if_present(flag_host, "nte-has-rap-signal");
     if (!btn) return;
     nte_trade_sales_hover_active_el === btn && hide_trade_sales_hover_panel();
     btn.remove();
@@ -15636,7 +15908,7 @@
         card.querySelector(".nte-rap-signal-btn"),
       ctx = get_trade_rap_signal_context_from_element(card);
     if (!ctx) {
-      flag_host?.classList?.remove("nte-has-rap-signal");
+      flag_host && remove_class_if_present(flag_host, "nte-has-rap-signal");
       if (btn) {
         nte_trade_sales_hover_active_el === btn &&
           hide_trade_sales_hover_panel();
@@ -15661,12 +15933,16 @@
       let link = card.querySelector(".item-card-link") || card,
         box = link.querySelector(".flagBox");
       if (!box) continue;
-      box.dataset.nteSide = "right";
+      set_attr_if_changed(box, "data-nte-side", "right");
       box.style.left = "auto";
       box.style.right = "2px";
       box.style.top = "2px";
-      link.classList.add("nte-has-flag", "nte-flag-side-right");
-      link.classList.remove("nte-flag-side-left");
+      // Match the flag module: an empty box is no flag. Disagreeing here flipped
+      // the class on every refresh, which woke the page observers in a loop.
+      if (box.children.length)
+        add_class_if_missing(link, "nte-has-flag", "nte-flag-side-right");
+      else remove_class_if_present(link, "nte-has-flag", "nte-flag-side-right");
+      remove_class_if_present(link, "nte-flag-side-left");
     }
   }
   function mount_trade_sales_hover_targets(root = document) {
@@ -15722,6 +15998,7 @@
           el.style.removeProperty("-webkit-overflow-scrolling"));
   }
   let nte_trade_dominance_frame = 0;
+  let nte_trade_dominance_trailing_timer = 0;
   let nte_trade_dominance_last_run = 0;
   let trade_dominance_last_back_off = null;
   let trade_dominance_last_fight = null;
@@ -16278,8 +16555,18 @@
       nte_trade_dominance_frame = 0;
       if (document.hidden) return;
       let now = Date.now();
-      if (now - nte_trade_dominance_last_run < NTE_TRADE_DOMINANCE_THROTTLE_MS)
+      if (now - nte_trade_dominance_last_run < NTE_TRADE_DOMINANCE_THROTTLE_MS) {
+        // Don't drop the call: run once more when the throttle window ends.
+        clearTimeout(nte_trade_dominance_trailing_timer);
+        nte_trade_dominance_trailing_timer = setTimeout(
+          assert_trade_page_dominance,
+          NTE_TRADE_DOMINANCE_THROTTLE_MS -
+            (now - nte_trade_dominance_last_run) +
+            20,
+        );
         return;
+      }
+      clearTimeout(nte_trade_dominance_trailing_timer);
       nte_trade_dominance_last_run = now;
       ensure_trade_page_dominance_styles();
       let back_off_thumb_ui = should_back_off_trade_thumb_ui();
@@ -16388,12 +16675,12 @@
     if (!(node instanceof Element)) return !node;
     if (
       node.matches?.(
-        ".nte-thumb-overlay-host,.nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link,.nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn,.nte-counter-send-btn,.nte-trade-row-decline,.nte-trade-row-decline-wrap,.nte-trade-row-lock-wrap,.nte-history-panel,.nte-sales-hover-panel,.nte-sales-chart-point-tooltip,.tradeListValuesBox,.glowBar,.nte-trade-search-wrap,.rolimons-search,.nte-serial-hide-host,.winLossStatsContainer,#winLossStatsContainer,#valueWarningRow,#valueWarning,.valueSpan,.icon-rolimons,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row,.flagBox,.projected-flag,.rare-flag,.nte-flag-tip,.nte-flag-tip-text,.nte-profile-rolimons-link,.tooltip,.tooltip-inner,.tooltip-arrow",
+        ".nte-thumb-overlay-host,.nte-sales-hover-btn,.nte-rap-signal-btn,.nte-rolimons-thumb-link,.nte-uaid-thumb-link,.nte-history-btn,.nte-analyze-trade-btn,.nte-poison-btn,.nte-counter-send-btn,.nte-trade-row-decline,.nte-trade-row-decline-wrap,.nte-trade-row-lock-wrap,.nte-trade-row-partner-value,.nte-history-panel,.nte-sales-hover-panel,.nte-sales-chart-point-tooltip,.tradeListValuesBox,.glowBar,.nte-trade-search-wrap,.rolimons-search,.nte-serial-hide-host,.winLossStatsContainer,#winLossStatsContainer,#valueWarningRow,#valueWarning,.valueSpan,.icon-rolimons,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row,.flagBox,.projected-flag,.rare-flag,.nte-flag-tip,.nte-flag-tip-text,.nte-profile-rolimons-link,.tooltip,.tooltip-inner,.tooltip-arrow",
       )
     )
       return true;
     return !!node.closest?.(
-      ".nte-thumb-overlay-host,.nte-history-panel,.nte-sales-hover-panel,.nte-trade-search-wrap,.tradeListValuesBox,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row,.flagBox,.projected-flag,.tooltip,#valueWarningRow,#winLossStatsContainer",
+      ".nte-thumb-overlay-host,.nte-trade-row-partner-value,.nte-history-panel,.nte-sales-hover-panel,.nte-trade-search-wrap,.tradeListValuesBox,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row,.flagBox,.projected-flag,.tooltip,#valueWarningRow,#winLossStatsContainer",
     );
   }
   function mutation_is_extension_only(mutations) {
@@ -16604,10 +16891,18 @@
     }
   }
   async function F() {
-    async function e() {
+    let refresh_timer = 0;
+    async function run_refresh() {
       await S();
       await p();
       await C();
+    }
+    // Debounce per keystroke; the three passes are heavy.
+    function e() {
+      clearTimeout(refresh_timer);
+      refresh_timer = setTimeout(() => {
+        run_refresh().catch(() => {});
+      }, 120);
     }
     let t = document.querySelectorAll('[name="robux"]');
     if (t[0])
@@ -16816,6 +17111,9 @@
       if (mutation_is_extension_only(mutations)) return;
       if (mutations.some(mutation_touches_trade_offers))
         sync_trade_offer_changes();
+      // Collect instead of returning so later mutations (e.g. a `selected`
+      // class change) are still processed.
+      let needs_list_refresh = !1;
       for (let t of mutations) {
         if ("attributes" === t.type) {
           let node = t.target;
@@ -16834,7 +17132,8 @@
           if (node.classList?.contains("trade-item-card")) {
             if (typeof schedule_ownership_check === "function")
               schedule_ownership_check(0);
-            return schedule_list_ui_refresh();
+            needs_list_refresh = !0;
+            continue;
           }
           if (
             node.matches?.(
@@ -16846,21 +17145,19 @@
           ) {
             if (typeof schedule_ownership_check === "function")
               schedule_ownership_check(0);
-            return schedule_list_ui_refresh();
+            needs_list_refresh = !0;
+            continue;
           }
           if (
             node.classList?.contains("trade-row") ||
-            node.querySelector?.(".trade-row")
-          ) {
-            return schedule_list_ui_refresh();
-          }
-          if (
+            node.querySelector?.(".trade-row") ||
             node.classList?.contains("loading") ||
             node.classList?.contains("trade-request-item")
           )
-            return schedule_list_ui_refresh();
+            needs_list_refresh = !0;
         }
       }
+      needs_list_refresh && schedule_list_ui_refresh();
     }).observe(e, {
       attributes: !0,
       attributeFilter: ["class"],
@@ -17162,7 +17459,15 @@
   let trade_daily_limit_countdown_timer = 0;
   let trade_daily_limit_request_token = 0;
   let trade_daily_limit_cache = null;
+  // trade id -> created ms behind the last shown count, so partial scans merge by id.
+  let trade_daily_limit_by_id = new Map();
+  let trade_daily_limit_inflight = null;
+  // Failed/partial scans back off so N() passes don't each start another scan.
+  let trade_daily_limit_retry_at = 0;
+  const trade_daily_limit_retry_delay_ms = 15000;
   let trade_daily_limit_state = { count: 0, at_limit: false, reset_at: null };
+  // False until one API fetch succeeds, so a failure never shows a fake 0/100.
+  let trade_daily_limit_loaded = false;
   // Roblox's 100/24h limit is per account, so its records are kept per signed-in user.
   function trade_daily_limit_user_key(base) {
     let uid = document.querySelector('meta[name="user-data"]')?.getAttribute("data-userid");
@@ -17274,6 +17579,7 @@
     schedule_trade_daily_limit_refresh(800, true);
   }
 
+  // Covers sends made through the extension's own fetch_trade_api.
   async function note_trade_daily_limit_trade_api_from_fetch(args, response) {
     if (!response?.ok) return;
     let input = args[0];
@@ -17296,17 +17602,28 @@
       await record_trade_daily_limit_send_trade_id(id);
   }
 
-  function install_trade_daily_limit_fetch_hook() {
-    if (window.__nte_trade_daily_limit_fetch_hook) return;
-    window.__nte_trade_daily_limit_fetch_hook = true;
-    let native_fetch = window.fetch.bind(window);
-    window.fetch = async function (...args) {
-      let response = await native_fetch(...args);
-      try {
-        await note_trade_daily_limit_trade_api_from_fetch(args, response);
-      } catch {}
-      return response;
-    };
+  // trade_list_request_patch.js (MAIN world) sees Roblox's own send/counter
+  // POSTs; this isolated world's fetch never does.
+  let trade_daily_limit_sent_listener_bound = false;
+  function bind_trade_daily_limit_sent_listener() {
+    if (trade_daily_limit_sent_listener_bound) return;
+    trade_daily_limit_sent_listener_bound = true;
+    document.addEventListener("nru_trade_sent", (event) => {
+      let detail = event?.detail;
+      if ("string" == typeof detail) {
+        try {
+          detail = JSON.parse(detail);
+        } catch {
+          detail = null;
+        }
+      }
+      let trade_id = String(detail?.trade_id || "").trim();
+      if (!trade_id) return;
+      if (detail.kind === "counter")
+        void record_trade_daily_limit_counter_trade_id(trade_id);
+      else if (detail.kind === "send")
+        void record_trade_daily_limit_send_trade_id(trade_id);
+    });
   }
 
   function is_trade_daily_limit_excluded_trade_id(trade_id, excluded_set) {
@@ -17331,7 +17648,10 @@
     for (let page = 0; page < max_pages; page++) {
       let url = `https://trades.roblox.com/v1/trades/${list_type}?limit=100&sortOrder=Desc${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
       let resp = await fetch_trade_api(url, { credentials: "include" });
-      if (!resp.ok) break;
+      if (!resp.ok) {
+        trades.partial = true;
+        return trades;
+      }
       let json = await resp.json().catch(() => null);
       let page_trades = Array.isArray(json?.data) ? json.data : [];
       if (!page_trades.length) break;
@@ -17386,7 +17706,10 @@
         continue;
       created_by_trade_id.set(id, created);
     }
-    return [...created_by_trade_id.values()].sort((a, b) => a - b);
+    return {
+      by_id: created_by_trade_id,
+      timestamps: [...created_by_trade_id.values()].sort((a, b) => a - b),
+    };
   }
 
   function ensure_trade_daily_limit_styles() {
@@ -17398,8 +17721,8 @@
       #nteTradeDailyLimitCount .nte-trade-limit-help:hover,#nteTradeDailyLimitCount .nte-trade-limit-help.is-open{background:rgba(128,128,128,.32);z-index:2}
       #nteTradeDailyLimitCount:has(.nte-trade-limit-help:hover),
       #nteTradeDailyLimitCount:has(.nte-trade-limit-help.is-open){z-index:10050}
-      #nteTradeDailyLimitCount .nte-trade-limit-tooltip{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);width:max-content;max-width:min(240px,calc(100vw - 24px));padding:7px 9px;font-size:11px;font-weight:500;line-height:1.4;text-align:center;color:#f3f4f6;background:#1f2937;border:1px solid rgba(255,255,255,.14);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:0;visibility:hidden;pointer-events:none;z-index:1;white-space:normal;isolation:isolate}
-      #nteTradeDailyLimitCount .nte-trade-limit-tooltip::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:rgba(255,255,255,.14)}
+      #nteTradeDailyLimitCount .nte-trade-limit-tooltip{position:absolute;bottom:calc(100% + 6px);right:0;width:max-content;max-width:min(240px,calc(100vw - 24px));padding:7px 9px;font-size:11px;font-weight:500;line-height:1.4;text-align:center;color:#f3f4f6;background:#1f2937;border:1px solid rgba(255,255,255,.14);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);opacity:0;visibility:hidden;pointer-events:none;z-index:1;white-space:normal;isolation:isolate}
+      #nteTradeDailyLimitCount .nte-trade-limit-tooltip::after{content:"";position:absolute;top:100%;right:2px;border:5px solid transparent;border-top-color:rgba(255,255,255,.14)}
       @media (hover:hover) and (pointer:fine){
         #nteTradeDailyLimitCount .nte-trade-limit-help:hover .nte-trade-limit-tooltip{opacity:1;visibility:visible}
       }
@@ -17453,7 +17776,13 @@
   function build_trade_daily_limit_tooltip(state) {
     let count = Math.max(0, Number(state?.count) || 0);
     let remaining = Math.max(0, trade_daily_limit_max - count);
-    return `Roblox only allows ${trade_daily_limit_max} trades to be sent in 24 hours. You have ${remaining} left.`;
+    let text = `Roblox only allows ${trade_daily_limit_max} trades to be sent in 24 hours. You have ${remaining} left.`;
+    if (remaining <= 0 && Number.isFinite(state?.reset_at)) {
+      let minutes = Math.max(1, Math.ceil((state.reset_at - Date.now()) / 60000));
+      let hours = Math.floor(minutes / 60);
+      text += ` Next slot frees in ${hours ? `${hours}h ` : ""}${minutes % 60}m.`;
+    }
+    return text;
   }
 
   function prune_trade_daily_limit_timestamps(timestamps, now = Date.now()) {
@@ -17494,12 +17823,28 @@
       cutoff,
       trade_daily_limit_api_max_pages,
     );
-    return build_trade_daily_limit_timestamps(
+    let { timestamps, by_id } = build_trade_daily_limit_timestamps(
       outbound,
       stored_sent_records,
       excluded,
       cutoff,
     );
+    if (!outbound.partial) return { timestamps, by_id, partial: false };
+    // Partial scan: keep trades we already knew by id (never by time: server and
+    // local send times differ for one trade) so the count never shrinks or doubles.
+    let merged = new Map(by_id);
+    for (let [id, created] of trade_daily_limit_by_id) {
+      if (created < cutoff || is_trade_daily_limit_excluded_trade_id(id, excluded))
+        continue;
+      let fresh = merged.get(id);
+      if (fresh == null || created < fresh) merged.set(id, created);
+    }
+    if (!merged.size && !trade_daily_limit_loaded) return null;
+    return {
+      timestamps: [...merged.values()].sort((a, b) => a - b),
+      by_id: merged,
+      partial: true,
+    };
   }
 
   const trade_daily_limit_snapshot_key = () =>
@@ -17530,7 +17875,7 @@
   function sync_trade_daily_limit_ui() {
     let label = document.getElementById("nteTradeDailyLimitCountLabel");
     let help = document.getElementById("nteTradeDailyLimitHelp");
-    if (!label) return;
+    if (!label || !trade_daily_limit_loaded) return;
     let count = Math.min(
       trade_daily_limit_max,
       Math.max(0, Number(trade_daily_limit_state?.count) || 0),
@@ -17568,20 +17913,47 @@
       return trade_daily_limit_state;
     }
 
-    let request_token = ++trade_daily_limit_request_token;
-    let api_ts = [];
-    try {
-      api_ts = await fetch_trade_daily_limit_timestamps_from_api();
-    } catch {}
-    if (request_token !== trade_daily_limit_request_token) return trade_daily_limit_state;
+    if (!force) {
+      if (trade_daily_limit_inflight) return trade_daily_limit_inflight;
+      if (Date.now() < trade_daily_limit_retry_at) {
+        sync_trade_daily_limit_ui();
+        return trade_daily_limit_state;
+      }
+    }
 
-    trade_daily_limit_cache = {
-      fetched_at: Date.now(),
-      timestamps: api_ts,
-    };
-    trade_daily_limit_state = compute_trade_daily_limit_state(api_ts);
-    sync_trade_daily_limit_ui();
-    return trade_daily_limit_state;
+    let request_token = ++trade_daily_limit_request_token;
+    let run = (async () => {
+      let result = null;
+      try {
+        result = await fetch_trade_daily_limit_timestamps_from_api();
+      } catch {}
+      if (request_token !== trade_daily_limit_request_token) return trade_daily_limit_state;
+      // Failed fetch: keep the previous state, do not cache it, back off before retrying.
+      if (!result) {
+        trade_daily_limit_retry_at = Date.now() + trade_daily_limit_retry_delay_ms;
+        return trade_daily_limit_state;
+      }
+      let api_ts = result.timestamps;
+
+      trade_daily_limit_loaded = true;
+      trade_daily_limit_by_id = result.by_id;
+      // Partial results show now but are not cached; retry after the back-off.
+      trade_daily_limit_cache = result.partial
+        ? null
+        : { fetched_at: Date.now(), timestamps: api_ts };
+      trade_daily_limit_retry_at = result.partial
+        ? Date.now() + trade_daily_limit_retry_delay_ms
+        : 0;
+      trade_daily_limit_state = compute_trade_daily_limit_state(api_ts);
+      sync_trade_daily_limit_ui();
+      return trade_daily_limit_state;
+    })();
+    trade_daily_limit_inflight = run;
+    try {
+      return await run;
+    } finally {
+      if (trade_daily_limit_inflight === run) trade_daily_limit_inflight = null;
+    }
   }
 
   function schedule_trade_daily_limit_refresh(delay = 0, force = false) {
@@ -17599,7 +17971,9 @@
       if (message?.type !== "nte_get_trade_daily_limit") return;
       let replied = false;
       let timer = setTimeout(() => {
-        reply_trade_daily_limit(trade_daily_limit_state);
+        reply_trade_daily_limit(
+          trade_daily_limit_loaded ? trade_daily_limit_state : null,
+        );
       }, 1200);
       function reply_trade_daily_limit(state) {
         if (replied) return;
@@ -17624,7 +17998,9 @@
         });
       }
       refresh_trade_daily_limit_state(!!message.force)
-        .then((state) => reply_trade_daily_limit(state))
+        .then((state) =>
+          reply_trade_daily_limit(trade_daily_limit_loaded ? state : null),
+        )
         .catch((err) => {
           if (replied) return;
           replied = true;
@@ -17642,12 +18018,17 @@
     if (trade_daily_limit_countdown_timer) return;
     trade_daily_limit_countdown_timer = setInterval(() => {
       if (!document.getElementById("nteTradeDailyLimitCountLabel")) return;
-      if (trade_daily_limit_state?.at_limit) sync_trade_daily_limit_ui();
+      if (!trade_daily_limit_state?.at_limit || !trade_daily_limit_cache) return;
+      // Old sends age out of the 24h window; recompute from cached timestamps.
+      trade_daily_limit_state = compute_trade_daily_limit_state(
+        trade_daily_limit_cache.timestamps,
+      );
+      sync_trade_daily_limit_ui();
     }, 30000);
   }
 
   function ensure_trade_daily_limit_observer() {
-    install_trade_daily_limit_fetch_hook();
+    bind_trade_daily_limit_sent_listener();
     void load_trade_daily_limit_counter_records();
     void load_trade_daily_limit_sent_records();
     ensure_trade_daily_limit_countdown();
@@ -17875,7 +18256,11 @@
         duplicate_trade_warning_cache_ttl_ms &&
       duplicate_trade_warning_cache.cutoff <= cutoff
     ) {
-      let merged = { ...duplicate_trade_warning_cache.latest_by_user };
+      let merged = {};
+      for (let [user_id, timestamp] of Object.entries(
+        duplicate_trade_warning_cache.latest_by_user,
+      ))
+        if (timestamp >= cutoff) merged[user_id] = timestamp;
       for (let [user_id, timestamp] of Object.entries(
         duplicate_trade_warning_local_sent,
       )) {
@@ -17890,10 +18275,14 @@
 
     let latest_by_user = {};
     let cursor = "";
+    let fetch_failed = false;
     for (let page = 0; page < duplicate_trade_warning_max_pages; page++) {
       let url = `https://trades.roblox.com/v1/trades/outbound?limit=100&sortOrder=Desc${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
       let resp = await fetch_trade_api(url, { credentials: "include" });
-      if (!resp.ok) break;
+      if (!resp.ok) {
+        fetch_failed = true;
+        break;
+      }
       let json = await resp.json().catch(() => null);
       let trades = Array.isArray(json?.data) ? json.data : [];
       if (!trades.length) break;
@@ -17913,11 +18302,20 @@
       cursor = json.nextPageCursor;
     }
 
-    duplicate_trade_warning_cache = {
-      fetched_at: Date.now(),
-      cutoff,
-      latest_by_user,
-    };
+    // Partial pages (429/error) are not cached; merge them into the last good cache
+    // (within the current window) so a failure never forgets a known send.
+    if (fetch_failed) {
+      for (let [user_id, timestamp] of Object.entries(
+        duplicate_trade_warning_cache?.latest_by_user || {},
+      ))
+        if (timestamp >= cutoff && !(latest_by_user[user_id] >= timestamp))
+          latest_by_user[user_id] = timestamp;
+    } else
+      duplicate_trade_warning_cache = {
+        fetched_at: Date.now(),
+        cutoff,
+        latest_by_user,
+      };
 
     for (let [user_id, timestamp] of Object.entries(
       duplicate_trade_warning_local_sent,
@@ -18238,24 +18636,73 @@
     let send_btn = get_miss_send_warning_send_button(modal);
     if (!send_btn) return;
     if (!checkbox) {
-      if (send_btn.dataset.nteMissSendLocked === "1") {
-        send_btn.disabled = false;
-        send_btn.classList.remove("nte-miss-send-send-disabled");
-        delete send_btn.dataset.nteMissSendLocked;
-      }
+      unlock_miss_send_button(send_btn);
       return;
     }
-    send_btn.dataset.nteMissSendLocked = "1";
+    if (send_btn.dataset.nteMissSendLocked !== "1") lock_miss_send_button(send_btn, true);
     let sync = () => {
       let on = checkbox.checked === true;
-      send_btn.disabled = !on;
-      send_btn.classList.toggle("nte-miss-send-send-disabled", !on);
+      set_miss_send_blocked(send_btn, !on);
     };
     if (panel.dataset.nteBound !== "1") {
       panel.dataset.nteBound = "1";
       checkbox.addEventListener("change", sync);
     }
     sync();
+  }
+
+  // Sync copy of the option so the lock can happen before any await (null until loaded = on).
+  let miss_send_option_cache = null;
+  try {
+    c.getOption(miss_send_warning_option_name)
+      .then((v) => {
+        miss_send_option_cache = !!v;
+      })
+      .catch(() => {});
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "local" && changes[miss_send_warning_option_name])
+        miss_send_option_cache = changes[miss_send_warning_option_name].newValue !== false;
+    });
+  } catch {}
+
+  // Never touch `disabled`: React will not rewrite a prop it thinks is unchanged, so a
+  // stale restore would leave Send dead. A capture-phase blocker stops activation instead.
+  function block_miss_send_activation(event) {
+    if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  function set_miss_send_blocked(send_btn, blocked) {
+    if (blocked) {
+      add_class_if_missing(send_btn, "nte-miss-send-send-disabled");
+      if (!send_btn.hasAttribute("aria-disabled")) {
+        set_attr_if_changed(send_btn, "aria-disabled", "true");
+        send_btn.dataset.nteMissSendAria = "1";
+      }
+      send_btn.addEventListener("click", block_miss_send_activation, true);
+      send_btn.addEventListener("keydown", block_miss_send_activation, true);
+      return;
+    }
+    remove_class_if_present(send_btn, "nte-miss-send-send-disabled");
+    if (send_btn.dataset.nteMissSendAria === "1") {
+      send_btn.removeAttribute("aria-disabled");
+      delete send_btn.dataset.nteMissSendAria;
+    }
+    send_btn.removeEventListener("click", block_miss_send_activation, true);
+    send_btn.removeEventListener("keydown", block_miss_send_activation, true);
+  }
+
+  function lock_miss_send_button(send_btn, force = false) {
+    if (!send_btn || (!force && miss_send_option_cache === false)) return;
+    send_btn.dataset.nteMissSendLocked = "1";
+    set_miss_send_blocked(send_btn, true);
+  }
+
+  function unlock_miss_send_button(send_btn) {
+    if (send_btn?.dataset.nteMissSendLocked !== "1") return;
+    set_miss_send_blocked(send_btn, false);
+    delete send_btn.dataset.nteMissSendLocked;
   }
 
   function remove_miss_send_warning() {
@@ -18265,11 +18712,7 @@
       );
       let send_btn = get_miss_send_warning_send_button(modal);
       panel.remove();
-      if (send_btn?.dataset.nteMissSendLocked === "1") {
-        send_btn.disabled = false;
-        send_btn.classList.remove("nte-miss-send-send-disabled");
-        delete send_btn.dataset.nteMissSendLocked;
-      }
+      unlock_miss_send_button(send_btn);
     }
   }
 
@@ -18327,44 +18770,64 @@
       remove_miss_send_warning();
       return;
     }
-    if (!(await c.getOption(miss_send_warning_option_name))) {
-      remove_miss_send_warning();
-      return;
-    }
-    let request_token = ++miss_send_warning_request_token;
-    let summary = await get_miss_send_trade_summary().catch(() => null);
-    if (request_token !== miss_send_warning_request_token) return;
-    modal = find_miss_send_warning_modal();
-    if (!modal) return;
+    // Lock Send before the first await so it cannot be clicked while the async
+    // checks run; the finally below always settles it.
+    let locked_btn = get_miss_send_warning_send_button(modal);
+    lock_miss_send_button(locked_btn);
+    let request_token = 0;
+    let settled = false;
+    try {
+      if (!(await c.getOption(miss_send_warning_option_name))) {
+        remove_miss_send_warning();
+        return;
+      }
+      request_token = ++miss_send_warning_request_token;
+      let summary = await get_miss_send_trade_summary().catch(() => null);
+      if (request_token !== miss_send_warning_request_token) {
+        settled = true; // a newer run owns the button now
+        return;
+      }
+      modal = find_miss_send_warning_modal();
+      if (!modal) return;
 
-    ensure_miss_send_warning_styles();
-    let existing = modal.querySelector(".nte-miss-send-warning");
-    if (!summary) {
-      summary = {
-        give: { value_total: NaN, rap_total: NaN, robux_total: 0 },
-        receive: { value_total: NaN, rap_total: NaN, robux_total: 0 },
-        value_diff: 0,
-        overpay: false,
-        overpay_amount: 0,
-        overpay_pct: !1,
-        needs_review_confirm: false,
-        unreadable: true,
-        signature: "unreadable",
-      };
+      ensure_miss_send_warning_styles();
+      let existing = modal.querySelector(".nte-miss-send-warning");
+      if (!summary) {
+        summary = {
+          give: { value_total: NaN, rap_total: NaN, robux_total: 0 },
+          receive: { value_total: NaN, rap_total: NaN, robux_total: 0 },
+          value_diff: 0,
+          overpay: false,
+          overpay_amount: 0,
+          overpay_pct: !1,
+          needs_review_confirm: false,
+          unreadable: true,
+          signature: "unreadable",
+        };
+      }
+      if (existing?.dataset.signature === summary.signature) {
+        sync_miss_send_warning_send_button(existing, modal);
+        settled = true;
+        return;
+      }
+      let panel = build_miss_send_warning_panel(summary);
+      if (existing) existing.replaceWith(panel);
+      else {
+        let anchor = find_miss_send_warning_insert_point(modal);
+        if (anchor?.parentElement)
+          anchor.parentElement.insertBefore(panel, anchor);
+        else modal.append(panel);
+      }
+      sync_miss_send_warning_send_button(panel, modal);
+      settled = true;
+    } finally {
+      if (!settled) {
+        unlock_miss_send_button(locked_btn);
+        unlock_miss_send_button(
+          get_miss_send_warning_send_button(find_miss_send_warning_modal()),
+        );
+      }
     }
-    if (existing?.dataset.signature === summary.signature) {
-      sync_miss_send_warning_send_button(existing, modal);
-      return;
-    }
-    let panel = build_miss_send_warning_panel(summary);
-    if (existing) existing.replaceWith(panel);
-    else {
-      let anchor = find_miss_send_warning_insert_point(modal);
-      if (anchor?.parentElement)
-        anchor.parentElement.insertBefore(panel, anchor);
-      else modal.append(panel);
-    }
-    sync_miss_send_warning_send_button(panel, modal);
   }
 
   function schedule_miss_send_warning_update(delay = 50) {
@@ -18462,6 +18925,7 @@
     ownership_selected_row_key = row_key;
     ownership_last_trade_id = null;
     ownership_run_token += 1;
+    clear_ownership_ui();
     return true;
   }
 
@@ -18590,10 +19054,13 @@
     );
   }
 
+  // Fallback scan is capped; the tradable scan is the primary source.
+  const inventory_owned_fallback_max_pages = 15;
   async function fetch_inventory_owned_items(user_id, wanted_offers = null) {
+    if (is_ownership_fetch_backed_off(user_id)) return null;
     let owned = create_owned_item_state();
     let cursor = "";
-    for (let page = 0; page < 40; page++) {
+    for (let page = 0; page < inventory_owned_fallback_max_pages; page++) {
       let url = `https://inventory.roblox.com/v1/users/${user_id}/assets/collectibles?limit=100&sortOrder=Asc`;
       if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
       let resp;
@@ -18602,6 +19069,7 @@
       } catch {
         return null;
       }
+      if (resp.status === 429) backoff_ownership_fetch(user_id);
       if (!resp.ok) return null;
       let json = await resp.json().catch(() => null);
       if (!json) return null;
@@ -18612,9 +19080,11 @@
         }
       if (wanted_ownership_met(owned, wanted_offers)) return owned;
       cursor = json.nextPageCursor;
-      if (!cursor) break;
+      if (!cursor) {
+        owned.is_complete = true;
+        break;
+      }
     }
-    owned.is_complete = true;
     return owned;
   }
 
@@ -18654,9 +19124,12 @@
       }
       if (wanted_ownership_met(owned, wanted_offers)) return owned;
       cursor = json.nextPageCursor || "";
-      if (!cursor) break;
+      if (!cursor) {
+        owned.is_complete = true;
+        break;
+      }
     }
-    owned.is_complete = true;
+    // Hitting the page cap leaves is_complete false: absence proves nothing.
     return owned;
   }
 
@@ -18801,7 +19274,7 @@
     if (ownership_pending[pending_key]) return ownership_pending[pending_key];
     ownership_pending[pending_key] = (async () => {
       let owned = await fetch_tradable_owned_items(user_id, wanted_offers);
-      if (!wanted_ownership_met(owned, wanted_offers))
+      if (!owned?.is_complete && !wanted_ownership_met(owned, wanted_offers))
         owned = merge_owned_item_state(
           owned,
           await fetch_inventory_owned_items(user_id, wanted_offers),
@@ -19082,6 +19555,7 @@
     return unowned_items;
   }
 
+  let ownership_retry_key = "";
   async function run_ownership_check() {
     if (!is_ownership_check_allowed()) return;
     inject_ownership_styles();
@@ -19119,6 +19593,8 @@
     let check_key = `${trade_id || "detail"}:${partner_id}:${self_id}:${card_signature}`;
     if (check_key === ownership_last_trade_id) return;
     ownership_last_trade_id = check_key;
+    // Drop the previous trade's banner while this one is being fetched.
+    clear_ownership_ui();
     let run_token = ++ownership_run_token;
 
     let partner_owned_promise = has_partner_check
@@ -19136,6 +19612,16 @@
       ownership_last_trade_id !== check_key
     )
       return;
+    // Failed fetches come back as empty incomplete state (not null); retry once, later.
+    let is_usable = (state) => has_owned_item_state(state) || !!state?.is_complete;
+    if (!is_usable(partner_owned) && !is_usable(self_owned)) {
+      if (ownership_retry_key !== check_key) {
+        ownership_retry_key = check_key;
+        ownership_last_trade_id = null;
+        schedule_ownership_check(15000);
+      }
+      return;
+    }
 
     clear_ownership_ui();
 
@@ -21314,7 +21800,7 @@
     btn.disabled = true;
     btn.classList.remove("nte-history-btn--active");
     btn.classList.add("nte-history-btn--loading");
-    set_trade_action_button_label(btn, "Thinking", true);
+    set_trade_action_button_label(btn, "Loading", true);
     btn.setAttribute("aria-label", "Loading item trade history");
     btn.title = "Loading item trade history";
   }

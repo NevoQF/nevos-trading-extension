@@ -53,18 +53,6 @@
         font-weight:500;
         color:inherit;
       }
-      #settings-popover-menu .nte-settings-menu-secondary{
-        display:block;
-        margin-top:2px;
-        font-size:10px;
-        font-weight:400;
-        letter-spacing:.02em;
-        opacity:.52;
-        color:inherit;
-      }
-      .light-theme #settings-popover-menu .nte-settings-menu-secondary{
-        opacity:.48;
-      }
     `;
     document.head.appendChild(style);
   }
@@ -159,13 +147,9 @@
 
     const primary = document.createElement("span");
     primary.className = "nte-settings-menu-primary";
-    primary.textContent = "nevos";
+    primary.textContent = "Trading Extension";
 
-    const secondary = document.createElement("span");
-    secondary.className = "nte-settings-menu-secondary";
-    secondary.textContent = "trading extension";
-
-    wrap.append(primary, secondary);
+    wrap.append(primary);
     inner.appendChild(wrap);
     link.appendChild(inner);
   }
@@ -265,7 +249,13 @@
     raf = requestAnimationFrame(() => {
       raf = 0;
       ensure_settings_menu_item();
-      ensure_popover_menu_item();
+      // Same containers find_popover_settings_link() accepts.
+      if (
+        document.querySelector(
+          '[role="menu"], [role="dialog"], [data-radix-popper-content-wrapper], [data-state="open"]',
+        )
+      )
+        ensure_popover_menu_item();
     });
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });

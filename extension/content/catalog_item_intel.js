@@ -146,45 +146,100 @@
       .trim();
   }
 
+  // After a failed lookup, don't refetch for a while; one timer re-syncs so a quiet page recovers.
+  const FAIL_BACKOFF_MS = 15000;
+  const FAIL_MAX = 4;
+  const fail_at = {};
+  const fail_count = {};
+  let fail_retry_timer = 0;
+  // Delays 15s, 30s, 60s, then give up until reload.
+  function in_backoff(key) {
+    let n = fail_count[key] || 0;
+    if (n >= FAIL_MAX) return true;
+    return Date.now() - (fail_at[key] || 0) < FAIL_BACKOFF_MS * 2 ** Math.max(0, n - 1);
+  }
+  function is_definitive_miss(status) {
+    return status >= 400 && status < 500 && status !== 429 && status !== 408;
+  }
+  function note_failure(key) {
+    fail_at[key] = Date.now();
+    let n = (fail_count[key] = (fail_count[key] || 0) + 1);
+    if (n >= FAIL_MAX) return;
+    clearTimeout(fail_retry_timer);
+    fail_retry_timer = setTimeout(() => {
+      fail_retry_timer = 0;
+      queue_sync();
+    }, FAIL_BACKOFF_MS * 2 ** (n - 1) + 50);
+  }
+
+  const item_check_inflight = {};
+  const bundle_detail_inflight = {};
+
+  // Only successful lookups are cached; concurrent callers share one request.
   async function is_roblox_limited(asset_id) {
     let id = String(asset_id || "").trim();
     if (!/^\d+$/.test(id)) return false;
     if (id in item_check_cache) return item_check_cache[id];
-    item_check_cache[id] = false;
-    try {
-      let response = await fetch(`https://economy.roblox.com/v2/assets/${id}/details`, { credentials: "include" });
-      if (!response.ok) return false;
-      let item = await response.json();
-      let creator_id = Number(item?.Creator?.Id || item?.creator?.id || 0);
-      item_check_cache[id] = creator_id === 1 && !!(item?.IsLimited || item?.IsLimitedUnique);
-    } catch {
-      item_check_cache[id] = false;
-    }
-    trim_catalog_cache_object(
-      item_check_cache,
-      item_check_cache_max_entries,
-      item_check_cache_trim_count,
-    );
-    return item_check_cache[id];
+    if (item_check_inflight[id]) return item_check_inflight[id];
+    if (in_backoff("a" + id)) return false;
+    item_check_inflight[id] = (async () => {
+      try {
+        let response = await fetch(`https://economy.roblox.com/v2/assets/${id}/details`, { credentials: "include" });
+        if (!response.ok) {
+          if (is_definitive_miss(response.status)) item_check_cache[id] = false;
+          else note_failure("a" + id);
+          return false;
+        }
+        let item = await response.json();
+        let creator_id = Number(item?.Creator?.Id || item?.creator?.id || 0);
+        let is_limited = creator_id === 1 && !!(item?.IsLimited || item?.IsLimitedUnique);
+        item_check_cache[id] = is_limited;
+        trim_catalog_cache_object(
+          item_check_cache,
+          item_check_cache_max_entries,
+          item_check_cache_trim_count,
+        );
+        return is_limited;
+      } catch {
+        note_failure("a" + id);
+        return false;
+      } finally {
+        delete item_check_inflight[id];
+      }
+    })();
+    return item_check_inflight[id];
   }
 
   async function get_bundle_detail(bundle_id) {
     let id = String(bundle_id || "").trim();
     if (!/^\d+$/.test(id)) return null;
     if (id in bundle_detail_cache) return bundle_detail_cache[id];
-    bundle_detail_cache[id] = null;
-    try {
-      let response = await fetch(`https://catalog.roblox.com/v1/bundles/${id}/details`, { credentials: "include" });
-      if (response.ok) bundle_detail_cache[id] = await response.json();
-    } catch {
-      bundle_detail_cache[id] = null;
-    }
-    trim_catalog_cache_object(
-      bundle_detail_cache,
-      bundle_detail_cache_max_entries,
-      bundle_detail_cache_trim_count,
-    );
-    return bundle_detail_cache[id];
+    if (bundle_detail_inflight[id]) return bundle_detail_inflight[id];
+    if (in_backoff("b" + id)) return null;
+    bundle_detail_inflight[id] = (async () => {
+      try {
+        let response = await fetch(`https://catalog.roblox.com/v1/bundles/${id}/details`, { credentials: "include" });
+        if (!response.ok) {
+          if (is_definitive_miss(response.status)) bundle_detail_cache[id] = null;
+          else note_failure("b" + id);
+          return null;
+        }
+        let detail = await response.json();
+        bundle_detail_cache[id] = detail;
+        trim_catalog_cache_object(
+          bundle_detail_cache,
+          bundle_detail_cache_max_entries,
+          bundle_detail_cache_trim_count,
+        );
+        return detail;
+      } catch {
+        note_failure("b" + id);
+        return null;
+      } finally {
+        delete bundle_detail_inflight[id];
+      }
+    })();
+    return bundle_detail_inflight[id];
   }
 
   function is_roblox_limited_bundle(detail) {
@@ -205,6 +260,11 @@
       rolimons_item_data_promise = new Promise((resolve) =>
         send_message("getDataPeriodic", (data) => {
           rolimons_item_data_cached = data || null;
+          // No data yet (fresh install): ask again in 30 s instead of keeping null forever.
+          if (!rolimons_item_data_cached)
+            setTimeout(() => {
+              rolimons_item_data_promise = null;
+            }, 30000);
           resolve(rolimons_item_data_cached);
         }),
       );
@@ -344,8 +404,9 @@
       root.className = "nte-item-intel-root";
       context.price_row.insertAdjacentElement("afterend", root);
     }
-    if (context.is_rolimons) root.classList.add("mx-3");
-    root.dataset.assetId = context.asset_id;
+    // Write only on change: this runs on every sync and each write wakes page observers.
+    if (context.is_rolimons && !root.classList.contains("mx-3")) root.classList.add("mx-3");
+    if (root.dataset.assetId !== String(context.asset_id)) root.dataset.assetId = context.asset_id;
     return root;
   }
 

@@ -463,7 +463,7 @@
     document.documentElement.style.overflow = "hidden";
     document.addEventListener("keydown", on_key_down, true);
     let sub = root.querySelector(".nte-rp-brand-sub");
-    sub.innerHTML = `${esc(item_name || "Item")} · <a href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">nevos trading extension</a>`;
+    sub.innerHTML = `${esc(item_name || "Item")} · <a href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">Trading Extension</a>`;
   }
 
   function close_modal() {

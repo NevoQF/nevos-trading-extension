@@ -118,14 +118,24 @@ function get_trade_rap_stats(e, t = 0) {
     };
 }
 
+// Discord 429: retry-after header or JSON body retry_after, in seconds; capped at 5s.
+async function get_discord_retry_delay_ms(response) {
+    let seconds = Number(response.headers.get("retry-after"));
+    if (!(seconds > 0)) {
+        let body = await response.clone().json().catch(() => null);
+        seconds = Number(body?.retry_after);
+    }
+    return Math.min((seconds > 0 ? seconds : 1) * 1000, 5000);
+}
+
 async function get_trade_user_avatar_thumb(e) {
     let t = Number(e);
     if (!(t > 0)) return "";
     try {
-        let e = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${t}&size=420x420&format=Png&isCircular=true`, {
+        let e = await fetch_with_timeout(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${t}&size=420x420&format=Png&isCircular=true`, {
             credentials: "include",
             cache: "no-store"
-        }), a = await parse_json_response_safe(e, "Roblox avatar thumbnail");
+        }, 5000), a = await parse_json_response_safe(e, "Roblox avatar thumbnail");
         return String(a?.data?.[0]?.imageUrl || "").trim();
     } catch {
         return "";
@@ -180,7 +190,7 @@ async function fetch_trade_visual_item_thumbs(e) {
         };
     }).filter(Boolean), i = async e => {
         if (e.length) try {
-            let a = await fetch("https://thumbnails.roblox.com/v1/batch", {
+            let a = await fetch_with_timeout("https://thumbnails.roblox.com/v1/batch", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -221,10 +231,10 @@ async function load_image_bitmap_safe(e) {
     let t = String(e || "").trim();
     if (!t) return null;
     try {
-        let e = await fetch(t, {
+        let e = await fetch_with_timeout(t, {
             cache: "no-store",
             credentials: "omit"
-        });
+        }, 5000);
         if (!e.ok) return null;
         let a = await e.blob();
         return !a || a.size <= 0 ? null : await createImageBitmap(a);
@@ -746,15 +756,22 @@ async function send_inbound_trade_webhook_notification(e, t, a, r, i) {
         url: f
     });
     try {
-        let e = JSON.stringify(y), t = null;
+        let e = JSON.stringify(y), t = null, timed_out = false;
         if (b && b.size > 0) {
             let a = new FormData;
-            a.append("payload_json", e), a.append("files[0]", b, "trade-preview.png"), t = await fetch(i.webhook_url, {
+            a.append("payload_json", e), a.append("files[0]", b, "trade-preview.png");
+            let send_multipart = () => fetch_with_timeout(i.webhook_url, {
                 method: "POST",
                 body: a
-            }).catch(() => null);
+            }, 60000).catch(err => (timed_out = "TimeoutError" === err?.name, null));
+            t = await send_multipart();
+            if (429 === t?.status) {
+                await sleep_for(await get_discord_retry_delay_ms(t));
+                t = await send_multipart();
+            }
         }
-        if (!t || !t.ok) {
+        // Rate limited: the JSON fallback would hit the same limit. Timed out: the upload may have landed, so a fallback could duplicate it.
+        if ((!t || !t.ok) && 429 !== t?.status && !timed_out) {
             t && !t.ok && console.info("Nevos Trading Extension: inbound webhook multipart failed", t.status);
             let e = {
                 ...y,
@@ -767,7 +784,7 @@ async function send_inbound_trade_webhook_notification(e, t, a, r, i) {
                     } : delete t.image), t;
                 }) : y.embeds
             };
-            t = await fetch(i.webhook_url, {
+            t = await fetch_with_timeout(i.webhook_url, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json"
@@ -776,7 +793,10 @@ async function send_inbound_trade_webhook_notification(e, t, a, r, i) {
             }).catch(() => null);
         }
         t?.ok || console.info("Nevos Trading Extension: inbound webhook request failed", t?.status || 0);
+        // The Test button reads this; real notifications ignore it.
+        return { ok: !!t?.ok, status: t?.status || 0, timed_out };
     } catch (e) {
         console.info("Nevos Trading Extension: inbound webhook send failed", e);
+        return { ok: false, status: 0, timed_out: false };
     }
 }

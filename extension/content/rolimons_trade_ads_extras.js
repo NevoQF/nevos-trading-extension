@@ -8,6 +8,13 @@
   let pending = new Set();
   let paint_timer = 0;
   let tiers_off = false;
+  let tier_failures = 0;
+  let tier_retry_at = 0;
+  let tier_retry_timer = 0;
+  let tier_skip_until = {};
+  const TIER_MAX_FAILURES = 4;
+  const TIER_RETRY_BASE_MS = 3000;
+  const TIER_SKIP_RETRY_MS = 5 * 60 * 1000;
 
   function send_message(msg) {
     return new Promise((resolve) => {
@@ -103,37 +110,60 @@
   }
 
   async function load_missing() {
-    if (tiers_off) return paint();
+    if (tiers_off || Date.now() < tier_retry_at) return paint();
     let ids = [];
     for (let card of document.querySelectorAll(".mix_item")) {
       let id = card_player(card)?.id;
-      if (id && !(id in tiers) && !pending.has(id) && !ids.includes(id))
+      if (
+        id &&
+        (!(id in tiers) || (tiers[id] === null && Date.now() > (tier_skip_until[id] || 0))) &&
+        !pending.has(id) &&
+        !ids.includes(id)
+      )
         ids.push(id);
     }
     if (!ids.length) return paint();
     ids = ids.slice(0, 30);
     ids.forEach((id) => pending.add(id));
     let res = await send_message({ type: "getPlayerAdTiers", ids });
-    // No lookup (LITE build, server down): stop asking until the next page load.
-    if (!res?.ok) tiers_off = true;
     let players = res?.players || {};
+    // ok with nothing usable is a decoy/non-2xx answer: count it as a failure.
+    let usable = ids.some((id) => id in players);
+    // Transient failure: back off and retry; give up for this page after a few.
+    if (res?.ok && usable) {
+      tier_failures = 0;
+    } else {
+      tier_failures += 1;
+      if (tier_failures >= TIER_MAX_FAILURES) tiers_off = true;
+      else {
+        tier_retry_at =
+          Date.now() + TIER_RETRY_BASE_MS * 2 ** (tier_failures - 1);
+        // Static page: no DOM change will call schedule(), so retry on a timer.
+        clearTimeout(tier_retry_timer);
+        tier_retry_timer = setTimeout(schedule, tier_retry_at - Date.now() + 50);
+      }
+    }
     for (let id of ids) {
       pending.delete(id);
       if (id in players) tiers[id] = players[id];
+      else if (usable) {
+        // Skipped by the server: hide it and don't re-ask every second.
+        tiers[id] = null;
+        tier_skip_until[id] = Date.now() + TIER_SKIP_RETRY_MS;
+      }
     }
     paint();
     // The server answers a capped batch; ask again for the rest.
-    if (ids.some((id) => id in players)) schedule();
+    if (usable) schedule();
   }
 
-  // Rolimons rewrites ad headers every second ("x seconds ago"), so repaint
-  // from cache on each mutation and throttle (not debounce) the lookups.
+  // Rolimons rewrites ad headers every second ("x seconds ago"), so throttle
+  // (not debounce) the mount/repaint/lookup work.
   function schedule() {
-    mount_sales_buttons();
-    paint();
     if (paint_timer) return;
     paint_timer = setTimeout(() => {
       paint_timer = 0;
+      mount_sales_buttons();
       load_missing().catch(() => {});
     }, 300);
   }
@@ -144,6 +174,8 @@
   let item_data = null;
   let routility = null;
   let face_to_bundle = null;
+  let face_map_retry_at = 0;
+  let face_map_promise = null;
   let panel = null;
 
   const fmt = (n) =>
@@ -161,11 +193,29 @@
       let data = await send_message("getData");
       if (data?.items) item_data = data;
     }
-    if (!routility) routility = (await send_message("getRoutilityData")) || {};
-    if (!face_to_bundle) {
-      let res = await send_message({ type: "rolimons_player_face_map" });
-      face_to_bundle = res?.map || {};
+    // Only cache real data so a transient failure retries on the next open.
+    if (!routility) {
+      let data = await send_message("getRoutilityData");
+      if (data?.items) routility = data;
     }
+    if (!face_to_bundle && !face_map_promise && Date.now() >= face_map_retry_at) {
+      face_map_retry_at = Date.now() + 60000;
+      face_map_promise = refresh_face_map()
+        .catch(() => {})
+        .finally(() => {
+          face_map_promise = null;
+        });
+    }
+    // Dynamic heads only resolve to their bundle through this map, so give the
+    // first panel a short wait for it instead of looking up the wrong id.
+    if (!face_to_bundle && face_map_promise)
+      await Promise.race([face_map_promise, new Promise((r) => setTimeout(r, 2500))]);
+  }
+
+  async function refresh_face_map() {
+    let res = await send_message({ type: "rolimons_player_face_map" });
+    if (res?.ok && res.map && Object.keys(res.map).length)
+      face_to_bundle = res.map;
   }
 
   function sparkline(points) {
@@ -236,9 +286,13 @@
     panel.style.top = `${rect.bottom + window.scrollY + 6}px`;
   }
 
+  let panel_seq = 0;
+
   async function open_sales_panel(anchor, id, name) {
     close_panel();
+    let seq = ++panel_seq;
     await ensure_sales_sources();
+    if (seq !== panel_seq) return;
     let bundle_id = face_to_bundle?.[id];
     let item = {
       id,
@@ -257,7 +311,7 @@
       targetId: item.roblox_id,
       itemType: item.bundle ? "Bundle" : "Asset",
     });
-    if (!panel) return;
+    if (seq !== panel_seq || !panel) return;
     render_panel(item, row, sales || { ok: false });
   }
 
@@ -290,8 +344,9 @@
   async function boot() {
     if (!(await is_enabled())) return;
     document.addEventListener("click", (event) => {
-      if (panel && !event.target.closest(".nte-sp-panel, .nte-sp-btn"))
-        close_panel();
+      if (event.target.closest(".nte-sp-panel, .nte-sp-btn")) return;
+      panel_seq += 1; // abandon a sales panel still loading
+      if (panel) close_panel();
     });
     let tries = 0;
     let wait = setInterval(() => {

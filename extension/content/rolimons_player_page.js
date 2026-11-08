@@ -611,10 +611,15 @@
 
     let header = document.createElement("div");
     header.className = "modal-header";
-    header.innerHTML =
-      `<h5 class="modal-title">${item.name || "Owned Copies"}</h5>` +
+    let title = document.createElement("h5");
+    title.className = "modal-title";
+    title.textContent = item.name || "Owned Copies";
+    header.append(title);
+    header.insertAdjacentHTML(
+      "beforeend",
       `<button type="button" class="close" data-dismiss="modal" aria-label="Close">` +
-      `<span aria-hidden="true">&times;</span></button>`;
+        `<span aria-hidden="true">&times;</span></button>`,
+    );
 
     let body = document.createElement("div");
     body.className = "modal-body";
@@ -1556,7 +1561,12 @@
     }
   }
 
+  let trade_calc_watching = false;
+
   function watch_trade_calculator() {
+    // Path-change reboots call this again; bind listeners/timers only once.
+    if (trade_calc_watching) return;
+    trade_calc_watching = true;
     let select = document.getElementById("inventory-source-select");
     let status = document.getElementById("inventory-filter-status-message");
     let scan = document.getElementById("hide-player-items-scan");
@@ -1607,6 +1617,7 @@
   const TC_USD_OPTION = "USD on Rolimons Pages";
   let tc_usd_routility = null;
   let tc_usd_timer = 0;
+  let tc_usd_enabled = true;
   let tc_usd_observer = null;
   let tc_usd_last_key = "";
   let ad_usd_timer = 0;
@@ -1900,7 +1911,9 @@
       ".nte-tc-usd-label",
     );
     num.querySelectorAll("img, .nte-tc-usd-text").forEach((el) => el.remove());
-    num.textContent = format_tc_usd(amount);
+    let text = format_tc_usd(amount);
+    // Skip identical writes: the 60ms loop watches this grid.
+    if (num.textContent !== text) num.textContent = text;
     num.classList.add("d-block");
     num.style.removeProperty("display");
     num.style.display = show ? "" : "none";
@@ -1960,6 +1973,7 @@
       let st = await chrome.storage.local.get([TC_USD_OPTION]);
       enabled = st[TC_USD_OPTION] !== false;
     } catch {}
+    tc_usd_enabled = enabled;
     try {
       tc_usd_routility = enabled ? await send_message("getRoutilityData") : null;
     } catch {
@@ -2006,6 +2020,7 @@
     watch_trade_stamp_el();
     watch_usd_storage();
     setInterval(() => {
+      if (!tc_usd_enabled) return;
       watch_trade_stamp_el();
       schedule_trade_calculator_usd();
     }, 400);
@@ -2069,12 +2084,15 @@
     if (!num) {
       num = document.createElement("div");
     }
-    label.className = "stat_title nte-ad-usd-label";
-    num.className = "stat_value nte-ad-usd-value";
+    // Touch the DOM only when something differs: the observer repaints on any mutation.
+    if (label.className !== "stat_title nte-ad-usd-label")
+      label.className = "stat_title nte-ad-usd-label";
+    if (num.className !== "stat_value nte-ad-usd-value")
+      num.className = "stat_value nte-ad-usd-value";
     let rap = details.querySelector(":scope > .stat_rap");
     if (rap) {
-      rap.after(label);
-      label.after(num);
+      if (rap.nextElementSibling !== label) rap.after(label);
+      if (label.nextElementSibling !== num) label.after(num);
     } else if (!label.isConnected) {
       details.appendChild(label);
       details.appendChild(num);
@@ -2092,9 +2110,8 @@
     }
     let items = ad_side_items(side);
     let row = ensure_ad_side_usd(details);
-    row.num.textContent = items.length
-      ? format_tc_usd(sum_side_usd(items))
-      : "-";
+    let text = items.length ? format_tc_usd(sum_side_usd(items)) : "-";
+    if (row.num.textContent !== text) row.num.textContent = text;
   }
 
   function paint_trade_ads_usd() {

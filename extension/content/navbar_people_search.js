@@ -6,6 +6,7 @@
   const style_id = "nte-people-search-style";
   const friends_storage_key = "nte_people_search_friends";
   const debounce_ms = 0;
+  const username_resolve_debounce_ms = 250;
   const min_query_len = 3;
   const max_results = 4;
   const username_re = /^[a-zA-Z0-9]+(?:[ _.]?[a-zA-Z0-9]+)?$/;
@@ -25,6 +26,7 @@
   let last_query = "";
   let pending_token = 0;
   let debounce_timer = 0;
+  let resolve_timer = 0;
   let injecting = false;
   let active_input = null;
   let enabled_cache = true;
@@ -262,18 +264,31 @@
     return chip;
   }
 
+  function escape_html(text) {
+    return String(text).replace(
+      /[&<>"']/g,
+      (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+    );
+  }
+
   function highlight_name(display, query) {
     let q = String(query || "");
-    if (!q) return display;
+    if (!q) return escape_html(display);
     let lower = display.toLowerCase();
-    let idx = lower.indexOf(q.toLowerCase());
-    if (idx < 0) return display;
+    let lower_q = q.toLowerCase();
+    // Some characters change length when lowercased; indexes would be off.
+    if (lower.length !== display.length || lower_q.length !== q.length) {
+      return escape_html(display);
+    }
+    let idx = lower.indexOf(lower_q);
+    if (idx < 0) return escape_html(display);
     return (
-      display.slice(0, idx) +
+      escape_html(display.slice(0, idx)) +
       "<b>" +
-      display.slice(idx, idx + q.length) +
+      escape_html(display.slice(idx, idx + q.length)) +
       "</b>" +
-      display.slice(idx + q.length)
+      escape_html(display.slice(idx + q.length))
     );
   }
 
@@ -821,6 +836,7 @@
   }
 
   function run_search(query) {
+    clearTimeout(resolve_timer);
     let q = normalize_query(query);
     if (q.length < min_query_len) {
       last_results = [];
@@ -853,19 +869,23 @@
     }
 
     if (q.length >= 3 && username_re.test(q.replace(/\s+/g, " "))) {
-      resolve_username(query.trim()).then((resolved) => {
+      // Debounce only the network lookup; friend filtering above stays instant.
+      resolve_timer = setTimeout(() => {
         if (token !== pending_token) return;
-        if (!active_input) return;
-        if (normalize_query(active_input.value || "") !== q) return;
-        if (!resolved?.userId) {
-          if (last_results.length) hydrate_results(last_results, token).catch(() => {});
-          return;
-        }
-        let next = merge_search_results(last_results, [
-          { ...resolved, isFriend: is_friend_user(resolved) },
-        ]);
-        apply_results(next, q, token, true);
-      });
+        resolve_username(query.trim()).then((resolved) => {
+          if (token !== pending_token) return;
+          if (!active_input) return;
+          if (normalize_query(active_input.value || "") !== q) return;
+          if (!resolved?.userId) {
+            if (last_results.length) hydrate_results(last_results, token).catch(() => {});
+            return;
+          }
+          let next = merge_search_results(last_results, [
+            { ...resolved, isFriend: is_friend_user(resolved) },
+          ]);
+          apply_results(next, q, token, true);
+        });
+      }, username_resolve_debounce_ms);
     } else if (results.length) {
       hydrate_results(results, token).catch(() => {});
     }
@@ -938,8 +958,8 @@
     });
     input.addEventListener("focus", () => {
       active_input = input;
-      load_friends().catch(() => {});
       is_enabled().then((on) => {
+        if (on) load_friends().catch(() => {});
         if (
           on &&
           (input.value || "").trim().length >= min_query_len &&
@@ -956,7 +976,10 @@
         clear_injected();
       }, 220);
     });
-    load_friends().then(() => {
+    is_enabled().then((on) => {
+      if (!on) return;
+      return load_friends();
+    }).then(() => {
       if (
         active_input === input &&
         (input.value || "").trim().length >= min_query_len &&
@@ -991,7 +1014,9 @@
       friends_cache_at = Date.now();
     }
   });
-  load_friends().catch(() => {});
+  is_enabled().then((on) => {
+    if (on) load_friends().catch(() => {});
+  });
   find_and_attach();
   let raf = 0;
   new MutationObserver(() => {

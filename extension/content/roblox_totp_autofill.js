@@ -18,6 +18,7 @@
   let cached_input = null;
   let last_deep_find_at = 0;
   let last_shadow_hook_at = 0;
+  let shadow_roots_seen = 0;
 
   let session_secret = null;
   let decrypt_promise = null;
@@ -306,11 +307,7 @@
       return null;
     }
     const de = document.documentElement;
-    if (de) {
-      const f = walk(de);
-      if (f) return f;
-    }
-    return document.body ? walk(document.body) : null;
+    return de ? walk(de) : null;
   }
 
   function find_totp_input() {
@@ -324,6 +321,9 @@
       cached_input = light;
       return light;
     }
+
+    // A light-DOM input was checked above; the deep walk only matters once a shadow root exists.
+    if (last_shadow_hook_at > 0 && shadow_roots_seen === 0) return null;
 
     const now = Date.now();
     if (now - last_deep_find_at < DEEP_FIND_MIN_GAP_MS) return null;
@@ -339,6 +339,7 @@
       if (!node || node.nodeType !== Node.ELEMENT_NODE) return;
       if (node.shadowRoot && !shadow_seen.has(node.shadowRoot)) {
         shadow_seen.add(node.shadowRoot);
+        shadow_roots_seen++;
         try {
           mo.observe(node.shadowRoot, { childList: true, subtree: true, attributes: false });
         } catch {
