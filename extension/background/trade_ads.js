@@ -545,13 +545,16 @@ async function trade_ads_update_roblox_bio(description) {
   }
 }
 
+// ta verify: unverified -> phrase-added -> verified -> restored; any failure after the phrase is added removes it (best effort)
 async function trade_ads_auto_verify(user_id) {
   let phrase = await trade_ads_fetch_phrase(user_id);
   let original_bio = "";
+  let added_by_us = false;
   try {
     original_bio = await trade_ads_get_roblox_bio(user_id);
     let already = original_bio.includes(phrase);
     if (!already) {
+      added_by_us = true;
       await trade_ads_update_roblox_bio(
         original_bio ? `${original_bio}\n${phrase}` : phrase,
       );
@@ -562,6 +565,18 @@ async function trade_ads_auto_verify(user_id) {
       : original_bio;
     await trade_ads_update_roblox_bio(restored);
   } catch (err) {
+    // Best effort: remove the phrase this run added so the public About text is not left dirty.
+    if (added_by_us) {
+      try {
+        let current = await trade_ads_get_roblox_bio(user_id);
+        if (current.includes(phrase)) {
+          // Remove only the text this run appended; the user's own About text is left as is.
+          await trade_ads_update_roblox_bio(
+            current.split(`\n${phrase}`).join("").split(phrase).join(""),
+          );
+        }
+      } catch {}
+    }
     let e = err instanceof Error ? err : new Error(String(err));
     e.phrase = phrase;
     throw e;
@@ -715,6 +730,7 @@ const trade_ads_catalog_detail_cache_key =
   "trade_ads_catalog_item_detail_cache";
 let trade_ads_catalog_detail_mem;
 let trade_ads_catalog_csrf = "";
+// ta catalog lock: unlocked -> locked(holder) -> released in finally; every call inside is bounded by fetch_with_timeout
 let trade_ads_catalog_mutex = Promise.resolve();
 
 async function trade_ads_catalog_locked(fn) {
@@ -756,12 +772,16 @@ async function trade_ads_roblox_catalog_items_details(items) {
   let do_fetch = async (csrf) => {
     let headers = { "content-type": "application/json" };
     if (csrf) headers["x-csrf-token"] = csrf;
-    return fetch(url, {
-      method: "POST",
-      headers,
-      credentials: "include",
-      body: JSON.stringify({ items }),
-    });
+    return fetch_with_timeout(
+      url,
+      {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({ items }),
+      },
+      20000,
+    );
   };
   let res = await do_fetch(trade_ads_catalog_csrf);
   if (res.status === 403) {
@@ -935,14 +955,18 @@ async function trade_ads_fetch_batch_thumbs(requests) {
           version: "",
         };
       });
-      let res = await fetch("https://thumbnails.roblox.com/v1/batch", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
+      let res = await fetch_with_timeout(
+        "https://thumbnails.roblox.com/v1/batch",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify(body),
         },
-        body: JSON.stringify(body),
-      }).catch(() => null);
+        20000,
+      ).catch(() => null);
       if (!res?.ok) continue;
       let data = await res.json().catch(() => ({}));
       for (let row of data.data || []) {
@@ -967,7 +991,7 @@ async function trade_ads_fetch_roblox_thumb_urls(ids, endpoint_prefix) {
   for (let i = 0; i < ids.length; i += 100) {
     let chunk = ids.slice(i, i + 100);
     let url = `${endpoint_prefix}${chunk.join(",")}&size=150x150&format=Png&isCircular=false`;
-    let res = await fetch(url).catch(() => null);
+    let res = await fetch_with_timeout(url, {}, 20000).catch(() => null);
     if (!res?.ok) continue;
     let data = await res.json().catch(() => ({}));
     for (let row of data.data || []) {
@@ -1217,8 +1241,11 @@ function trade_ads_pick_rotation_preset(config) {
   return hit;
 }
 
-async function trade_ads_advance_rotation_preset(config, used_index) {
-  let presets = trade_ads_normalize_presets(config.presets);
+// ta auto: rotation index advances after a post; re-reads config so a pause or edit made during the post is kept
+async function trade_ads_advance_rotation_preset(used_index) {
+  // Re-read the latest config so a pause or edit made during the post is kept; write only the index.
+  let latest = await trade_ads_get_config_merged();
+  let presets = trade_ads_normalize_presets(latest.presets);
   let filled = presets
     .map((preset, index) => ({ preset, index }))
     .filter((row) => row.preset);
@@ -1226,8 +1253,7 @@ async function trade_ads_advance_rotation_preset(config, used_index) {
   let pos = filled.findIndex((row) => row.index === Number(used_index));
   let next = filled[(pos + 1 + filled.length) % filled.length]?.index || 0;
   await set_local_value(trade_ads_config_key, {
-    ...config,
-    presets,
+    ...latest,
     preset_rotation_index: next,
   });
 }
@@ -1526,7 +1552,7 @@ async function trade_ads_post_now_inner(options) {
   await set_local_value("trade_ads_last_auto_post_at", Date.now());
   await set_local_value(trade_ads_schedule_anchor_key, null);
   if (rotation_hit) {
-    await trade_ads_advance_rotation_preset(stored_config, rotation_hit.index);
+    await trade_ads_advance_rotation_preset(rotation_hit.index);
   }
   await trade_ads_clear_auto_failure();
   let out = { ok: true, data, body, player_id: body.player_id };

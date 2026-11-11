@@ -7,6 +7,12 @@
   const TIP_SELECTOR =
     '[role="tooltip"], .nte-tap-tooltip, .about-thanks-tooltip, .nte-trade-limit-tooltip, .ms-field-tooltip';
 
+  // tap tooltip: per host closed <-> open; outside click, Escape or another host's click closes all open hosts
+  // Open-only selector, one `.is-open` per host type (a bare suffix binds to the last part only).
+  const open_host_selector = HOST_SELECTOR.split(",")
+    .map((part) => `${part.trim()}.${OPEN_CLASS}`)
+    .join(", ");
+
   let doc_listeners_bound = false;
 
   function get_tooltip_el(host) {
@@ -22,7 +28,7 @@
   }
 
   function close_all_tap_tooltips(except) {
-    document.querySelectorAll(`${HOST_SELECTOR}.${OPEN_CLASS}`).forEach((host) => {
+    document.querySelectorAll(open_host_selector).forEach((host) => {
       if (host !== except) set_host_open(host, false);
     });
   }

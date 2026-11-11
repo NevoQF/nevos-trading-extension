@@ -3,6 +3,7 @@
   const option_name = "Values on User Pages";
   const profile_value_mode_key = "profile_value_display_mode";
   const values_to_use_key = "values_to_use";
+  // inventory: unknown -> pending -> cached (array, or false for private) | failed (not cached, retried on next check); totals cached only when prices loaded
   const inventory_cache = {};
   const inventory_pending = {};
   const totals_cache = {};
@@ -238,7 +239,7 @@
         let resp = null;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
-            resp = await fetch(url, { credentials: "include" });
+            resp = await fetch(url, { credentials: "include", signal: AbortSignal.timeout(20000) });
           } catch {
             resp = null;
           }
@@ -246,13 +247,7 @@
           if (attempt < 2) await inventory_fetch_delay(350 * (attempt + 1));
         }
 
-        if (!resp) {
-          const partial = items.length
-            ? normalize_tradeable_inventory_items(items)
-            : null;
-          inventory_cache[user_id] = partial;
-          return partial;
-        }
+        if (!resp) return null;
         if (resp.status === 401 || resp.status === 403) {
           inventory_cache[user_id] = false;
           return false;
@@ -261,22 +256,10 @@
           limit = "50";
           continue;
         }
-        if (resp.status !== 200) {
-          const partial = items.length
-            ? normalize_tradeable_inventory_items(items)
-            : null;
-          inventory_cache[user_id] = partial;
-          return partial;
-        }
+        if (resp.status !== 200) return null;
 
         const data = await resp.json().catch(() => null);
-        if (!data) {
-          const partial = items.length
-            ? normalize_tradeable_inventory_items(items)
-            : null;
-          inventory_cache[user_id] = partial;
-          return partial;
-        }
+        if (!data) return null;
 
         items = items.concat(Array.isArray(data?.items) ? data.items : []);
         cursor = data?.nextPageCursor || "";
@@ -295,17 +278,18 @@
 
   async function get_user_totals(user_id) {
     if (totals_cache[user_id]) return totals_cache[user_id];
-    await ensure_rolimons_data();
-    if (values_to_use_cache === "routility") await ensure_routility_data();
+    const rolimons_ready = !!(await ensure_rolimons_data());
+    let prices_ready = rolimons_ready;
+    if (values_to_use_cache === "routility") {
+      const routility_ready = !!(await ensure_routility_data());
+      prices_ready = prices_ready && routility_ready;
+    }
     const inventory = await fetch_user_inventory(user_id);
     if (inventory === false) {
       totals_cache[user_id] = { private: true };
       return totals_cache[user_id];
     }
-    if (!Array.isArray(inventory)) {
-      totals_cache[user_id] = { error: true };
-      return totals_cache[user_id];
-    }
+    if (!Array.isArray(inventory)) return { error: true };
 
     let total_value = 0;
     let total_rap = 0;
@@ -320,12 +304,13 @@
         get_rap(item.assetId, item.name, item.recentAveragePrice);
     }
 
-    totals_cache[user_id] = {
+    const totals = {
       value: total_value,
       rap: total_rap,
       items: inventory.length,
     };
-    return totals_cache[user_id];
+    if (prices_ready) totals_cache[user_id] = totals;
+    return totals;
   }
 
   function format_value_label(totals) {
@@ -360,7 +345,12 @@
     set_menu_btn_loading(btn);
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
-    const totals = await get_user_totals(user_id);
+    let totals;
+    try {
+      totals = await get_user_totals(user_id);
+    } catch {
+      totals = { error: true };
+    }
     if (!btn.isConnected) return;
     set_menu_btn_result(btn, totals);
   }

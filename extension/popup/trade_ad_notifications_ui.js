@@ -613,7 +613,10 @@
     let last = Number(state?.lastPollAt || 0);
     if (!Number.isFinite(last) || last <= 0) return "Next refresh: 01:00";
     let next = last + trade_ad_notif_poll_ms;
-    let remain = Math.max(0, next - Date.now());
+    let now = Date.now();
+    let remain = Math.max(0, next - now);
+    const overdue_ms = 30000;
+    if (next + overdue_ms < now) return "Waiting for the next check";
     if (remain <= 1200) return "Refreshing soon...";
     let sec = Math.ceil(remain / 1000);
     let mm = Math.floor(sec / 60);
@@ -723,6 +726,7 @@
 
       let items = [];
       let enabled_by_id = new Map();
+      let load_failed = false;
 
       let finish = (result) => {
         overlay.remove();
@@ -815,6 +819,9 @@
       });
 
       save_btn.addEventListener("click", () => {
+        if (load_failed) return;
+        // Still loading (or nothing to choose from): saving now would store an empty list and re-enable every item.
+        if (!items.length) return finish(null);
         let disabled = [];
         for (let row of items) {
           if (enabled_by_id.get(String(row.id)) === true) continue;
@@ -823,11 +830,16 @@
         finish(disabled);
       });
 
-      let hydrate_items = (payload) => {
+      let hydrate_items = (payload, keep_choices = false) => {
+        let previous = enabled_by_id;
         items = Array.isArray(payload?.items) ? payload.items.slice() : [];
         enabled_by_id = new Map();
+        load_failed = false;
+        save_btn.disabled = false;
         for (let row of items) {
-          enabled_by_id.set(String(row.id), row.enabled !== false);
+          let key = String(row.id);
+          let keep = keep_choices && previous.has(key);
+          enabled_by_id.set(key, keep ? previous.get(key) : row.enabled !== false);
         }
         render_grid();
         update_count();
@@ -842,7 +854,7 @@
               if (fresh?.ok && Array.isArray(fresh.items)) {
                 globalThis.__taNotifWatchItemsCache = fresh;
                 if (!overlay.isConnected) return;
-                hydrate_items(fresh);
+                hydrate_items(fresh, true);
               }
             })
             .catch(() => {});
@@ -859,6 +871,8 @@
           if (!overlay.isConnected) return;
           hydrate_items(payload);
         } catch (err) {
+          load_failed = true;
+          save_btn.disabled = true;
           if (!grid) return;
           grid.innerHTML = `<div class="ta-notif-watch-empty">${escape_html(err?.message || String(err))}</div>`;
         }
@@ -1404,25 +1418,47 @@
     }
   }
 
-  function trade_ad_notif_append_matches(root, state, from_index = 0) {
+  function trade_ad_notif_append_matches(root, state) {
     let list = root?.querySelector("#ta-notif-list");
     if (!list) return 0;
     let matches = trade_ad_notif_dedupe_matches(state?.matches);
-    let start = Math.max(0, Number(from_index) || 0);
-    if (start >= matches.length) return start;
-    let chunk = matches.slice(start);
-    if (!chunk.length) return start;
+    let shown = new Set(
+      Array.from(list.querySelectorAll(".ta-notif-card")).map((card) =>
+        String(card.dataset.adId || ""),
+      ),
+    );
+    let first_shown = matches.findIndex((row) => shown.has(String(row.adId)));
+    let newer = [];
+    let older = [];
+    matches.forEach((row, index) => {
+      if (shown.has(String(row.adId))) return;
+      if (first_shown >= 0 && index < first_shown) newer.push(row);
+      else older.push(row);
+    });
+    if (!newer.length && !older.length) return matches.length;
     let at_bottom = trade_ad_notif_list_is_near_bottom(list);
     let previous_top = list.scrollTop;
     list.querySelector(".ta-notifs-empty-card")?.remove();
-    list.insertAdjacentHTML(
-      "beforeend",
-      chunk.map(trade_ad_notif_card_html).join(""),
-    );
+    // Only cards inserted at the top move the visible content down.
+    let shift = 0;
+    if (newer.length) {
+      let height_before = list.scrollHeight;
+      list.insertAdjacentHTML(
+        "afterbegin",
+        newer.map(trade_ad_notif_card_html).join(""),
+      );
+      shift = list.scrollHeight - height_before;
+    }
+    if (older.length) {
+      list.insertAdjacentHTML(
+        "beforeend",
+        older.map(trade_ad_notif_card_html).join(""),
+      );
+    }
     trade_ad_notif_bind_send_trade_buttons(list);
     trade_ad_notif_bind_dismiss_buttons(list, root);
     void trade_ad_notif_resolve_thumbs(list);
-    trade_ad_notif_restore_list_scroll(list, at_bottom, previous_top);
+    trade_ad_notif_restore_list_scroll(list, at_bottom, previous_top + shift);
     return matches.length;
   }
 
@@ -1481,7 +1517,7 @@
       globalThis.__taNotifLastState = state;
       trade_ad_notif_start_countdown(root, state);
       let prev_count = Number(root.__taNotifRenderedCount) || 0;
-      let next_count = trade_ad_notif_append_matches(root, state, prev_count);
+      let next_count = trade_ad_notif_append_matches(root, state);
       root.__taNotifRenderedCount = next_count;
       trade_ad_notif_update_list_footer(root, state, false);
 
@@ -1503,6 +1539,7 @@
       let live = globalThis.__taNotifLastState;
       if (live) delete live.__taNotifScanning;
       root.__taNotifLoadMoreInFlight = false;
+      trade_ad_notif_update_list_footer(root, live || state, false);
       trade_ad_notif_start_countdown(root, live || state);
       setTimeout(() => {
         root.__taNotifSuppressStorageRefresh = false;
@@ -1629,13 +1666,19 @@
     if (mount.__taNotifLoadMoreInFlight || mount.__taNotifSuppressStorageRefresh) {
       return;
     }
+    // notif refresh: idle -> fetching -> rendered | error ; a newer refresh retires the older one
+    let run = (Number(mount.__taNotifRefreshRun) || 0) + 1;
+    mount.__taNotifRefreshRun = run;
     try {
       await trade_ad_notif_ensure_rolimons_item_data();
+      if (run !== mount.__taNotifRefreshRun) return;
       let state = await trade_ad_notif_fetch_state();
+      if (run !== mount.__taNotifRefreshRun) return;
       if (state?.enabled === true && !(Number(state.lastPollAt) > 0)) {
         let polled = await trade_ad_notif_send("trade_ad_notifications_poll_now", {
           force: true,
         });
+        if (run !== mount.__taNotifRefreshRun) return;
         if (polled?.ok && polled.state) state = polled.state;
       }
       globalThis.__taNotifLastState = state;
@@ -1651,7 +1694,6 @@
           mount.__taNotifRenderedCount = trade_ad_notif_append_matches(
             mount,
             state,
-            prev_rendered,
           );
         }
         trade_ad_notif_update_list_footer(mount, state, false);
@@ -1661,7 +1703,11 @@
       }
       trade_ad_notif_render_shell(mount, state);
     } catch (err) {
-      mount.innerHTML = `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Could not load alerts</p><p class="ta-notifs-empty-copy">${escape_html(err?.message || String(err))}</p></div>`;
+      if (run !== mount.__taNotifRefreshRun) return;
+      mount.innerHTML = `<div class="ta-notifs-empty-card"><p class="ta-notifs-empty-title">Could not load alerts</p><p class="ta-notifs-empty-copy">${escape_html(err?.message || String(err))}</p><button type="button" class="ta-btn ta-btn-secondary ta-notif-retry-btn" style="width:100%;">Retry</button></div>`;
+      mount.querySelector(".ta-notif-retry-btn")?.addEventListener("click", () => {
+        trade_ad_notif_refresh_ui(mount).catch(() => {});
+      });
     }
   }
 
@@ -1686,7 +1732,11 @@
   function trade_ad_notif_bind_storage_refresh(mount) {
     if (!mount || mount.__taNotifStorageBound) return;
     mount.__taNotifStorageBound = true;
-    chrome.storage.onChanged.addListener((changes, area) => {
+    const on_changed = (changes, area) => {
+      if (!mount.isConnected) {
+        chrome.storage.onChanged.removeListener(on_changed);
+        return;
+      }
       if (area !== "local") return;
       if (!changes.trade_ad_notifications_state) return;
       if (mount.closest("[data-ta-category-panel='notifs']")?.hidden) return;
@@ -1694,7 +1744,8 @@
         return;
       }
       trade_ad_notif_refresh_ui(mount).catch(() => {});
-    });
+    };
+    chrome.storage.onChanged.addListener(on_changed);
   }
 
   globalThis.trade_ad_notif_render_into = trade_ad_notif_render_into;

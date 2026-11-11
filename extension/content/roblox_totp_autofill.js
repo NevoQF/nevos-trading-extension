@@ -21,9 +21,11 @@
   let shadow_roots_seen = 0;
 
   let session_secret = null;
+  // unlock: idle -> prompting (decrypt_promise) -> unlocked | cancelled (cooldown) | withdrawn (settings change settles it as cancelled)
   let decrypt_promise = null;
 
   let unlock_declined_at = 0;
+  let cancel_pending_unlock = null;
   const UNLOCK_DECLINE_COOLDOWN_MS = 120000;
 
   function unlock_suppressed() {
@@ -208,6 +210,7 @@
       function finish(value) {
         if (settled) return;
         settled = true;
+        cancel_pending_unlock = null;
         if (value === null) unlock_declined_at = Date.now();
         try {
           dialog.close();
@@ -256,6 +259,8 @@
         resolve(null);
         return;
       }
+
+      cancel_pending_unlock = () => finish(null);
 
       refocus_id = setInterval(() => {
         if (!dialog.open) {
@@ -561,6 +566,7 @@
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== "local") return;
         if (!changes[STORAGE_ENABLED] && !changes[STORAGE_SECRET] && !changes[STORAGE_MODE] && !changes[STORAGE_ENC]) return;
+        if (cancel_pending_unlock) cancel_pending_unlock();
         clear_session_secret();
         unlock_declined_at = 0;
         const unlock_dlg = document.getElementById("nte-totp-unlock-dialog");

@@ -2281,8 +2281,11 @@ const trade_ads_interval_max_popup = 43200;
 
 let trade_ads_inventory_session_items = null;
 let trade_ads_inventory_session_promise = null;
+// ta inventory: none -> loading -> loaded | error ; reset retires an in-flight load
+let trade_ads_inventory_session_gen = 0;
 
 function trade_ads_reset_inventory_session() {
+  trade_ads_inventory_session_gen++;
   trade_ads_inventory_session_items = null;
   trade_ads_inventory_session_promise = null;
 }
@@ -2292,14 +2295,16 @@ async function trade_ads_load_inventory_session() {
     return trade_ads_inventory_session_items;
   if (trade_ads_inventory_session_promise)
     return trade_ads_inventory_session_promise;
+  let gen = trade_ads_inventory_session_gen;
   trade_ads_inventory_session_promise = (async () => {
     let res = await new Promise((resolve) =>
       chrome.runtime.sendMessage({ type: "trade_ads_inventory" }, resolve),
     );
-    trade_ads_inventory_session_promise = null;
+    let current = gen === trade_ads_inventory_session_gen;
+    if (current) trade_ads_inventory_session_promise = null;
     if (!res?.ok) throw new Error(res?.error || "Could not load inventory");
-    trade_ads_inventory_session_items = res.items || [];
-    return trade_ads_inventory_session_items;
+    if (current) trade_ads_inventory_session_items = res.items || [];
+    return res.items || [];
   })();
   return trade_ads_inventory_session_promise;
 }
@@ -2989,10 +2994,13 @@ function trade_ads_attach_picker(root, opts) {
     let request_loading = false;
     let request_query = "";
     let page_limit = 100;
+    // catalog search: idle -> loading (first | more) -> idle ; a new search retires an in-flight request
+    let search_run = 0;
 
     async function fetch_catalog_page(append) {
-      if (request_loading) return;
+      if (append && request_loading) return;
       if (append && !request_has_more) return;
+      let run = append ? search_run : ++search_run;
       request_loading = true;
       let offset = append ? request_offset : 0;
       if (!append) {
@@ -3015,6 +3023,7 @@ function trade_ads_attach_picker(root, opts) {
           resolve,
         ),
       );
+      if (run !== search_run) return;
       request_loading = false;
       if (!res?.ok) {
         strip.textContent = "";
@@ -3054,6 +3063,7 @@ function trade_ads_attach_picker(root, opts) {
         return;
       }
       await trade_ads_fill_thumbnails(strip);
+      if (run !== search_run) return;
       if (request_has_more) {
         let t = res.total != null ? `${request_offset} / ${res.total} · ` : "";
         set_footer(
@@ -4240,8 +4250,7 @@ async function render_trade_ads_verify_flow(root, status, vu) {
       });
       return render_trade_ads_tab();
     });
-    panel.querySelector("#ta-auto-verify")?.addEventListener("click", async () => {
-      await trade_ads_merge_verify_ui({ step: "loading", error: "" });
+    panel.querySelector("#ta-auto-verify")?.addEventListener("click", () => {
       render_trade_ads_verify_flow(layout_root, status, { step: "loading" });
     });
     return;
@@ -4258,8 +4267,7 @@ async function render_trade_ads_verify_flow(root, status, vu) {
       <button type="button" class="ta-btn ta-btn-primary" id="ta-auto-verify" style="width:100%;">Connect Rolimons</button>
     </div>
   `;
-  panel.querySelector("#ta-auto-verify").addEventListener("click", async () => {
-    await trade_ads_merge_verify_ui({ step: "loading", error: "" });
+  panel.querySelector("#ta-auto-verify").addEventListener("click", () => {
     render_trade_ads_verify_flow(layout_root, status, { step: "loading" });
   });
 }
@@ -4274,9 +4282,13 @@ function make_keyboard_activatable(el) {
   });
 }
 
+// ta render: idle -> loading -> composer | verify | error ; a newer render retires the older one
+let trade_ads_render_run = 0;
+
 async function render_trade_ads_tab() {
   const layout_root = document.getElementById("trade-ads-root");
   if (!layout_root) return;
+  let run = ++trade_ads_render_run;
 
   clear_trade_ads_countdown_timer();
   layout_root.innerHTML = `<p class="ta-lede">Loading…</p>`;
@@ -4287,6 +4299,7 @@ async function render_trade_ads_tab() {
   let status = await new Promise((resolve) =>
     chrome.runtime.sendMessage({ type: "trade_ads_get_status" }, resolve),
   );
+  if (run !== trade_ads_render_run) return;
 
   let active = trade_ads_get_active_category(layout_root);
   if (!status?.roblox) {
@@ -4314,6 +4327,9 @@ async function render_trade_ads_tab() {
     (await get_storage([trade_ads_verify_storage_key]))[
       trade_ads_verify_storage_key
     ] || {};
+  if (run !== trade_ads_render_run) return;
+  // A "loading" step persisted by an older build must not trigger a verify on its own.
+  if (vu.step === "loading") vu = { ...vu, step: "idle" };
   await render_trade_ads_verify_flow(layout_root, status, vu);
 }
 
@@ -4794,6 +4810,8 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
 
   let enc_blob = totp_snapshot[ROBLOX_TOTP_ENC_KEY];
   let is_encrypted = totp_snapshot_is_encrypted(totp_snapshot);
+  // totp write: idle -> encrypting -> saved ; Clear during encryption retires the pending write
+  let totp_write_gen = 0;
 
   let has_plain =
     typeof totp_snapshot[ROBLOX_TOTP_SECRET_KEY] === "string" &&
@@ -4946,14 +4964,15 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   function save_plain_secret(secret, enabled, message = "Saved.") {
     const patch = { [ROBLOX_TOTP_ENABLED_KEY]: enabled };
     if (secret) patch[ROBLOX_TOTP_SECRET_KEY] = secret;
-    chrome.storage.local.remove(
-      [ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY],
-      () => {
-        if (chrome.runtime.lastError) {
-          set_status("Could not save.");
-          return;
-        }
-        chrome.storage.local.set(patch, () => {
+    // Write the new secret first; the old encrypted one is removed only after that succeeds.
+    chrome.storage.local.set(patch, () => {
+      if (chrome.runtime.lastError) {
+        set_status("Could not save.");
+        return;
+      }
+      chrome.storage.local.remove(
+        [ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY],
+        () => {
           if (chrome.runtime.lastError) {
             set_status("Could not save.");
             return;
@@ -4965,9 +4984,9 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
           close_pw_panel();
           set_status(message);
           after_save_reload_state();
-        });
-      },
-    );
+        },
+      );
+    });
   }
 
   function after_save_reload_state() {
@@ -5067,7 +5086,9 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
           set_status("Enter a password to protect this secret.");
           return;
         }
+        const gen = totp_write_gen;
         const blob = await totp_encrypt_secret(plain, new_pw);
+        if (gen !== totp_write_gen) return;
         chrome.storage.local.set(
           {
             [ROBLOX_TOTP_ENABLED_KEY]: pending_protect,
@@ -5141,6 +5162,7 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
           );
           return;
         }
+        const gen = totp_write_gen;
         try {
           plain = await totp_decrypt_secret(enc_blob, cur_pw);
         } catch {
@@ -5149,6 +5171,7 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
           return;
         }
         const blob = await totp_encrypt_secret(plain, new_pw);
+        if (gen !== totp_write_gen) return;
         chrome.storage.local.set(
           {
             [ROBLOX_TOTP_ENABLED_KEY]: enabled,
@@ -5177,6 +5200,7 @@ function append_roblox_totp_card(container, totp_snapshot = {}) {
   });
 
   clear_btn.addEventListener("click", () => {
+    totp_write_gen++;
     chrome.storage.local.remove(
       [ROBLOX_TOTP_SECRET_KEY, ROBLOX_TOTP_ENC_KEY, ROBLOX_TOTP_MODE_KEY],
       () => {
@@ -6698,6 +6722,8 @@ function ta_update_buttons(progress) {
       }
       status_el.textContent = status_text;
       ta_announce(`run:${action.id}`, `${verb_ing} trades started.`);
+      // A Stop whose message was lost leaves the run going; let the user press Stop again.
+      if (stop_btn) stop_btn.disabled = false;
       if (!btn.querySelector(".ta-spinner")) {
         let existing_svg = icon_wrap.querySelector("svg");
         if (existing_svg) existing_svg.style.display = "none";
@@ -6716,8 +6742,13 @@ function ta_update_buttons(progress) {
           status_el.textContent = "Stopping...";
           await ta_send("ta_stop");
           let next = await ta_send("ta_progress");
+          if (!next) {
+            status_el.textContent = "Stopping...";
+            ta_start_polling();
+            return;
+          }
           ta_update_buttons(next);
-          if (!next?.running && ta_poll_timer) {
+          if (!next.running && ta_poll_timer) {
             clearInterval(ta_poll_timer);
             ta_poll_timer = null;
           }
@@ -6739,10 +6770,13 @@ function ta_update_buttons(progress) {
         if (svg) svg.style.display = "";
       }
 
+      // A finished run's result shows for 10 minutes, then the row goes back to normal.
+      let result_age = progress?.finished_at ? Date.now() - progress.finished_at : 0;
       if (
         !progress?.running &&
         progress?.action === action.id &&
-        (progress?.total > 0 || progress?.error)
+        (progress?.total > 0 || progress?.error) &&
+        result_age < 10 * 60 * 1000
       ) {
         if (progress.error === "Cancelled by user") {
           status_el.textContent = `Stopped. ${progress.done} of ${progress.total} done`;
@@ -6751,13 +6785,15 @@ function ta_update_buttons(progress) {
           status_el.textContent = `Stopped: ${progress.error} (${progress.done}/${progress.total})`;
         } else {
           btn.classList.add("ta-done");
+          let unchecked = Number(progress.unchecked) || 0;
           status_el.textContent =
             progress.skipped > 0
-              ? `Done! ${progress.done} ${verb_past}, ${progress.skipped} skipped.`
+              ? `Done! ${progress.done} ${verb_past}, ${progress.skipped} skipped` +
+                (unchecked ? ` (${unchecked} couldn't be checked).` : ".")
               : `Done! ${progress.done} trades ${verb_past}.`;
         }
         ta_announce(`end:${action.id}:${status_el.textContent}`, status_el.textContent);
-      } else if (!progress?.running && progress?.action !== action.id) {
+      } else if (!progress?.running) {
         status_el.textContent = "";
         btn.classList.remove("ta-done", "ta-error");
       }
@@ -6945,7 +6981,19 @@ function render_bulk_cancel_into(bulk_inner) {
         if (is_overpay) payload.min_overpay_pct = param;
         if (is_duration) payload.max_trade_age_ms = param;
         if (is_item) payload.item_filter = param;
-        await ta_send("ta_start", payload);
+        let started = await ta_send("ta_start", payload);
+        if (!started?.ok) {
+          // The reply may be lost after the run started; check before reporting a failure.
+          let p = await ta_send("ta_progress");
+          if (p?.running) {
+            ta_start_polling();
+            ta_update_buttons(p);
+            return;
+          }
+          let status_el = btn.querySelector(".ta-btn-status");
+          if (status_el) status_el.textContent = "Couldn't start. Try again.";
+          return;
+        }
         ta_start_polling();
         let p = await ta_send("ta_progress");
         ta_update_buttons(p);
@@ -7839,8 +7887,12 @@ function ms_start_polling(root) {
   }, 800);
 }
 
+// ms render: idle -> rendering (awaits) -> mounted ; a newer render retires the older one
+let ms_render_run = 0;
+
 async function render_mass_send_panel(root) {
   if (!root) return;
+  let run = ++ms_render_run;
   if (typeof nte_is_lite === "function" && nte_is_lite()) {
     root.dataset.msMounted = "1";
     root.innerHTML = `<div class="ta-notifs-empty-card ta-notifs-lite-card"><div class="ta-notifs-lite-badge">LITE</div><p class="ta-notifs-empty-title">Mass Sending needs Full</p><p class="ta-notifs-empty-copy">LITE stays fully client-side. Grab the full extension to mass-send trades to recent owners.</p><a class="ta-notifs-lite-link" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer" data-open-new-tab="true">Get Full on nevos-extension.com</a></div>`;
@@ -7854,6 +7906,7 @@ async function render_mass_send_panel(root) {
   ]);
   let rate_unlocked = !!unlock_st[mass_send_rate_unlocked_key];
   let store_opened = !!unlock_st[mass_send_rate_store_opened_key];
+  if (run !== ms_render_run) return;
   if (!store) {
     // No store page for this runtime — don't brick Mass Sending.
     if (!rate_unlocked) {
@@ -8046,6 +8099,7 @@ async function render_mass_send_panel(root) {
     recent_items = `<div class="ta-recent-empty">No mass sends yet.</div>`;
   }
 
+  if (run !== ms_render_run) return;
   root.innerHTML = `
     <p class="ta-lede">Send the same offer to recent owners of your requested items. Runs in the background even if you close this popup.</p>
     <div class="ta-card">
@@ -8358,7 +8412,10 @@ async function render_mass_send_panel(root) {
 
   root.querySelector("#ms-config-toggle")?.addEventListener("click", async () => {
     let next_open = !cfg.config_open;
-    cfg = await ms_save_config({ ...cfg, config_open: next_open });
+    cfg = await ms_save_config({
+      ...(await ms_load_config()),
+      config_open: next_open,
+    });
     let wrap = root.querySelector(".ms-config");
     let body = root.querySelector("#ms-config-body");
     let toggle = root.querySelector("#ms-config-toggle");
@@ -8421,7 +8478,7 @@ async function render_mass_send_panel(root) {
       root.querySelector("#ms-request-robux")?.value,
     );
     cfg = await ms_save_config({
-      ...cfg,
+      ...(await ms_load_config()),
       online_hours: hours,
       max_trades: max_trades > 0 ? max_trades : cfg.max_trades,
       avoid_recent_days,
@@ -8533,7 +8590,10 @@ async function render_mass_send_panel(root) {
 
   root.querySelector("#ms-blocklist-toggle")?.addEventListener("click", async () => {
     let next_open = !cfg.blocklist_open;
-    cfg = await ms_save_config({ ...cfg, blocklist_open: next_open });
+    cfg = await ms_save_config({
+      ...(await ms_load_config()),
+      blocklist_open: next_open,
+    });
     let wrap = root.querySelector(".ms-blocklist");
     let body = root.querySelector("#ms-blocklist-body");
     let toggle = root.querySelector("#ms-blocklist-toggle");
@@ -8790,10 +8850,12 @@ async function render_mass_send_panel(root) {
 
   root.querySelector("#ms-run")?.addEventListener("click", async () => {
     let progress_now = await ms_send("ms_progress");
-    if (progress_now?.running) {
+    let run_is_stop = root.querySelector("#ms-run")?.classList.contains("is-stop");
+    if (progress_now?.running || (!progress_now && run_is_stop)) {
       await ms_send("ms_stop");
       let next = await ms_send("ms_progress");
-      ms_update_progress_ui(root, next);
+      if (next) ms_update_progress_ui(root, next);
+      else ms_start_polling(root);
       return;
     }
 

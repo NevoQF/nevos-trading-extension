@@ -241,6 +241,7 @@
     (o.parcelRequire94c2 = s));
   var d = s.register;
   d("eFyFE", function (e, t) {
+    // rolimons data: loading (retry 2 s steps, max 30 s apart) -> ready (re-poll every 60 s); one chain, stops when the extension context dies
     let n, q, rt, rolimons_refresh_callback = null, rolimons_refresh_failures = 0;
     // Callers read .items straight off this, and it is requested before the
     // first fetch resolves, so never hand back undefined.
@@ -985,6 +986,9 @@
       "refreshData",
       () =>
         function e(t) {
+          // A dead extension context answers undefined forever; with no data
+          // loaded that kept the 2-30 s retry going for the life of the tab.
+          if (!nte_extension_alive()) return;
           rolimons_refresh_callback = t;
           let r = "getData";
           void 0 !== n && (r = "getDataPeriodic");
@@ -1133,8 +1137,10 @@
           }
         }
       }
+      // item-type lookup: idle -> in-flight (d, released in finally) -> idle; a 403 CSRF retries once, a failed call waits 30 s and keeps ids pending
       let l = {},
-        d = !1;
+        d = !1,
+        lookup_retry_at = 0;
       function is_roblox_bundle_card(e) {
         return !!(
           e &&
@@ -1270,7 +1276,7 @@
           o && o.removeAttribute("style"), p(n, r);
         }
       }
-      async function c() {
+      async function c(csrf_left = 1) {
         for (let text_div of document.querySelectorAll(
           ".item-card-price, .item-value",
         )) {
@@ -1465,7 +1471,12 @@
               h();
             });
           });
-        if ((a.initTooltips(), -1 !== Object.values(l).indexOf(!1) && !d)) {
+        if (
+          (a.initTooltips(),
+          -1 !== Object.values(l).indexOf(!1) &&
+            !d &&
+            Date.now() >= lookup_retry_at)
+        ) {
           d = !0;
           let e = Object.keys(l)
               .filter((e) => !1 === l[e])
@@ -1477,8 +1488,9 @@
             let is_bundle = !!item_data?.bundleIds?.[String(e)];
             t.items.push({ itemType: is_bundle ? 2 : 1, id: e });
           });
-          // Reset the busy flag even if the request throws.
-          let retry = !1;
+          // Reset the busy flag even if the request throws. rerun: null = done,
+          // 0 = CSRF retry (no more after it), 1 = next 100-id batch.
+          let rerun = null;
           try {
             void 0 === n &&
               (n = document
@@ -1493,9 +1505,12 @@
                 credentials: "include",
               },
             );
-            if (403 === r.status && 0 === (await r.json()).code)
-              (n = r.headers.get("X-CSRF-TOKEN")), (retry = !0);
-            else {
+            if (403 === r.status && 0 === (await r.json()).code) {
+              n = r.headers.get("X-CSRF-TOKEN");
+              csrf_left > 0
+                ? (rerun = 0)
+                : (lookup_retry_at = Date.now() + 30000);
+            } else {
               if (200 === r.status) {
                 (await r.json()).data.forEach((e) => {
                   l[e.id] = e?.assetType || "failed";
@@ -1504,17 +1519,20 @@
                 t.items.forEach(({ id }) => {
                   !1 === l[id] && (l[id] = "failed");
                 });
-              } else
-                Object.keys(l).forEach((e) => {
-                  !1 === l[e] && (l[e] = "failed");
-                });
+              } else {
+                // 429/5xx is not "no asset type": keep ids pending and retry
+                // after a pause instead of hiding their links for good.
+                lookup_retry_at = Date.now() + 30000;
+              }
               await o();
-              retry = e.length > 100;
+              if (e.length > 100) rerun = 1;
             }
+          } catch {
+            lookup_retry_at = Date.now() + 30000;
           } finally {
             d = !1;
           }
-          if (retry) return c();
+          if (null !== rerun) return c(rerun);
         }
       }
       var u = o;
@@ -1626,7 +1644,8 @@
         let href = `https://www.rolimons.com/player/${e}`;
         if (existing?.href === href || existing?.getAttribute("href") === href) {
           ensure_header_roli_style();
-          container.classList.add("nte-header-with-roli");
+          // Runs every N pass; classList.add of a present class still queues a record.
+          add_class_if_missing(container, "nte-header-with-roli");
           return;
         }
         ensure_header_roli_style();
@@ -2138,8 +2157,21 @@
         m().catch(() => {});
       }, delay + 220)));
   }
-  let trade_detail_uaid_observer_started = !1;
+  // uaid detail observer: unbound -> binding (flag) -> bound(root) -> unbound again when the root detaches or no root was found
+  let trade_detail_uaid_observer_started = !1,
+    trade_detail_uaid_observer = null,
+    trade_detail_uaid_observer_root = null;
   async function bind_trade_detail_uaid_refresh() {
+    // React can replace the observed root; the old observer then only saw a
+    // detached node and the flag blocked binding the new one.
+    if (
+      trade_detail_uaid_observer_root &&
+      !trade_detail_uaid_observer_root.isConnected
+    ) {
+      trade_detail_uaid_observer?.disconnect();
+      trade_detail_uaid_observer = trade_detail_uaid_observer_root = null;
+      trade_detail_uaid_observer_started = !1;
+    }
     if (trade_detail_uaid_observer_started) return;
     let page_type = c.getPageType();
     if ("details" !== page_type && "sendOrCounter" !== page_type) return;
@@ -2156,9 +2188,12 @@
         )
         .catch(() => null);
     }
-    if (!(detail_root instanceof Element)) return;
+    // waitForElm resolves null after 5 s; let the next refresh pass retry.
+    if (!(detail_root instanceof Element))
+      return void (trade_detail_uaid_observer_started = !1);
     let queue = () => schedule_uaid_link_refresh(80, !0);
-    new MutationObserver((records) => {
+    trade_detail_uaid_observer_root = detail_root;
+    trade_detail_uaid_observer = new MutationObserver((records) => {
       for (let record of records) {
         if ("attributes" === record.type) {
           let node = record.target;
@@ -2177,7 +2212,8 @@
           return;
         }
       }
-    }).observe(detail_root, {
+    });
+    trade_detail_uaid_observer.observe(detail_root, {
       childList: !0,
       subtree: !0,
       attributes: !0,
@@ -2251,7 +2287,9 @@
   let trade_win_loss_retry_timer = null,
     trade_win_loss_retry_count = 0,
     trade_win_loss_last_trade_id = "",
-    trade_win_loss_rendered_trade_id = null;
+    trade_win_loss_rendered_trade_id = null,
+    // win/loss run: newest p() wins; a run whose trade changed while it awaited draws nothing and retries
+    trade_win_loss_run = 0;
   // Inline display:flex beats the hidden attribute, so hide via style.
   function hide_trade_win_loss_stale() {
     let row = document.getElementById("winLossStatsContainer");
@@ -2377,6 +2415,13 @@
         return { parent: divider, before: null, mode: "detail_divider" };
     }
     if ("sendOrCounter" === c.getPageType()) {
+      // Next to the offer totals, above the send button: users read win/loss there, not under the inventory.
+      // The page has two offer columns; the button lives in the second one.
+      for (let offers_column of document.querySelectorAll(".trade-request-window-offers")) {
+        let send_button = find_trade_request_send_button(offers_column);
+        if (send_button?.parentElement)
+          return { parent: send_button.parentElement, before: send_button };
+      }
       let inventory_holder = document.querySelector(".inventory-panel-holder");
       let inventory_panels = inventory_holder?.querySelectorAll(
         ".trade-inventory-panel",
@@ -2445,7 +2490,8 @@
     row.style.justifyContent = "center";
     row.style.gap = "8px";
     row.style.boxSizing = "border-box";
-    row.style.transform = "none";
+    // transform is owned by align_trade_win_loss_container, which p() always
+    // runs right after this; clearing it here flipped it on every pass.
     row.style.marginBottom = "0";
     row.style.zIndex = "4";
     if (is_send_panel && mount?.parent instanceof Element) {
@@ -2570,19 +2616,33 @@
   }
   function align_trade_win_loss_container(row) {
     if (!(row instanceof Element)) return;
-    row.style.transform = "none";
-    row.style.marginBottom = "0";
+    // Measure around our own translate instead of clearing it first: the
+    // clear + re-apply flipped the style twice per call while idle. A
+    // positive y also pulls the next offer up by margin, so that case resets.
+    let shift = /^translate\((-?[\d.]+)px(?:, (-?[\d.]+)px)?\)$/.exec(
+        row.style.transform,
+      ),
+      shift_x = shift ? Number(shift[1]) : 0,
+      shift_y = shift?.[2] ? Number(shift[2]) : 0;
+    let reset = () => {
+      row.style.transform = "none";
+      row.style.marginBottom = "0";
+    };
+    if (!shift || shift_y > 0) {
+      reset();
+      shift_x = shift_y = 0;
+    }
     if (
       row.parentElement?.getAttribute(
         "data-nte-trade-win-loss-detail-mount",
       ) === "1"
     )
-      return;
-    if ("details" !== c.getPageType()) return;
+      return reset();
+    if ("details" !== c.getPageType()) return reset();
     let offers = document.querySelectorAll(".trade-list-detail-offer"),
       first_offer = offers[0],
       second_offer = offers[1];
-    if (!(first_offer instanceof Element)) return;
+    if (!(first_offer instanceof Element)) return reset();
     let is_compact = window.matchMedia(
       "(max-width: 820px), (pointer: coarse)",
     ).matches;
@@ -2608,9 +2668,11 @@
       }
     }
     let row_rect = row.getBoundingClientRect();
-    if (!(row_rect.width > 0) || !Number.isFinite(target_center)) return;
-    let x_offset = target_center - (row_rect.left + row_rect.width / 2);
-    if (!Number.isFinite(x_offset)) return;
+    if (!(row_rect.width > 0) || !Number.isFinite(target_center))
+      return reset();
+    let x_offset =
+      target_center - (row_rect.left - shift_x + row_rect.width / 2);
+    if (!Number.isFinite(x_offset)) return reset();
     x_offset = is_compact
       ? 0
       : Math.max(-80, Math.min(80, Math.round(x_offset)));
@@ -2628,7 +2690,7 @@
         y_offset = Math.round(
           divider_rect.top +
             divider_rect.height / 2 -
-            (content_rect.top + content_rect.height / 2),
+            (content_rect.top - shift_y + content_rect.height / 2),
         );
     }
     row.style.marginBottom = y_offset > 0 ? `-${y_offset}px` : "0";
@@ -2653,6 +2715,7 @@
     }, 80);
   }
   async function p() {
+    let run = ++trade_win_loss_run;
     let mount = get_trade_win_loss_mount_point();
     let win_loss_trade_id = get_selected_list_trade_id();
     if (win_loss_trade_id !== trade_win_loss_last_trade_id) {
@@ -2668,6 +2731,8 @@
     let t = !(await c.getOption("Disable Win/Loss Stats RAP"));
     let show_usd = !!(await c.getOption("Show Routility USD Values"));
     let value_source = await get_trade_value_source();
+    // A superseded run must not hide the chip the newest run just drew.
+    if (run !== trade_win_loss_run) return;
     let show_roli_value = value_source === "rolimons" || value_source === "both";
     let show_rout_value =
       value_source === "routility" || value_source === "both";
@@ -2708,6 +2773,11 @@
       } catch (e) {
         console.debug("NTE trade USD stats failed", e);
       }
+    // A newer p() owns the chip; and if the trade changed while this run
+    // awaited, its totals may mix two trades' offers, so draw nothing.
+    if (run !== trade_win_loss_run) return;
+    if (get_selected_list_trade_id() !== win_loss_trade_id)
+      return schedule_trade_win_loss_retry();
     let rap_ready = Number.isFinite(a),
       value_ready = show_roli_value && Number.isFinite(i),
       rout_ready = show_rout_value && Number.isFinite(rout_amt),
@@ -4136,8 +4206,10 @@
         ? (x = a())
         : (n.fuzzysort = a());
   let b = {};
+  // search inventory per user: absent -> loading -> fresh (5 min) | partial (30 s) -> expired (next search refetches); a reload bumps the generation
   let search_inv_cache = {};
   let search_inv_cache_at = {};
+  let search_inv_cache_gen = 0;
   const search_inv_cache_ttl_ms = 5 * 60 * 1000;
   // Incomplete scans (429/5xx) are cached back-dated so they expire after this short ttl.
   const search_inv_partial_ttl_ms = 30 * 1000;
@@ -4171,6 +4243,7 @@
   }
 
   function clear_trade_search_caches() {
+    search_inv_cache_gen++;
     for (let key of Object.keys(search_inv_cache)) delete search_inv_cache[key];
     search_inv_cache_at = {};
     for (let key of Object.keys(search_inst_cache)) delete search_inst_cache[key];
@@ -4792,6 +4865,7 @@
     if (search_inv_cache[user_id + "_loading"])
       return search_inv_cache[user_id + "_loading"];
     search_inv_cache[user_id + "_loading"] = (async () => {
+      let gen = search_inv_cache_gen;
       let all = [],
         cursor = "",
         is_complete = !1;
@@ -4810,6 +4884,8 @@
           if (429 === resp.status || resp.status >= 500) break;
           if (!resp.ok) break;
           let data = await resp.json();
+          // A reload discarded this fetch: stop paging and refilling search_inst_cache.
+          if (gen !== search_inv_cache_gen) break;
           let page_items = Array.isArray(data?.items)
             ? data.items
             : Array.isArray(data?.data)
@@ -4916,12 +4992,17 @@
       }
       // Readers only look at search_inv_cache, so partial results go there too,
       // back-dated to expire after search_inv_partial_ttl_ms instead of the full ttl.
-      search_inv_cache[user_id] = all;
-      search_inv_cache_at[user_id] = is_complete
-        ? Date.now()
-        : Date.now() - search_inv_cache_ttl_ms + search_inv_partial_ttl_ms;
-      trim_search_inv_cache();
-      delete search_inv_cache[user_id + "_loading"];
+      // A reload during this fetch cleared the cache: don't cache pre-reload
+      // data (or drop a newer fetch's key); its waiters get a post-reload fetch
+      // instead of the list it stopped paging.
+      if (gen === search_inv_cache_gen) {
+        search_inv_cache[user_id] = all;
+        search_inv_cache_at[user_id] = is_complete
+          ? Date.now()
+          : Date.now() - search_inv_cache_ttl_ms + search_inv_partial_ttl_ms;
+        trim_search_inv_cache();
+        delete search_inv_cache[user_id + "_loading"];
+      } else return fetch_tradable_items(user_id);
       "function" == typeof N &&
         c?.getPageType &&
         -1 !== ["details", "sendOrCounter"].indexOf(c.getPageType()) &&
@@ -5382,13 +5463,25 @@
       let overlay_el = null;
       let search_timer = null;
       let search_syntax_panel_open = !1;
-      await load_trade_search_keep_open();
-      let show_values = await c.getOption("Values on Trading Window");
-      let show_rare = await c.getOption("Flag Rare Items");
-      let show_projected = await c.getOption("Flag Projected Items");
+      // chrome.storage rejects once the extension reloads; release the
+      // "mounting" flag first or search never mounts on this panel again.
+      let release_mount = (err) => {
+        mark_search_failed();
+        throw err;
+      };
+      await load_trade_search_keep_open().catch(release_mount);
+      let show_values = await c
+        .getOption("Values on Trading Window")
+        .catch(release_mount);
+      let show_rare = await c.getOption("Flag Rare Items").catch(release_mount);
+      let show_projected = await c
+        .getOption("Flag Projected Items")
+        .catch(release_mount);
       let search_pending = !1;
       let search_token = 0;
       let active_bridge_id = "";
+      // Last direct toggleItem; cancel can't stop it, so the next add waits.
+      let search_toggle_inflight = null;
       let active_status_cleanup = null;
       let search_offer_watch_bound = !1;
       let search_offer_refresh_timer = 0;
@@ -6047,12 +6140,14 @@
         await U(180);
         null != action_token && ensure_search_active(action_token);
         try {
-          await run_custom_trade_bridge_action("toggleItem", {
+          let toggle = run_custom_trade_bridge_action("toggleItem", {
             side_index: a,
             collectible_item_instance_id: item.collectibleItemInstanceId,
             tradable_item: build_direct_search_item(item),
             timeout_ms: 4e3,
           });
+          search_toggle_inflight = toggle.catch(() => {});
+          await toggle;
           return !0;
         } catch {
           visible_thumb.click();
@@ -6332,7 +6427,8 @@
         let action_token = ++search_token;
         active_bridge_id = "";
         set_search_busy(!0);
-        let status_timer = null;
+        let status_timer = null,
+          add_failed = !1;
         active_status_cleanup = () => {
           status_timer && clearInterval(status_timer);
           status_timer = null;
@@ -6340,11 +6436,13 @@
         try {
           ensure_search_active(action_token);
           let page_data = get_search_page_data(item);
-          if (!page_data)
+          if (!page_data) {
+            add_failed = !0;
             return void console.warn(
               "[NRU] Could not resolve a page for the searched trade item.",
               item,
             );
+          }
           let status_label = esc_search(item.name),
             dup_label =
               page_data.duplicateCount > 1
@@ -6380,6 +6478,10 @@
               render_bridge_status();
             }, 250));
           try {
+            // An add cancelled mid-toggle still lands; wait for that toggle,
+            // and never toggle an item already in the offer (it removed it).
+            await search_toggle_inflight;
+            ensure_search_active(action_token);
             let before_snap = get_native_offer_snapshot(),
               before_sig = before_snap
                 ? get_offer_signature(before_snap)
@@ -6389,16 +6491,19 @@
                 item.collectibleItemInstanceId,
                 before_snap,
               );
+            if (before_membership) return void finish_search_add_success(item);
             ensure_search_active(action_token);
             status_state.phase = "direct";
             render_bridge_status();
             try {
-              await run_custom_trade_bridge_action("toggleItem", {
+              let toggle = run_custom_trade_bridge_action("toggleItem", {
                 side_index: side_idx,
                 collectible_item_instance_id: item.collectibleItemInstanceId,
                 tradable_item: build_direct_search_item(item),
                 timeout_ms: 4e3,
               });
+              search_toggle_inflight = toggle.catch(() => {});
+              await toggle;
             } catch (e) {
               console.warn(
                 "[NRU] Direct synthetic add dispatch failed, trying native page selection.",
@@ -6486,13 +6591,7 @@
             "[NRU] Could not find the searched item on its predicted trade pages.",
             item,
           );
-          m.value.trim() &&
-            render_results(
-              Array.isArray(search_inv_cache[get_side_user_id()])
-                ? search_inv_cache[get_side_user_id()]
-                : [],
-              m.value,
-            );
+          add_failed = !0;
         } catch (err) {
           if (
             !is_search_active(action_token) &&
@@ -6500,6 +6599,7 @@
           )
             return;
           console.warn("[NRU] Could not add searched trade item", err);
+          add_failed = !0;
         } finally {
           stop_search_status();
           if (action_token === search_token) {
@@ -6507,7 +6607,19 @@
             active_bridge_id = "";
             set_search_busy(!1);
           }
-          if (
+          // Every add path failing used to be console-only (or left a stale
+          // "Going to page..." line); say so above the results so a retry is one click.
+          if (add_failed && action_token === search_token) {
+            let msg = `Couldn't add <strong>${esc_search(item?.name)}</strong>. Try again.`,
+              items = search_inv_cache[get_side_user_id()];
+            if (m.value.trim() && Array.isArray(items) && items.length) {
+              render_results(items, m.value);
+              overlay_el?.insertAdjacentHTML(
+                "afterbegin",
+                `<div class="nte-sr-loading">${msg}</div>`,
+              );
+            } else show_search_status(msg);
+          } else if (
             !trade_search_keep_open &&
             overlay_el?.querySelector?.(".nte-sr-loading")
           )
@@ -6677,7 +6789,12 @@
               let user_id = get_side_user_id();
               if (!user_id) return;
               let items = search_inv_cache[user_id];
-              if (!items) {
+              // The ttl was only checked inside the fetch, so a page left
+              // open kept searching items that were already traded away.
+              let fresh =
+                Date.now() - (search_inv_cache_at[user_id] || 0) <
+                search_inv_cache_ttl_ms;
+              if (!items || !fresh) {
                 show_overlay(
                   '<div class="nte-sr-loading">Loading inventory...</div>',
                 );
@@ -6753,23 +6870,33 @@
         }
         mark_search_mounted();
       }
-      if (native_search_host) {
-        bind_native_search_host();
-      } else if (!m) {
-        search_root = mount_trade_search_ui(d);
-        if (!search_root) {
-          mark_search_failed();
-          return;
+      // search mount: mounting (flag) -> mounted | failed; a throw used to skip both and leave the flag set for good
+      // Only a throw releases the flag here: an already-bound input returns
+      // without marking, and releasing then re-ran n() on every N pass.
+      let mount_threw = true;
+      try {
+        if (native_search_host) {
+          bind_native_search_host();
+        } else if (!m) {
+          search_root = mount_trade_search_ui(d);
+          if (!search_root) {
+            mark_search_failed();
+            return;
+          }
+          m = search_root.querySelector(".rolimons-search");
+          if (!m) {
+            search_root.remove();
+            mark_search_failed();
+            return;
+          }
+          bind_search_input_events();
+        } else {
+          bind_search_input_events();
         }
-        m = search_root.querySelector(".rolimons-search");
-        if (!m) {
-          search_root.remove();
+        mount_threw = false;
+      } finally {
+        if (mount_threw && panel_el.dataset.nteTradeSearchMounted !== "true")
           mark_search_failed();
-          return;
-        }
-        bind_search_input_events();
-      } else {
-        bind_search_input_events();
       }
     }
     "sendOrCounter" === c.getPageType() &&
@@ -7243,7 +7370,7 @@
         a = get_trade_el_value_ctx(item, t, r, n);
       e.querySelector(".valueSpan") || c.createValuesSpans(e);
       let o = c.getValueOrRAP(a.targetId, a.name, a.rap);
-      e.querySelector(".valueSpan").innerText = c.commafy(o);
+      set_text_if_changed(e.querySelector(".valueSpan"), c.commafy(o));
       set_trade_item_routility_usd(
         e,
         show_routility_usd
@@ -7314,7 +7441,7 @@
   function T(e, t) {
     void 0 === e.getElementsByClassName("valueSpan")[0] &&
       c.createValuesSpans(e, { large: !0 }),
-      (e.getElementsByClassName("valueSpan")[0].innerText = c.commafy(t));
+      set_text_if_changed(e.getElementsByClassName("valueSpan")[0], c.commafy(t));
   }
   function find_send_request_offer_column() {
     let offers = [
@@ -7395,15 +7522,35 @@
       let r = host.getElementsByClassName("trade-list-detail-offer");
       if (!r[1]) return;
       let [n, a] = await c.calculateValueTotalDetails(r[1], !0);
-      I();
-      if (a > 1) {
-        let target = document.querySelector(".trade-buttons");
-        if (target) target.appendChild(build_value_warning(n, a, "18px"));
-        else
-          r[1].insertAdjacentElement(
-            "afterend",
-            build_value_warning(n, a, "18px"),
-          );
+      // Update a warning that already sits where a rebuild would put it; the
+      // remove + re-add queued records on every values pass.
+      let target = document.querySelector(".trade-buttons"),
+        rows = document.querySelectorAll("#valueWarningRow"),
+        span = rows.length === 1 && rows[0].querySelector("#valueWarning span");
+      if (
+        a > 1 &&
+        span &&
+        (target
+          ? target.lastElementChild === rows[0]
+          : r[1].nextElementSibling === rows[0])
+      ) {
+        set_text_if_changed(
+          span,
+          `Value received after Robux tax: ${c.commafy(Math.round(n + 0.7 * a))}`,
+        );
+        // Follow a theme flip like a rebuild would (same-value style writes queue nothing).
+        rows[0].querySelector("#valueWarning").style.backgroundColor =
+          "dark" === c.getColorMode() ? "#191b1d" : "#dee1e3";
+      } else {
+        I();
+        if (a > 1) {
+          if (target) target.appendChild(build_value_warning(n, a, "18px"));
+          else
+            r[1].insertAdjacentElement(
+              "afterend",
+              build_value_warning(n, a, "18px"),
+            );
+        }
       }
     }
     if ("sendOrCounter" === c.getPageType()) {
@@ -7814,15 +7961,17 @@
   function toggle_nte_serial_text_blur() {
     set_nte_serial_text_blur(!nte_serials_currently_blurred());
   }
+  // serial blur: unblurred <-> blurred (host click); every N pass re-syncs the host icon and label, writing only on change
   function update_nte_serial_hide_controls() {
     let e = nte_serials_currently_blurred(),
       t = nte_serial_hide_icon_url();
     for (let r of document.querySelectorAll(".nte-serial-hide-host")) {
       r.classList.toggle("inactive", !e);
       r.classList.toggle("is-active", e);
-      r.querySelector("img") && (r.querySelector("img").src = t);
+      let img = r.querySelector("img");
+      img && set_attr_if_changed(img, "src", t);
       let tip = r.querySelector(".tooltiptext");
-      if (tip) tip.textContent = e ? "Unblur Serials" : "Blur Serials";
+      if (tip) set_text_if_changed(tip, e ? "Unblur Serials" : "Blur Serials");
     }
   }
   function nte_paired_name_visible(e) {
@@ -7833,8 +7982,8 @@
   }
   function nte_place_trade_action_host_below(header, host) {
     if (!header || !host) return host;
-    host.classList.add("nte-trade-action-host--below");
-    host.classList.remove("text-label");
+    add_class_if_missing(host, "nte-trade-action-host--below");
+    remove_class_if_present(host, "text-label");
     if (host.tagName === "SPAN") {
       let next = document.createElement("div");
       next.className = host.className;
@@ -8883,6 +9032,9 @@
     return img;
   }
 
+  // proof capture: idle -> capturing -> idle (done | failed | cancelled when its timeout fires); one scroll loop at a time
+  let nte_quick_proof_capture_run = 0,
+    nte_quick_proof_capture_busy = false;
   async function nte_quick_proof_trade_screenshot_blob() {
     let probe = await nte_quick_proof_message(
       { type: "quickProofCaptureTab" },
@@ -8894,12 +9046,19 @@
       );
     let target = nte_quick_proof_target();
     if (!target) throw new Error("Could not find the selected trade.");
+    // A timed-out capture can still be finishing its current step; two loops
+    // would fight over the scroll and leave the proof UI hidden.
+    if (nte_quick_proof_capture_busy)
+      throw new Error("The last proof capture is still finishing.");
+    let run = ++nte_quick_proof_capture_run;
     let restore_ui = nte_quick_proof_hide_capture_ui();
     let old_x = window.scrollX,
       old_y = window.scrollY,
+      last_y = old_y,
       old_behavior = document.documentElement.style.scrollBehavior;
     document.documentElement.style.scrollBehavior = "auto";
     try {
+      nte_quick_proof_capture_busy = true;
       let rect = target.getBoundingClientRect(),
         doc_left = rect.left + window.scrollX,
         doc_top = rect.top + window.scrollY,
@@ -8923,6 +9082,8 @@
         throw new Error("The selected trade is too small to capture.");
       await nte_quick_proof_after_paint();
       while (y < doc_top + height - 1) {
+        if (run !== nte_quick_proof_capture_run)
+          throw new Error("Proof screenshot cancelled.");
         let next_scroll_y = Math.max(
           0,
           Math.min(max_scroll, Math.floor(y - top_pad)),
@@ -8932,6 +9093,7 @@
           Math.abs(window.scrollX - old_x) > 1
         ) {
           window.scrollTo(old_x, next_scroll_y);
+          last_y = window.scrollY;
           await nte_quick_proof_after_paint();
         }
         let img = await nte_quick_proof_capture_view();
@@ -8975,9 +9137,16 @@
       // Watermark removed — keep canvas as captured.
       return await nte_quick_proof_canvas_blob(canvas);
     } finally {
+      nte_quick_proof_capture_busy = false;
       restore_ui();
       document.documentElement.style.scrollBehavior = old_behavior;
-      window.scrollTo(old_x, old_y);
+      // A cancelled capture still restores the scroll, unless the user
+      // scrolled since its last step (then a late jump would yank the page).
+      if (
+        run === nte_quick_proof_capture_run ||
+        Math.abs(window.scrollY - last_y) <= 1
+      )
+        window.scrollTo(old_x, old_y);
     }
   }
 
@@ -9062,6 +9231,8 @@
           "Proof screenshot timed out.",
         );
       } catch (err) {
+        // Cancel a capture that outlived its timeout (checked each step).
+        nte_quick_proof_capture_run++;
         console.debug("NTE quick proof screenshot skipped", err);
         blob = null;
       }
@@ -9091,6 +9262,7 @@
     row_script_promise,
     row_fetch_q = [],
     row_fetch_fast_q = [],
+    // row fetch slots: taken on dequeue -> released once per task (finally, or a 60 s watchdog); soft mode bumps the generation, never the count
     row_active_requests = 0,
     row_next_request_at = 0,
     row_fetch_generation = 0,
@@ -9313,6 +9485,21 @@
       }, left + 50);
     return left > 0;
   }
+  // list re-scan budget per row: unready -> L() re-runs (free while its detail fetch is in flight, else 5 per row id, 5 more once its detail lands) -> stops asking
+  // A dead row (404, failed or missing detail) used to re-run L() and
+  // re-fetch its detail every ~0.5 s for as long as the list stayed open.
+  const trade_row_rescan_tries = new WeakMap();
+  function trade_row_rescan_wanted(row) {
+    let id = row.getAttribute("nruTradeId") || "";
+    if (id && row_trade_pending[id]) return true;
+    let entry = trade_row_rescan_tries.get(row);
+    if (!entry || entry.id !== id)
+      trade_row_rescan_tries.set(row, (entry = { id, tries: 0, landed: false }));
+    // A slow detail can land after the budget ran out; give its mount a fresh one.
+    if (!entry.landed && row_trade_cache[id]?.offers?.[1])
+      (entry.landed = true), (entry.tries = 0);
+    return entry.tries++ < 5;
+  }
   function does_trade_row_match_search(row, query) {
     if (!query || !query.trim()) return true;
     let names = row.dataset.nteTradeItemNames;
@@ -9515,13 +9702,17 @@
     let fetch_gen = row_fetch_generation;
     setTimeout(async () => {
       // Always free the slot and continue the queue exactly once, even on throw.
-      let released = !1;
+      let released = !1,
+        watchdog = 0;
       let release = () => {
         if (released) return;
         released = !0;
+        clearTimeout(watchdog);
         row_active_requests--;
         process_row_fetch_q();
       };
+      // await t.json() has no time limit; a stalled body must not hold the slot.
+      watchdog = setTimeout(release, 60000);
       try {
         if (fetch_gen !== row_fetch_generation) {
           release();
@@ -9713,6 +9904,13 @@
           (t.id = "nruAddTradeIdToRowScript"),
             (t.src = c.getURL("scripts/add_trade_id_to_row.js")),
             (t.onload = () => e()),
+            // A failed load never fires onload: without this, H() and the
+            // L() pass awaiting it hung and L_running stayed true for good.
+            (t.onerror = () => {
+              t.remove();
+              row_script_promise = null;
+              e();
+            }),
             (document.head || document.documentElement).appendChild(t);
         }));
   }
@@ -10075,12 +10273,10 @@
     clearTimeout(L_filter_backfill_timer);
     L_filter_backfill_timer = setTimeout(() => {
       L_filter_backfill_timer = 0;
-      if (
-        document.querySelector(
-          '.trade-row-list .trade-row:not([data-nte-trade-ready="1"]), #trade-row-scroll-container .trade-row:not([data-nte-trade-ready="1"])',
-        )
-      )
-        L();
+      for (let row of document.querySelectorAll(
+        '.trade-row-list .trade-row:not([data-nte-trade-ready="1"]), #trade-row-scroll-container .trade-row:not([data-nte-trade-ready="1"])',
+      ))
+        if (trade_row_rescan_wanted(row)) return void L();
     }, 450);
   }
   function bind_trade_list_scroll_refresh() {
@@ -10806,7 +11002,7 @@
       (trade_filter_state.value = "all");
     let e = get_trade_list_filter_option(trade_filter_state.value),
       t = document.getElementById("nteTradeListFilterLabel");
-    t && (t.textContent = e.label);
+    t && set_text_if_changed(t, e.label);
     for (let t of document.querySelectorAll("#nteTradeListFilterMenu li"))
       t.classList.toggle(
         "active",
@@ -10827,20 +11023,23 @@
     let btn = document.getElementById("nteTradeFocusSelectedBtn");
     if (!btn) return;
     let has_selected = has_selected_trade_row();
+    // "Show all" stays clickable with no selected row: otherwise a cleared
+    // selection left every row hidden and the only way out disabled.
+    let can_click = has_selected || trade_focus_selected_only;
     let focus_label = trade_focus_selected_only ? "Show all" : "Hide others";
     if (btn.textContent !== focus_label) btn.textContent = focus_label;
-    if (btn.disabled !== !has_selected) btn.disabled = !has_selected;
+    if (btn.disabled !== !can_click) btn.disabled = !can_click;
     set_attr_if_changed(
       btn,
       "aria-pressed",
       trade_focus_selected_only ? "true" : "false",
     );
-    btn.style.opacity = has_selected
+    btn.style.opacity = can_click
       ? trade_focus_selected_only
         ? "1"
         : "0.88"
       : "0.45";
-    btn.style.cursor = has_selected ? "pointer" : "default";
+    btn.style.cursor = can_click ? "pointer" : "default";
   }
   function bind_trade_focus_selected_observer() {
     let list =
@@ -11037,7 +11236,8 @@
         focus_btn.addEventListener("click", (event) => {
           event.preventDefault();
           event.stopPropagation();
-          if (!has_selected_trade_row()) return sync_trade_focus_button();
+          if (!trade_focus_selected_only && !has_selected_trade_row())
+            return sync_trade_focus_button();
           trade_focus_selected_only = !trade_focus_selected_only;
           sync_trade_focus_button();
           apply_trade_list_filter();
@@ -11103,7 +11303,7 @@
         let cnt = document.createElement("div");
         cnt.id = "nteTradeListFilterCount";
         cnt.className = "text-date-hint";
-        cnt.textContent = "Showing 0/0";
+        cnt.textContent = "";
         let meta = document.createElement("div");
         meta.className = "nte-trade-filter-meta";
         meta.appendChild(cnt);
@@ -11116,7 +11316,8 @@
       e.insertAdjacentElement("afterend", r);
     }
     if (!r || !t) return r;
-    r.style.cssText = "";
+    // cssText writes a style record even when it is already empty.
+    if (r.getAttribute("style")) r.style.cssText = "";
     let existing_lbl = r.querySelector(".trade-quality-label");
     if (existing_lbl) {
       add_class_if_missing(existing_lbl, "nte-trade-list-control-label");
@@ -11290,7 +11491,28 @@
         loading++;
     return loading;
   }
+  // "400 trades" when nothing is filtered, "Showing 79 of 100" when something is.
+  function format_trade_list_count(shown, total, loading) {
+    if (!total) return "";
+    let text =
+      shown === total
+        ? `${total} trade${total === 1 ? "" : "s"}`
+        : `Showing ${shown} of ${total}`;
+    return loading
+      ? `${text} · Loading trade values (${total - loading}/${total})…`
+      : text;
+  }
   function sync_trade_list_empty_state(e, t, loading = 0) {
+    // Runs for every list state, including an empty tab, so the count never
+    // keeps the previous tab's numbers.
+    let cnt = document.getElementById("nteTradeListFilterCount");
+    if (cnt) set_text_if_changed(cnt, format_trade_list_count(t, e, loading));
+    // Nothing to hide without trades; keep "Show all" reachable while it's on.
+    let focus_btn = document.getElementById("nteTradeFocusSelectedBtn");
+    if (focus_btn) {
+      let display = e > 0 || trade_focus_selected_only ? "" : "none";
+      if (focus_btn.style.display !== display) focus_btn.style.display = display;
+    }
     let r =
       document.querySelector(
         "#trade-row-scroll-container .simplebar-content",
@@ -11307,14 +11529,14 @@
       r.appendChild(n));
     let a = get_trade_list_filter_option(trade_filter_state.value);
     if (0 === t && loading > 0) {
-      n.textContent = `Loading trade values (${e - loading}/${e})…`;
+      set_text_if_changed(n, `Loading trade values (${e - loading}/${e})…`);
     } else if (trade_search_q && trade_search_q.trim()) {
       let q = trade_search_q.trim();
-      n.textContent = `No trades contain "${q}".`;
+      set_text_if_changed(n, `No trades contain "${q}".`);
     } else if (trade_focus_selected_only) {
-      n.textContent = "Select a trade to focus it.";
+      set_text_if_changed(n, "Select a trade to focus it.");
     } else {
-      n.textContent = `No trades match ${a.label.toLowerCase()}.`;
+      set_text_if_changed(n, `No trades match ${a.label.toLowerCase()}.`);
     }
     let o = e > 0 && 0 === t;
     n.style.display = o ? "block" : "none";
@@ -11337,11 +11559,6 @@
         rows[i].style.display = next_display;
     }
     let loading = count_trade_rows_loading(rows);
-    let cnt = document.getElementById("nteTradeListFilterCount");
-    if (cnt)
-      cnt.textContent =
-        `Showing ${shown}/${total}` +
-        (loading ? ` · Loading trade values (${total - loading}/${total})…` : "");
     sync_trade_list_empty_state(total, shown, loading);
   }
   function apply_trade_list_filter() {
@@ -11362,11 +11579,6 @@
       if (visible) r++;
     }
     let loading = count_trade_rows_loading(t);
-    let cnt = document.getElementById("nteTradeListFilterCount");
-    if (cnt)
-      cnt.textContent =
-        `Showing ${r}/${total}` +
-        (loading ? ` · Loading trade values (${total - loading}/${total})…` : "");
     sync_trade_list_empty_state(total, r, loading);
     let focus_bar = document.getElementById("nteTradeFocusSelectedBar");
     if (focus_bar) {
@@ -11825,7 +12037,9 @@
       if (!shadow) {
         shadow = row.attachShadow({ mode: "open" });
         shadow.appendChild(document.createElement("slot"));
-      } else if (!shadow.querySelector(":scope > slot")) {
+        // ":scope > slot" never matches on a ShadowRoot, so every pass added
+        // another first slot: each row re-slotted and forced a layout.
+      } else if (!shadow.querySelector("slot")) {
         shadow.insertBefore(document.createElement("slot"), shadow.firstChild);
       }
       let sheet = get_trade_row_controls_sheet();
@@ -11991,12 +12205,12 @@
           0,
       );
       if (decline_width > 0) right += decline_width + 2;
-      lock_wrap.style.bottom = "4px";
+      if (lock_wrap.style.bottom !== "4px") lock_wrap.style.bottom = "4px";
     } else {
       if (!trade_row_decline_enabled && summary_width > 0) right = summary_width + 1;
-      lock_wrap.style.bottom = "6px";
+      if (lock_wrap.style.bottom !== "6px") lock_wrap.style.bottom = "6px";
     }
-    lock_wrap.style.right = `${right}px`;
+    if (lock_wrap.style.right !== `${right}px`) lock_wrap.style.right = `${right}px`;
   }
   async function ensure_trade_row_lock_button(row) {
     if (!trade_row_lock_enabled) return;
@@ -12123,6 +12337,10 @@
   function remove_class_if_present(el, ...names) {
     for (let name of names)
       if (el.classList.contains(name)) el.classList.remove(name);
+  }
+  // Same for text: assigning textContent always swaps the child text node.
+  function set_text_if_changed(el, text) {
+    if (el.textContent !== text) el.textContent = text;
   }
   function remember_trade_row_id(row, trade_id) {
     let id = String(trade_id || "").trim();
@@ -12615,7 +12833,8 @@
           item?.resolve?.(null);
         } catch {}
       }
-      row_active_requests = 0;
+      // No row_active_requests reset: in-flight tasks still hold their slots
+      // and each releases exactly once, so zeroing here drove it negative.
     } catch {}
     clearTimeout(trade_category_soft_end_timer);
     trade_category_soft_end_timer = setTimeout(() => {
@@ -12687,7 +12906,12 @@
   let trade_row_view_prewarm_bound = false;
   let trade_row_view_prewarm_timer = 0;
   let trade_row_view_prewarm_running = false;
-  function schedule_trade_row_view_prewarm(delay = 0) {
+  // view prewarm: scheduled -> running -> id-less rows retry at 350 ms (10 per outside trigger) -> idle
+  let trade_row_view_prewarm_tries = 0;
+  function schedule_trade_row_view_prewarm(delay = 0, retry = false) {
+    // A row the page script never stamps used to retry every 350 ms forever.
+    if (!retry) trade_row_view_prewarm_tries = 0;
+    else if (++trade_row_view_prewarm_tries > 10) return;
     clearTimeout(trade_row_view_prewarm_timer);
     trade_row_view_prewarm_timer = setTimeout(
       run_trade_row_view_prewarm,
@@ -12706,7 +12930,7 @@
           ((retry = true), prime_trade_row_id(row));
         prewarm_trade_row_detail(row).catch(() => {});
       }
-      retry && schedule_trade_row_view_prewarm(350);
+      retry && schedule_trade_row_view_prewarm(350, true);
     } catch {}
     trade_row_view_prewarm_running = false;
   }
@@ -12910,9 +13134,9 @@
       ? Math.ceil(box.getBoundingClientRect().width || box.offsetWidth || 0)
       : 0;
     let gap = summary_width > 0 ? 6 : 8;
-    wrap.style.right =
-      summary_width > 0 ? `${summary_width + gap}px` : `${gap}px`;
-    wrap.style.bottom = "6px";
+    let right = summary_width > 0 ? `${summary_width + gap}px` : `${gap}px`;
+    if (wrap.style.right !== right) wrap.style.right = right;
+    if (wrap.style.bottom !== "6px") wrap.style.bottom = "6px";
     sync_trade_row_lock_position(row);
   }
   function ensure_trade_row_decline_button(row) {
@@ -13014,8 +13238,12 @@
   }
   let L_running = false,
     L_queued = false,
-    L_missing_values_timer = 0;
+    L_missing_values_timer = 0,
+    // Whether the last L pass could show value boxes at all; with values
+    // off no row ever gets one, so "missing" rows must not re-run L.
+    L_values_shown = true;
   function count_visible_rows_missing_value_summaries() {
+    if (!L_values_shown) return 0;
     let rows = filter_trade_rows_in_viewport(
       [...document.querySelectorAll(".trade-row-list .trade-row")],
     );
@@ -13023,7 +13251,11 @@
     for (let row of rows) {
       if (!(row instanceof HTMLElement)) continue;
       if (row.style.display === "none") continue;
-      if (!row.querySelector(".tradeListValuesBox")) missing++;
+      if (
+        !row.querySelector(".tradeListValuesBox") &&
+        trade_row_rescan_wanted(row)
+      )
+        missing++;
     }
     return missing;
   }
@@ -13196,6 +13428,7 @@
     // Rows painted before item data loads would keep "0 0" boxes for good.
     let e =
       c.isRolimonsDataReady() && (await c.getOption("Values on Trade Lists"));
+    L_values_shown = !!e;
     let show_partner_value = await c.getOption(
       partner_value_on_trade_lists_option_name,
     );
@@ -13412,7 +13645,8 @@
       let hr = document.createElement("hr");
       hr.style.cssFloat = "right";
       hr.style.width = "80%";
-      hr.style.backgroundColor = "rgba(0, 0, 0, 0.18)";
+      // Visible on dark and light rows; separates your side from theirs.
+      hr.style.backgroundColor = "rgba(128, 128, 128, 0.5)";
       hr.style.height = "2px";
       hr.style.border = "0px";
       hr.style.margin = "0px";
@@ -13886,6 +14120,9 @@
             ((custom_trade_bridge_promise = null),
             (n = !0),
             a(),
+            // The failed tag never fires load/error again; drop it so the
+            // next call injects a fresh one instead of timing out forever.
+            r?.remove(),
             t(Error("Failed to load the Roblox trade bridge script.")));
         };
       if (
@@ -15319,7 +15556,9 @@
       is_off_sale,
       routility_usd,
     };
-    nte_trade_sales_hover_data_cache.set(cache_key, data);
+    // A failed sales fetch (429/5xx/network) was cached as "no sales" for 5
+    // minutes; keep only real answers so the next open tries again.
+    if (sales_payload) nte_trade_sales_hover_data_cache.set(cache_key, data);
     return data;
   }
   function render_trade_sales_hover_loading(ctx) {
@@ -15916,7 +16155,7 @@
       }
       return;
     }
-    flag_host?.classList?.add("nte-has-rap-signal");
+    flag_host && add_class_if_missing(flag_host, "nte-has-rap-signal");
     btn || (btn = create_trade_rap_signal_button());
     cached_item
       ? (btn.__nte_sales_item = cached_item)
@@ -16289,7 +16528,7 @@
       style.id = "nte-trade-dominance-style";
       document.head.appendChild(style);
     }
-    style.textContent = `
+    let css = `
       .trade-buttons,.nte-history-fallback-row,.nte-poison-fallback-row,.nte-trade-request-analyze-row{overflow:visible!important}
       /* Do not force flex/gap/margins on .trade-buttons — Roblox floats that row.
          Extension buttons already use btn-control-md so native spacing applies. */
@@ -16373,7 +16612,10 @@
       html.nte-trade-ui-backoff #winLossStatsContainer{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
       html.nte-trade-ui-backoff .nte-history-panel{display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
     `;
-    document.head.appendChild(style);
+    // Rewriting the text or re-appending in place queued head/style records
+    // on every dominance pass; move it only when another sheet landed after it.
+    if (style.textContent !== css) style.textContent = css;
+    if (document.head.lastElementChild !== style) document.head.appendChild(style);
     ensure_trade_modal_watch();
   }
   let nte_trade_modal_watch_bound = false;
@@ -16706,8 +16948,10 @@
   function trade_ui_missing_chrome() {
     try {
       let page_type = c.getPageType();
+      // LITE never creates the history button (inject_trade_history_button).
       if (
         page_type === "details" &&
+        !(typeof nte_is_lite === "function" && nte_is_lite()) &&
         document.querySelector(".trade-buttons") &&
         !document.querySelector(".nte-history-btn")
       )
@@ -17013,18 +17257,37 @@
   schedule_trade_ui_refresh(0, true);
   schedule_trade_ui_refresh(1500, true);
   schedule_trade_ui_refresh(4000, true);
+  // missing-chrome watch: present -> missing (1 refresh/s, 5 tries per page + selected trade) -> gave up; chrome back or a new key re-arms
+  let trade_ui_missing_chrome_key = "",
+    trade_ui_missing_chrome_tries = 0;
   setInterval(() => {
     if (trade_category_soft_mode()) return;
-    if (!trade_ui_missing_chrome()) return;
+    if (!trade_ui_missing_chrome()) {
+      trade_ui_missing_chrome_tries = 0;
+      return;
+    }
+    // Some trades have no row for the chrome; passes that could not add it
+    // will not add it on the sixth try either.
+    let key =
+      location.href +
+      "|" +
+      get_selected_trade_id_sync(document.querySelector(".trade-row.selected"));
+    if (key !== trade_ui_missing_chrome_key) {
+      trade_ui_missing_chrome_key = key;
+      trade_ui_missing_chrome_tries = 0;
+    }
+    if (trade_ui_refresh_running || ++trade_ui_missing_chrome_tries > 5) return;
     schedule_trade_ui_refresh(0, false);
   }, 1000);
+  // list init: waiting for .trades-container (5 s observer, 30 s fast poll, ~10 min slow poll) -> bound | abandoned
   (async () => {
     let e = document.querySelector(".trades-container");
     if (!e) e = await c.waitForElm(".trades-container");
-    // React trades UI can mount after the default 5s waitForElm timeout.
+    // React trades UI can mount after the default 5s waitForElm timeout, or
+    // much later after in-app navigation; keep a slow capped poll for that.
     if (!e) {
-      for (let i = 0; i < 60 && !e; i++) {
-        await new Promise((r) => setTimeout(r, 500));
+      for (let i = 0; i < 360 && !e && nte_extension_alive(); i++) {
+        await new Promise((r) => setTimeout(r, i < 60 ? 500 : 2000));
         e = document.querySelector(".trades-container");
       }
     }
@@ -17465,6 +17728,9 @@
   // Failed/partial scans back off so N() passes don't each start another scan.
   let trade_daily_limit_retry_at = 0;
   const trade_daily_limit_retry_delay_ms = 15000;
+  // daily limit: not loaded -> fetching -> loaded (cached 45 s) | partial/failed (15 s back-off, up to 4 timed retries, then on the next refresh call)
+  let trade_daily_limit_retry_timer = 0,
+    trade_daily_limit_retry_count = 0;
   let trade_daily_limit_state = { count: 0, at_limit: false, reset_at: null };
   // False until one API fetch succeeds, so a failure never shows a fake 0/100.
   let trade_daily_limit_loaded = false;
@@ -17880,7 +18146,7 @@
       trade_daily_limit_max,
       Math.max(0, Number(trade_daily_limit_state?.count) || 0),
     );
-    label.textContent = `${count}/${trade_daily_limit_max}`;
+    set_text_if_changed(label, `${count}/${trade_daily_limit_max}`);
     persist_trade_daily_limit_snapshot(count);
     if (help) {
       let tip_text = build_trade_daily_limit_tooltip({
@@ -17894,7 +18160,7 @@
         tip.setAttribute("role", "tooltip");
         help.append(tip);
       }
-      tip.textContent = tip_text;
+      set_text_if_changed(tip, tip_text);
       if (typeof init_tap_tooltips === "function") init_tap_tooltips(help);
     }
   }
@@ -17931,6 +18197,18 @@
       // Failed fetch: keep the previous state, do not cache it, back off before retrying.
       if (!result) {
         trade_daily_limit_retry_at = Date.now() + trade_daily_limit_retry_delay_ms;
+        schedule_trade_daily_limit_retry();
+        // Before the first good load, say it failed instead of "Loading…" forever.
+        let tip = document.querySelector(
+          "#nteTradeDailyLimitHelp .nte-trade-limit-tooltip",
+        );
+        if (tip && !trade_daily_limit_loaded)
+          set_text_if_changed(
+            tip,
+            trade_daily_limit_retry_timer
+              ? "Couldn't load your 24-hour trade limit yet. Retrying…"
+              : "Couldn't load your 24-hour trade limit. Refresh the page to try again.",
+          );
         return trade_daily_limit_state;
       }
       let api_ts = result.timestamps;
@@ -17944,6 +18222,8 @@
       trade_daily_limit_retry_at = result.partial
         ? Date.now() + trade_daily_limit_retry_delay_ms
         : 0;
+      if (result.partial) schedule_trade_daily_limit_retry();
+      else trade_daily_limit_retry_count = 0;
       trade_daily_limit_state = compute_trade_daily_limit_state(api_ts);
       sync_trade_daily_limit_ui();
       return trade_daily_limit_state;
@@ -17964,6 +18244,19 @@
         sync_trade_daily_limit_ui();
       });
     }, delay);
+  }
+
+  // A quiet page may never call refresh again, so a failed or partial scan
+  // retries on its own timer (a refresh call can't cancel it), 4 times max.
+  function schedule_trade_daily_limit_retry() {
+    if (trade_daily_limit_retry_timer || trade_daily_limit_retry_count >= 4)
+      return;
+    trade_daily_limit_retry_count++;
+    trade_daily_limit_retry_timer = setTimeout(() => {
+      trade_daily_limit_retry_timer = 0;
+      if (!nte_extension_alive()) return;
+      refresh_trade_daily_limit_state().catch(() => {});
+    }, trade_daily_limit_retry_delay_ms + 100);
   }
 
   try {
@@ -18047,7 +18340,9 @@
   let duplicate_trade_warning_refresh_timer = 0;
   let duplicate_trade_warning_observer_started = false;
   let duplicate_trade_warning_request_token = 0;
+  // dup-warning data: empty -> cached (60 s) | failed (15 s back-off, last good cache answers) -> refetch on the next dialog change
   let duplicate_trade_warning_cache = null;
+  let duplicate_trade_warning_retry_at = 0;
   let duplicate_trade_warning_local_sent = {};
 
   function normalize_duplicate_trade_warning_hours(value) {
@@ -18275,31 +18570,43 @@
 
     let latest_by_user = {};
     let cursor = "";
-    let fetch_failed = false;
-    for (let page = 0; page < duplicate_trade_warning_max_pages; page++) {
-      let url = `https://trades.roblox.com/v1/trades/outbound?limit=100&sortOrder=Desc${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
-      let resp = await fetch_trade_api(url, { credentials: "include" });
-      if (!resp.ok) {
-        fetch_failed = true;
-        break;
-      }
-      let json = await resp.json().catch(() => null);
-      let trades = Array.isArray(json?.data) ? json.data : [];
-      if (!trades.length) break;
-      let reached_cutoff = false;
-      for (let trade of trades) {
-        let created = parse_duplicate_trade_warning_created(trade);
-        if (!Number.isFinite(created)) continue;
-        if (created < cutoff) {
-          reached_cutoff = true;
+    // A failed fetch backs off 15 s instead of refetching on every dialog
+    // re-render; the merge below still answers from the last good cache.
+    let fetch_failed = Date.now() < duplicate_trade_warning_retry_at;
+    try {
+      for (
+        let page = 0;
+        !fetch_failed && page < duplicate_trade_warning_max_pages;
+        page++
+      ) {
+        let url = `https://trades.roblox.com/v1/trades/outbound?limit=100&sortOrder=Desc${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
+        let resp = await fetch_trade_api(url, { credentials: "include" });
+        if (!resp.ok) {
+          fetch_failed = true;
+          duplicate_trade_warning_retry_at = Date.now() + 15000;
           break;
         }
-        let user_id = get_duplicate_trade_warning_trade_user_id(trade);
-        if (user_id && latest_by_user[user_id] === undefined)
-          latest_by_user[user_id] = created;
+        let json = await resp.json().catch(() => null);
+        let trades = Array.isArray(json?.data) ? json.data : [];
+        if (!trades.length) break;
+        let reached_cutoff = false;
+        for (let trade of trades) {
+          let created = parse_duplicate_trade_warning_created(trade);
+          if (!Number.isFinite(created)) continue;
+          if (created < cutoff) {
+            reached_cutoff = true;
+            break;
+          }
+          let user_id = get_duplicate_trade_warning_trade_user_id(trade);
+          if (user_id && latest_by_user[user_id] === undefined)
+            latest_by_user[user_id] = created;
+        }
+        if (reached_cutoff || !json?.nextPageCursor) break;
+        cursor = json.nextPageCursor;
       }
-      if (reached_cutoff || !json?.nextPageCursor) break;
-      cursor = json.nextPageCursor;
+    } catch {
+      fetch_failed = true;
+      duplicate_trade_warning_retry_at = Date.now() + 15000;
     }
 
     // Partial pages (429/error) are not cached; merge them into the last good cache
@@ -18916,6 +19223,7 @@
   function reset_ownership_check_state() {
     ownership_selected_row_key = "";
     ownership_last_trade_id = null;
+    ownership_retry_key = "";
     ownership_run_token += 1;
   }
 
@@ -18924,6 +19232,7 @@
     if (row_key && row_key === ownership_selected_row_key) return false;
     ownership_selected_row_key = row_key;
     ownership_last_trade_id = null;
+    ownership_retry_key = "";
     ownership_run_token += 1;
     clear_ownership_ui();
     return true;
@@ -19065,7 +19374,10 @@
       if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
       let resp;
       try {
-        resp = await fetch(url, { credentials: "include" });
+        resp = await fetch(url, {
+          credentials: "include",
+          signal: AbortSignal.timeout(20000),
+        });
       } catch {
         return null;
       }
@@ -19103,7 +19415,7 @@
       try {
         resp = await fetch(
           `https://trades.roblox.com/v2/users/${user_id}/tradableitems?${params.toString()}`,
-          { credentials: "include" },
+          { credentials: "include", signal: AbortSignal.timeout(20000) },
         );
       } catch {
         return null;
@@ -19154,12 +19466,18 @@
         failed = true;
         continue;
       }
+      // Respect the per-user 429 back-off here too (set by any ownership call).
+      if (is_ownership_fetch_backed_off(user_id)) {
+        failed = true;
+        break;
+      }
       let is_owned = null;
       try {
         let resp = await fetch(
           `https://inventory.roblox.com/v1/users/${user_id}/items/Asset/${offer.target_id}/is-owned`,
-          { credentials: "include" },
+          { credentials: "include", signal: AbortSignal.timeout(20000) },
         );
+        if (resp.status === 429) backoff_ownership_fetch(user_id);
         if (!resp.ok) {
           failed = true;
           continue;
@@ -19211,7 +19529,7 @@
       });
       let resp = await fetch(
         `https://trades.roblox.com/v2/users/${id}/tradableitems?${params.toString()}`,
-        { credentials: "include" },
+        { credentials: "include", signal: AbortSignal.timeout(20000) },
       ).catch(() => null);
       if (resp?.status === 429) backoff_ownership_fetch(id);
       if (!resp?.ok) return null;
@@ -19555,7 +19873,10 @@
     return unowned_items;
   }
 
-  let ownership_retry_key = "";
+  // ownership check: idle -> fetching -> shown | failed (retry at 15/30/60 s, 3 per key; N passes wait for the due time) -> gave up until the row or cards change
+  let ownership_retry_key = "",
+    ownership_retry_count = 0,
+    ownership_retry_due = 0;
   async function run_ownership_check() {
     if (!is_ownership_check_allowed()) return;
     inject_ownership_styles();
@@ -19591,6 +19912,9 @@
         .join(","),
     ].join("|");
     let check_key = `${trade_id || "detail"}:${partner_id}:${self_id}:${card_signature}`;
+    // N passes schedule a 120 ms check; don't let them spend the back-off.
+    if (check_key === ownership_retry_key && Date.now() < ownership_retry_due)
+      return schedule_ownership_check(ownership_retry_due - Date.now());
     if (check_key === ownership_last_trade_id) return;
     ownership_last_trade_id = check_key;
     // Drop the previous trade's banner while this one is being fetched.
@@ -19612,13 +19936,19 @@
       ownership_last_trade_id !== check_key
     )
       return;
-    // Failed fetches come back as empty incomplete state (not null); retry once, later.
+    // Failed fetches come back as empty incomplete state (not null); retry a
+    // few times with back-off, then stop until the row or cards change.
     let is_usable = (state) => has_owned_item_state(state) || !!state?.is_complete;
     if (!is_usable(partner_owned) && !is_usable(self_owned)) {
       if (ownership_retry_key !== check_key) {
         ownership_retry_key = check_key;
+        ownership_retry_count = 0;
+      }
+      if (ownership_retry_count < 3) {
         ownership_last_trade_id = null;
-        schedule_ownership_check(15000);
+        let delay = 15000 * 2 ** ownership_retry_count++;
+        ownership_retry_due = Date.now() + delay;
+        schedule_ownership_check(delay);
       }
       return;
     }
@@ -21370,8 +21700,9 @@
         if (cache.map?.[instance_id])
           cached_hits[instance_id] = cache.map[instance_id];
       }
-      if (cache.complete || Object.keys(cached_hits).length === wanted.length)
-        return cached_hits;
+      // Only a full hit counts: an earlier request being complete says
+      // nothing about ids it never asked for.
+      if (Object.keys(cached_hits).length === wanted.length) return cached_hits;
     }
 
     let merged = { ...(cache?.map || {}) };
@@ -21390,7 +21721,6 @@
 
     nte_history_owner_asset_cache[owner_id] = {
       ts: Date.now(),
-      complete: !wanted.some((instance_id) => !merged[instance_id]),
       map: merged,
     };
     prune_ts_cache(

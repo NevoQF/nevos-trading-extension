@@ -15,6 +15,7 @@ const ms_totp_pbkdf2_iters = 210000;
 const ms_2fa_notification_id = "nte_ms_2fa_prompt";
 const ms_2fa_focus_key = "nte_ms_focus_2fa";
 
+// ms run: idle -> preparing -> sending/awaiting_2fa/rate-limited -> done | stopped | error; Stop bumps ms_run_seq, but a send already in flight is still recorded
 let ms_state = {
   running: false,
   phase: "",
@@ -38,6 +39,7 @@ let ms_2fa_timeout_error = "";
 const ms_2fa_wait_timeout_ms = 5 * 60 * 1000;
 const ms_max_consecutive_failures = 5;
 let ms_wake = null;
+// ms unlock: locked -> unlocking (re-prompt with error on wrong password) -> unlocked (memory) | manual-only; cleared on run end and Stop
 let ms_session_secret = null;
 let ms_last_used_totp = null;
 let ms_2fa_waiters = [];
@@ -1559,12 +1561,12 @@ async function ms_prompt_2fa_code(opts = {}) {
   return String(value).replace(/\D/g, "");
 }
 
-async function ms_prompt_unlock_password(run_id) {
+async function ms_prompt_unlock_password(run_id, error = "") {
   if (!ms_run_live(run_id)) return null;
-  ms_state.status = "Unlock 2FA secret…";
+  ms_state.status = error || "Unlock 2FA secret…";
   ms_state.phase = "awaiting_2fa";
-  ms_state.prompt = { kind: "unlock", error: "" };
-  await ms_notify_2fa("unlock");
+  ms_state.prompt = { kind: "unlock", error };
+  if (!error) await ms_notify_2fa("unlock");
   let value = await ms_wait_for_popup_value();
   if (!value) return null;
   return String(value);
@@ -1593,14 +1595,19 @@ async function ms_resolve_session_secret(run_id) {
     );
 
   if (encrypted && enc) {
-    let password = await ms_prompt_unlock_password(run_id);
-    if (!password) return null;
-    try {
-      ms_session_secret = await ms_decrypt_totp_secret(enc, password);
-    } catch {
-      throw new Error("Wrong 2FA lock password.");
+    // Up to 3 password attempts; then null falls back to the manual 2FA code prompt.
+    let error = "";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let password = await ms_prompt_unlock_password(run_id, error);
+      if (!password) return null;
+      try {
+        ms_session_secret = await ms_decrypt_totp_secret(enc, password);
+        return ms_session_secret || null;
+      } catch {
+        error = "Wrong password. Try again.";
+      }
     }
-    return ms_session_secret || null;
+    return null;
   }
 
   if (plain) {
@@ -2084,6 +2091,8 @@ async function ms_run(config) {
     phase: "preparing",
     status: "Preparing…",
   };
+  // This run's own state object: a stopped run's late success must not count in a newer run.
+  let run_state = ms_state;
 
   ms_keep_alive_tick();
   try {
@@ -2274,8 +2283,9 @@ async function ms_run(config) {
       ms_pending_send = send_promise.catch(() => {});
       let result = await send_promise;
       csrf = result.csrf || csrf;
-      if (is_stale()) return;
-      if (ms_abort) {
+      // A send that succeeded after Stop still happened on Roblox: record it below, then stop.
+      if (is_stale() && !result.resp?.ok) return;
+      if (ms_abort && !result.resp?.ok) {
         ms_state.error = "Cancelled by user";
         break;
       }
@@ -2297,7 +2307,7 @@ async function ms_run(config) {
       }
 
       if (result.resp.ok) {
-        ms_state.sent++;
+        run_state.sent++;
         for (let id of offer_instances) used_offer_ids.add(String(id));
         let trade_id =
           result.data?.id ?? result.data?.tradeId ?? result.data?.trade_id;
@@ -2321,6 +2331,7 @@ async function ms_run(config) {
           request_robux,
         });
         consecutive_failures = 0;
+        if (is_stale()) return;
       } else {
         let roblox_msg = ms_trade_error_message(result.data);
         if (ms_is_skip_recipient_error(roblox_msg)) {

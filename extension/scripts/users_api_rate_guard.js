@@ -8,6 +8,7 @@
   const native_send = XHR.prototype.send;
   const native_set_request_header = XHR.prototype.setRequestHeader;
 
+  // user id: unknown -> cached (6 h) | known-missing (10 min, only after a parsed 2xx reply) -> unknown
   const cache = new Map();
   const pending = new Map();
   const cache_ttl_ms = 6 * 60 * 60 * 1000;
@@ -130,7 +131,9 @@
       });
       if (!res.ok) continue;
       let json = await res.json().catch(() => null);
-      for (let profile of json?.profileDetails || []) {
+      // A 2xx body that isn't JSON says nothing about these ids: don't mark them missing.
+      if (!json || typeof json !== "object") continue;
+      for (let profile of json.profileDetails || []) {
         let id = Number(profile?.userId) || 0;
         let name = String(profile?.names?.username || "").trim();
         // Without a real verified flag we'd cache false and hide checkmarks.

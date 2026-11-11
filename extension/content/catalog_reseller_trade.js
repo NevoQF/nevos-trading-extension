@@ -170,6 +170,7 @@
     return link;
   }
 
+  // trade button per row: idle -> pending (awaiting can-trade; row re-checked) -> injected | skipped
   async function inject_trade_button(row) {
     dedupe_trade_buttons(row);
 
@@ -192,6 +193,13 @@
       let can_trade = await can_trade_with(seller_id);
 
       if (row_has_existing_trade_button(row)) return;
+      if (
+        get_seller_id(row) !== seller_id ||
+        String(row.getAttribute("data-instance-id") || "").trim() !== instance_id
+      ) {
+        schedule_sync();
+        return;
+      }
 
       let link = create_trade_button(seller_id, instance_id, can_trade);
       container.prepend(link);

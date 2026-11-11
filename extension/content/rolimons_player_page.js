@@ -5,8 +5,12 @@
     "btn btn-light-blue border-primary btn-sm btn-very-sharp";
   const OWNED_COPIES_BTN_CLASS =
     "btn btn-bricky-green border-primary btn-sm btn-very-sharp";
+  // player fix: idle -> waiting -> fetching -> applied | retry-timer (incomplete, or one retry after a wait timeout); route change retires the run
   let ran_for_user = "";
   let player_fix_retry_timer = 0;
+  let player_run_token = 0;
+  let player_wait_retries = 0;
+  let trade_calc_cmd_seq = 0;
 
   function get_option(name) {
     return new Promise((resolve) => {
@@ -752,13 +756,27 @@
   async function run_for_player(user_id) {
     if (!user_id || ran_for_user === user_id) return;
     ran_for_user = user_id;
+    let run = player_run_token;
+    let is_stale = () => run !== player_run_token || player_id_from_path() !== user_id;
 
     try {
       await wait_for("#mix_container .mix_item", 15000);
     } catch {
+      // Release the gate so one bounded retry can run; the route poller clears this timer.
+      if (!is_stale()) {
+        ran_for_user = "";
+        if (!player_fix_retry_timer && player_wait_retries < 1) {
+          player_wait_retries++;
+          player_fix_retry_timer = setTimeout(() => {
+            player_fix_retry_timer = 0;
+            run_for_player(user_id).catch(() => {});
+          }, 15000);
+        }
+      }
       return;
     }
     await sleep(800);
+    if (is_stale()) return;
 
     let grid = document.querySelector("#mix_container");
     if (!grid) return;
@@ -769,6 +787,7 @@
       fetch_item_data(),
       fetch_heads(user_id),
     ]);
+    if (is_stale()) return;
     // Incomplete fetches (VPN 429s mid-pagination) must not mutate the page —
     // that would strip owned items that never made it into the partial list.
     // Missing item data would inject cards worth 0, so wait for it too.
@@ -867,6 +886,7 @@
       if (missing_thumbs.length) {
         Object.assign(thumbs, await fetch_thumbs(missing_thumbs, false));
       }
+      if (is_stale()) return;
 
       let enriched = enrich_missing_bundles(
         missing_bundles,
@@ -945,7 +965,11 @@
         "scripts/rolimons_trade_calc_inventory_patch.js",
       );
       script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
+      script.onerror = () => {
+        // Drop the element so the next attempt reloads the file instead of reusing this failed one.
+        script.remove();
+        resolve(false);
+      };
       (document.head || document.documentElement).appendChild(script);
     });
   }
@@ -1005,7 +1029,8 @@
         attributeFilter: ["data-nte-res"],
       });
       bridge.textContent = JSON.stringify({ to: "page", ...payload });
-      bridge.setAttribute("data-nte-cmd", String(Date.now()));
+      // Unique per command: two commands in the same millisecond must not share a stamp.
+      bridge.setAttribute("data-nte-cmd", `${Date.now()}-${++trade_calc_cmd_seq}`);
       setTimeout(() => finish(null), timeout_ms);
     });
   }
@@ -1265,6 +1290,7 @@
     return out;
   }
 
+  // hold paint: idle -> scheduled (80 ms) -> painting (own observer records dropped) -> idle
   let trade_calc_hold_by_id = Object.create(null);
   let trade_calc_hold_observer = null;
   let trade_calc_hold_paint_timer = 0;
@@ -1404,6 +1430,8 @@
         }
       }
     } finally {
+      // Our writes are queued as observer records; drop them now, before the async callback can see them.
+      trade_calc_hold_observer?.takeRecords();
       trade_calc_hold_painting = false;
     }
   }
@@ -1444,11 +1472,28 @@
   let trade_calc_pending = false;
   let trade_calc_retry_after = 0;
 
+  // trade calc fix: idle -> inflight (lock taken before the first await) -> idle; a call during inflight is queued as pending
   async function run_trade_calculator_fix(force = false) {
     if (trade_calc_inflight) {
-      trade_calc_pending = true;
+      // only forced callers queue a re-run; the 1.5 s tick retries on its own
+      if (force) trade_calc_pending = true;
       return;
     }
+    trade_calc_inflight = true;
+    try {
+      await run_trade_calculator_fix_once(force);
+    } finally {
+      trade_calc_inflight = false;
+      if (trade_calc_pending) {
+        trade_calc_pending = false;
+        setTimeout(() => {
+          run_trade_calculator_fix(true).catch(() => {});
+        }, 250);
+      }
+    }
+  }
+
+  async function run_trade_calculator_fix_once(force) {
     if (!force && Date.now() < trade_calc_retry_after) return;
     let state = await query_trade_calc_state();
     if (!state?.ready) return;
@@ -1476,8 +1521,7 @@
       return;
     }
 
-    trade_calc_inflight = true;
-    try {
+    {
       let face_map = await fetch_face_map();
       let { face_to_bundle, bundle_to_face } = build_face_maps(face_map);
       let roli_map = hold_map_from_asset_qty(
@@ -1546,18 +1590,12 @@
       if (ok) {
         let after = await query_trade_calc_state();
         trade_calc_ran_for = `${source}:${user_id}:${after?.asset_count || ids.length}`;
+      } else {
+        trade_calc_retry_after = Date.now() + 15000;
       }
       schedule_trade_calc_hold_paint();
       setTimeout(() => schedule_trade_calc_hold_paint(), 400);
       setTimeout(() => schedule_trade_calc_hold_paint(), 1200);
-    } finally {
-      trade_calc_inflight = false;
-      if (trade_calc_pending) {
-        trade_calc_pending = false;
-        setTimeout(() => {
-          run_trade_calculator_fix(true).catch(() => {});
-        }, 250);
-      }
     }
   }
 
@@ -1616,7 +1654,10 @@
   // Off switch for the USD rows this adds to Rolimons' calculator and trade ads.
   const TC_USD_OPTION = "USD on Rolimons Pages";
   let tc_usd_routility = null;
+  // trade calc USD paint: high-water; a paint applies unless a newer-started paint has already applied
   let tc_usd_timer = 0;
+  let tc_usd_run = 0;
+  let tc_usd_applied = 0;
   let tc_usd_enabled = true;
   let tc_usd_observer = null;
   let tc_usd_last_key = "";
@@ -1922,8 +1963,10 @@
 
   async function paint_trade_calculator_usd() {
     ensure_tc_usd_styles();
+    let run = ++tc_usd_run;
     let show = !!tc_usd_routility?.items;
     let trade = show ? await resolve_trade_for_usd() : { offer: [], request: [] };
+    if (run < tc_usd_applied) return;
     let offer = sum_side_usd(trade.offer);
     let request = sum_side_usd(trade.request);
     let has_items = !!(trade.offer.length || trade.request.length);
@@ -1936,6 +1979,7 @@
     let show_delta = show_rows && (has_items || rap_visible);
     let key = `${show ? 1 : 0}|${show_rows ? 1 : 0}|${show_delta ? 1 : 0}|${offer}|${request}|${trade.offer.length}|${trade.request.length}`;
     if (key === tc_usd_last_key) return;
+    tc_usd_applied = run;
     set_side_usd_row("offer", offer, show_rows);
     set_side_usd_row("request", request, show_rows);
     let delta_row = ensure_usd_delta_row();
@@ -2145,10 +2189,15 @@
     window.addEventListener("hashchange", schedule_trade_ads_usd);
   }
 
-  async function boot_trade_ads_usd() {
+  async function boot_trade_ads_usd(retried = false) {
     try {
       await wait_for(".mix_item .ad_side_details, .ad_side_details", 20000);
     } catch {
+      // One bounded retry, only if we are still on an ads page.
+      if (!retried)
+        setTimeout(() => {
+          if (is_trade_ads_page()) boot_trade_ads_usd(true).catch(() => {});
+        }, 5000);
       return;
     }
     watch_trade_ads_usd();
@@ -2220,6 +2269,10 @@
     last_path = location.pathname;
     ran_for_user = "";
     trade_calc_ran_for = "";
+    player_run_token++;
+    player_wait_retries = 0;
+    clearTimeout(player_fix_retry_timer);
+    player_fix_retry_timer = 0;
     boot().catch(() => {});
   }, 1000);
 })();

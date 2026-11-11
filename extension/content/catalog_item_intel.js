@@ -146,16 +146,18 @@
       .trim();
   }
 
+  // lookup gate: unknown -> checking -> known | backing-off (15 s, 30 s, 60 s) -> retry every 3 min (never given up)
   // After a failed lookup, don't refetch for a while; one timer re-syncs so a quiet page recovers.
   const FAIL_BACKOFF_MS = 15000;
   const FAIL_MAX = 4;
+  const FAIL_SLOW_RETRY_MS = 3 * 60 * 1000;
   const fail_at = {};
   const fail_count = {};
   let fail_retry_timer = 0;
-  // Delays 15s, 30s, 60s, then give up until reload.
+  // Delays 15s, 30s, 60s, then retry every 3 min.
   function in_backoff(key) {
     let n = fail_count[key] || 0;
-    if (n >= FAIL_MAX) return true;
+    if (n >= FAIL_MAX) return Date.now() - (fail_at[key] || 0) < FAIL_SLOW_RETRY_MS;
     return Date.now() - (fail_at[key] || 0) < FAIL_BACKOFF_MS * 2 ** Math.max(0, n - 1);
   }
   function is_definitive_miss(status) {
@@ -164,12 +166,11 @@
   function note_failure(key) {
     fail_at[key] = Date.now();
     let n = (fail_count[key] = (fail_count[key] || 0) + 1);
-    if (n >= FAIL_MAX) return;
     clearTimeout(fail_retry_timer);
     fail_retry_timer = setTimeout(() => {
       fail_retry_timer = 0;
       queue_sync();
-    }, FAIL_BACKOFF_MS * 2 ** (n - 1) + 50);
+    }, (n >= FAIL_MAX ? FAIL_SLOW_RETRY_MS : FAIL_BACKOFF_MS * 2 ** (n - 1)) + 50);
   }
 
   const item_check_inflight = {};

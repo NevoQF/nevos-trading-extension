@@ -11,6 +11,7 @@
   const max_results = 4;
   const username_re = /^[a-zA-Z0-9]+(?:[ _.]?[a-zA-Z0-9]+)?$/;
   const friends_ttl_ms = 30 * 60 * 1000;
+  const friends_fail_retry_ms = 30 * 1000;
   const thumb_ttl_ms = 30 * 60 * 1000;
   const presence_ttl_ms = 30 * 1000;
   const stats_ok_ttl_ms = 15 * 60 * 1000;
@@ -19,6 +20,7 @@
   let friends_cache = null;
   let friends_cache_at = 0;
   let friends_promise = null;
+  let friends_fail_until = 0;
   let thumb_cache = new Map();
   let presence_cache = new Map();
   let value_cache = new Map();
@@ -657,15 +659,17 @@
     );
   }
 
+  // friends: empty -> loading (friends_promise) -> cached (fresh for friends_ttl_ms; empty answers only on res.ok) | failed (not cached; retry after friends_fail_retry_ms)
   async function load_friends() {
     if (
-      friends_have_names(friends_cache) &&
+      Array.isArray(friends_cache) &&
       friends_cache_at > 0 &&
       Date.now() - friends_cache_at < friends_ttl_ms
     ) {
       return friends_cache;
     }
     if (friends_promise) return friends_promise;
+    if (friends_fail_until > Date.now() && !friends_have_names(friends_cache)) return [];
     friends_promise = (async () => {
       try {
         if (!friends_have_names(friends_cache)) {
@@ -690,10 +694,14 @@
         let friends = await hydrate_friend_names(
           Array.isArray(res?.friends) ? res.friends : [],
         );
-        if (friends_have_names(friends)) remember_friends(friends);
-        else if (!friends_have_names(friends_cache)) {
+        let answered_empty = res?.ok === true && Array.isArray(res.friends) && res.friends.length === 0;
+        if (friends_have_names(friends) || (answered_empty && !friends_have_names(friends_cache))) {
+          friends_fail_until = 0;
+          remember_friends(friends);
+        } else if (!friends_have_names(friends_cache)) {
           friends_cache = [];
           friends_cache_at = 0;
+          friends_fail_until = Date.now() + friends_fail_retry_ms;
         }
         return friends_have_names(friends_cache) ? friends_cache : [];
       } catch {
@@ -855,7 +863,7 @@
       else clear_injected();
     }
 
-    let friends_fresh = friends_have_names(friends_cache) &&
+    let friends_fresh = Array.isArray(friends_cache) &&
       friends_cache_at > 0 &&
       Date.now() - friends_cache_at < friends_ttl_ms;
     if (!friends_fresh) {

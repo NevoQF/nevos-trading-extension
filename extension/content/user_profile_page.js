@@ -549,31 +549,26 @@
         let resp = null;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
-            resp = await fetch(url, { credentials: "include" });
+            resp = await fetch(url, {
+              credentials: "include",
+              signal: AbortSignal.timeout(20000),
+            });
           } catch {
             resp = null;
           }
           if (resp && resp.status !== 429 && resp.status < 500) break;
           if (attempt < 2) await inventory_fetch_delay(350 * (attempt + 1));
         }
-        if (!resp)
-          return items.length
-            ? normalize_tradeable_inventory_items(items)
-            : null;
+        // A partial scan is a failure: returning null keeps it out of the cache.
+        if (!resp) return null;
         if (resp.status === 401 || resp.status === 403) return false;
         if (resp.status === 500 && limit === "100") {
           limit = "50";
           continue;
         }
-        if (resp.status !== 200)
-          return items.length
-            ? normalize_tradeable_inventory_items(items)
-            : null;
+        if (resp.status !== 200) return null;
         let data = await resp.json().catch(() => null);
-        if (!data)
-          return items.length
-            ? normalize_tradeable_inventory_items(items)
-            : null;
+        if (!data) return null;
         items = items.concat(Array.isArray(data?.items) ? data.items : []);
         cursor = data?.nextPageCursor || "";
         if (!cursor) break;
@@ -1274,10 +1269,11 @@
       utils.initTooltips();
     }
 
+    // catalog link pass: idle -> fetching (lock released in finally) -> idle; CSRF retry at most once per call
     let type_cache = {},
       fetching = false;
 
-    async function add_catalog_item_links() {
+    async function add_catalog_item_links(csrf_retried = false) {
       for (let div of document.querySelectorAll(
         ".item-card-price:not(.hasAssetLink), .item-value",
       )) {
@@ -1370,40 +1366,48 @@
       let unknown = Object.keys(type_cache)
         .filter((k) => type_cache[k] === false)
         .map(Number);
-      let body = { items: [] };
-      unknown.forEach((id) => {
-        if (body.items.length < 100) body.items.push({ itemType: 1, id: id });
-      });
-      if (csrf_token === undefined)
-        csrf_token = document
-          .querySelector('meta[name="csrf-token"]')
-          ?.getAttribute("data-token");
+      let retry_with_csrf = false;
+      try {
+        let body = { items: [] };
+        unknown.forEach((id) => {
+          if (body.items.length < 100) body.items.push({ itemType: 1, id: id });
+        });
+        if (csrf_token === undefined)
+          csrf_token = document
+            .querySelector('meta[name="csrf-token"]')
+            ?.getAttribute("data-token");
 
-      let resp = await fetch(
-        "https://catalog.roblox.com/v1/catalog/items/details",
-        {
-          method: "POST",
-          headers: { "X-CSRF-TOKEN": csrf_token },
-          body: JSON.stringify(body),
-          credentials: "include",
-        },
-      );
-      if (resp.status === 403 && (await resp.json()).code === 0) {
-        csrf_token = resp.headers.get("X-CSRF-TOKEN");
+        let resp = await fetch(
+          "https://catalog.roblox.com/v1/catalog/items/details",
+          {
+            method: "POST",
+            headers: { "X-CSRF-TOKEN": csrf_token },
+            body: JSON.stringify(body),
+            credentials: "include",
+            signal: AbortSignal.timeout(20000),
+          },
+        );
+        if (
+          !csrf_retried &&
+          resp.status === 403 &&
+          (await resp.json()).code === 0
+        ) {
+          csrf_token = resp.headers.get("X-CSRF-TOKEN") || csrf_token;
+          retry_with_csrf = true;
+        } else if (resp.status === 200) {
+          (await resp.json()).data.forEach((item) => {
+            type_cache[item.id] = item?.assetType || "failed";
+          });
+        } else {
+          Object.keys(type_cache).forEach((k) => {
+            if (type_cache[k] === false) type_cache[k] = "failed";
+          });
+        }
+        if (!retry_with_csrf) await handle_item_links();
+      } finally {
         fetching = false;
-        return add_catalog_item_links();
       }
-      if (resp.status === 200) {
-        (await resp.json()).data.forEach((item) => {
-          type_cache[item.id] = item?.assetType || "failed";
-        });
-      } else {
-        Object.keys(type_cache).forEach((k) => {
-          if (type_cache[k] === false) type_cache[k] = "failed";
-        });
-      }
-      await handle_item_links();
-      fetching = false;
+      if (retry_with_csrf) return add_catalog_item_links(true);
       if (unknown.length > 100) return add_catalog_item_links();
     }
   });
@@ -1421,8 +1425,13 @@
   var profile_value_display_mode_key = "profile_value_display_mode";
   var profile_observer = null;
   var profile_render_timer = null;
+  // profile inventory per user: none -> pending -> cached (complete) | private (retry after TTL) | unavailable (retry next tick)
   var profile_inventory_cache = {};
   var profile_inventory_pending = {};
+  var profile_private_until = {};
+  var profile_private_retry_ms = 5 * 60 * 1000;
+  var profile_fail_until = {};
+  var profile_fail_retry_ms = 15 * 1000;
   var profile_dominance_frame = null;
   function get_profile_user_id() {
     return (
@@ -1532,13 +1541,23 @@
   async function get_cached_profile_inventory(user_id) {
     if (profile_inventory_cache[user_id] !== undefined)
       return profile_inventory_cache[user_id];
+    if (profile_private_until[user_id] > Date.now()) return false;
+    // Failed or partial scans are not cached; back off so page mutations don't restart the scan.
+    if (profile_fail_until[user_id] > Date.now()) return null;
     if (profile_inventory_pending[user_id])
       return profile_inventory_pending[user_id];
 
     profile_inventory_pending[user_id] = utils
       .getUserInventory(user_id)
       .then((inventory) => {
-        if (inventory !== null) profile_inventory_cache[user_id] = inventory;
+        // Only complete scans are cached; a 401/403 is retried after a while.
+        if (Array.isArray(inventory)) {
+          profile_inventory_cache[user_id] = inventory;
+        } else if (inventory === false) {
+          profile_private_until[user_id] = Date.now() + profile_private_retry_ms;
+        } else if (inventory === null) {
+          profile_fail_until[user_id] = Date.now() + profile_fail_retry_ms;
+        }
         return inventory;
       })
       .finally(() => {
@@ -1551,6 +1570,8 @@
   function open_inventory_modal_click(event) {
     if (event.ctrlKey || event.metaKey || event.shiftKey) return;
     event.preventDefault();
+    // Only open the inventory snapshot that belongs to the profile on screen.
+    if (window.__nteInvData?.user_id !== get_profile_user_id()) return;
     window.__nteShowModal?.();
   }
 
@@ -1574,7 +1595,7 @@
     if (!rap_label) return;
 
     let has_cached_inventory = profile_inventory_cache[user_id] !== undefined;
-    if (!has_cached_inventory) {
+    if (!has_cached_inventory && !(profile_private_until[user_id] > Date.now())) {
       rap_label.classList.add("nte-loading-dots");
       set_label_text(rap_label, "Loading");
     }
@@ -1584,6 +1605,8 @@
       : await get_cached_profile_inventory(user_id);
     rap_label = document.getElementById("totalRAP");
     if (!rap_label) return;
+    // The SPA may have moved to another profile while we waited.
+    if (get_profile_user_id() !== user_id) return;
 
     rap_label.classList.remove("nte-loading-dots");
 
@@ -1604,6 +1627,7 @@
       }
 
       let display_mode = await get_profile_value_display_mode();
+      if (get_profile_user_id() !== user_id) return;
       let display_total = display_mode === "value" ? total_value : total_rap;
       let label_text =
         utils.commafy(display_total) +
@@ -1613,6 +1637,7 @@
         utils.addTooltip(rap_label, "Click to view inventory breakdown");
       }
       window.__nteInvData = {
+        user_id,
         items: inventory,
         rolimonsData: rolimons_data,
         totalValue: total_value,
@@ -2212,6 +2237,7 @@
               "&size=" +
               size +
               "&format=Png&isCircular=false",
+            { signal: AbortSignal.timeout(20000) },
           );
           if (!resp.ok) continue;
           (await resp.json()).data.forEach((d) => {
@@ -3730,7 +3756,9 @@
           : null;
       if (show_routility_usd && !routility_snapshot) {
         routility_snapshot = await new Promise((resolve) => {
+          let timer = setTimeout(() => resolve(null), 10000);
           nte_send_message("getRoutilityData", function (data) {
+            clearTimeout(timer);
             resolve(data || null);
           });
         });

@@ -216,8 +216,14 @@
     viewer_user_id,
     options = null,
   ) {
+    let stored = Array.isArray(matches) ? matches : [];
+    // Inventory or item data not loaded yet: keep stored alerts as they are.
+    let has_items = stored.some((match) =>
+      Array.isArray(get_row(Number(match?.wantedItemId))),
+    );
+    if (!has_items) return sort_matches(stored);
     let out = [];
-    for (let match of Array.isArray(matches) ? matches : []) {
+    for (let match of stored) {
       let ad = stored_match_to_ad(match);
       if (!ad) continue;
       let refreshed = build_match(ad, owned_ids, get_row, viewer_user_id, options);

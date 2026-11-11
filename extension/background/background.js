@@ -1006,7 +1006,7 @@ async function trade_row_get_csrf(force_refresh = false) {
   if (trade_row_decline_csrf && !force_refresh) return trade_row_decline_csrf;
   if (trade_row_decline_csrf_promise && !force_refresh)
     return trade_row_decline_csrf_promise;
-  trade_row_decline_csrf_promise = fetch("https://auth.roblox.com/v2/logout", {
+  trade_row_decline_csrf_promise = fetch_with_timeout("https://auth.roblox.com/v2/logout", {
     method: "POST",
     credentials: "include",
   })
@@ -1840,6 +1840,7 @@ async function get_inbound_trade_webhook_settings() {
   };
 }
 
+// inbound poll: idle -> running -> idle (finally always clears the flag); cursor saved only after the whole batch
 let inbound_poll_running = false;
 const INBOUND_POLL_INTERVAL_MS = 3000;
 const INBOUND_POLL_MAX_NOTIFIED = 200;
@@ -2081,72 +2082,76 @@ async function poll_inbound_trades() {
     } catch {}
 
     for (let trade of new_trades) {
-      notified_ids.add(String(trade.id));
+      try {
+        notified_ids.add(String(trade.id));
 
-      let detail =
-        cached_trades[trade.id] || cached_trades[String(trade.id)] || null;
-      let trade_stats = null;
+        let detail =
+          cached_trades[trade.id] || cached_trades[String(trade.id)] || null;
+        let trade_stats = null;
 
-      let has_offers =
-        detail &&
-        (Array.isArray(detail.offers) ||
-          detail.participantAOffer ||
-          detail.participantBOffer);
-      if (!has_offers) {
-        try {
-          let detail_resp = await fetch_trade_api(
-            `https://trades.roblox.com/v2/trades/${trade.id}`,
-            {
-              credentials: "include",
-            },
-          );
-          if (detail_resp.ok) {
-            detail = await detail_resp.json();
-            detail.__nte_fetched_at = Date.now();
-            detail.status = trade.status || "Open";
-            detail.tradeType = "inbound";
-            cache_trade_detail(cached_trades, trade.id, detail);
-          } else {
-            console.info(
-              "NTE inbound poll: detail fetch failed",
-              trade.id,
-              detail_resp.status,
+        let has_offers =
+          detail &&
+          (Array.isArray(detail.offers) ||
+            detail.participantAOffer ||
+            detail.participantBOffer);
+        if (!has_offers) {
+          try {
+            let detail_resp = await fetch_trade_api(
+              `https://trades.roblox.com/v2/trades/${trade.id}`,
+              {
+                credentials: "include",
+              },
             );
+            if (detail_resp.ok) {
+              detail = await detail_resp.json();
+              detail.__nte_fetched_at = Date.now();
+              detail.status = trade.status || "Open";
+              detail.tradeType = "inbound";
+              cache_trade_detail(cached_trades, trade.id, detail);
+            } else {
+              console.info(
+                "NTE inbound poll: detail fetch failed",
+                trade.id,
+                detail_resp.status,
+              );
+            }
+          } catch (fe) {
+            console.info("NTE inbound poll: detail fetch error", trade.id, fe);
           }
-        } catch (fe) {
-          console.info("NTE inbound poll: detail fetch error", trade.id, fe);
         }
-      }
 
-      if (detail) {
-        detail = await get_priced_cached_trade(detail);
-        trade_stats = await get_trade_notification_value_stats(
-          detail,
-          my_user_id,
-        );
-        if (
-          min_gain_pct > 0 &&
-          trade_stats &&
-          trade_stats.diff_pct_raw < min_gain_pct
-        )
-          continue;
-      }
+        if (detail) {
+          detail = await get_priced_cached_trade(detail);
+          trade_stats = await get_trade_notification_value_stats(
+            detail,
+            my_user_id,
+          );
+          if (
+            min_gain_pct > 0 &&
+            trade_stats &&
+            trade_stats.diff_pct_raw < min_gain_pct
+          )
+            continue;
+        }
 
-      let is_new_trade = await show_trade_notification(
-        trade,
-        "inbound",
-        detail,
-        trade_stats,
-        my_user_id,
-      );
-      if (is_new_trade && webhook_settings) {
-        await send_inbound_trade_webhook_notification(
+        let is_new_trade = await show_trade_notification(
           trade,
+          "inbound",
           detail,
           trade_stats,
           my_user_id,
-          webhook_settings,
         );
+        if (is_new_trade && webhook_settings) {
+          await send_inbound_trade_webhook_notification(
+            trade,
+            detail,
+            trade_stats,
+            my_user_id,
+            webhook_settings,
+          );
+        }
+      } catch (e) {
+        console.warn("NTE inbound poll: trade failed", trade?.id, e);
       }
     }
 
@@ -2174,11 +2179,16 @@ nte_ensure_alarm(inbound_poll_alarm_name, {
   periodInMinutes: 0.5,
 });
 
+// keepalive: timers run while at least one nte-keepalive port is open.
+let keepalive_ports = new Set();
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name === "nte-keepalive") {
+    keepalive_ports.add(port);
     ensure_inbound_poll_timer();
     ensure_trade_status_poll_timer();
     port.onDisconnect.addListener(() => {
+      keepalive_ports.delete(port);
+      if (keepalive_ports.size) return;
       if (inbound_poll_timer) {
         clearInterval(inbound_poll_timer);
         inbound_poll_timer = null;
@@ -2563,7 +2573,7 @@ const ROLIMONS_HTML_FETCH_INIT = {
 };
 
 async function fetch_rolimons_html(url) {
-  return fetch(url, ROLIMONS_HTML_FETCH_INIT);
+  return fetch_with_timeout(url, ROLIMONS_HTML_FETCH_INIT);
 }
 
 async function fetch_authenticated_user() {
@@ -2606,7 +2616,7 @@ async function fetch_player_proofs(name) {
   let cache_key = `player:${player.toLowerCase()}`;
   let cached = get_trade_history_cached_value(item_proofs_cache, cache_key);
   if (cached !== null) return cached;
-  let res = await fetch(
+  let res = await fetch_with_timeout(
     `https://nevos-extension.com/api/proofs/player/${encodeURIComponent(player)}`,
     { method: "POST", headers: nte_api_headers() },
   );
@@ -2632,7 +2642,7 @@ async function fetch_player_ad_tiers(ids) {
     .filter((id) => /^\d+$/.test(id))
     .slice(0, 30);
   if (!list.length) return {};
-  let res = await fetch(`${player_ad_tiers_api_url}?ids=${list.join(",")}`, {
+  let res = await fetch_with_timeout(`${player_ad_tiers_api_url}?ids=${list.join(",")}`, {
     headers: nte_api_headers(),
     cache: "no-store",
   });
@@ -2650,6 +2660,7 @@ const item_proof_image_cache_max_entries = 128;
 const discord_snowflake_epoch_ms = 1420070400000;
 let trade_history_api_cache = new Map();
 let trade_history_user_cache = new Map();
+// trade history uaid (ciiid): miss -> cached (uaid, or a clean no-uaid answer) | network error (not cached)
 let trade_history_ciiid_cache = new Map();
 let trade_history_thumb_cache = new Map();
 let item_proofs_cache = new Map();
@@ -2805,7 +2816,7 @@ async function fetch_item_proofs_api(search_term) {
   let cached = get_trade_history_cached_value(item_proofs_cache, cache_key);
   if (cached !== null) return cached;
 
-  let response = await fetch(
+  let response = await fetch_with_timeout(
     `${item_proofs_api_url}/${encodeURIComponent(normalized_term)}`,
     {
       method: "POST",
@@ -2974,7 +2985,7 @@ async function fetch_item_proof_image_data(url) {
   );
   if (cached !== null) return cached;
 
-  let response = await fetch(normalized_url, {
+  let response = await fetch_with_timeout(normalized_url, {
     headers: nte_api_headers({
       Accept: "image/*,*/*;q=0.8",
     }),
@@ -3068,29 +3079,45 @@ async function resolve_trade_history_uaid_from_ciiid(ciiid) {
 
   let url = `https://www.rolimons.com/ciiid/${encodeURIComponent(key)}`;
   let uaid = "";
+  let failed = false;
 
-  try {
-    let response = await fetch(url, {
-      ...ROLIMONS_HTML_FETCH_INIT,
-      redirect: "manual",
-    });
-    uaid =
-      extract_trade_history_uaid_from_url(
-        response.headers.get("location") || "",
-      ) || extract_trade_history_uaid_from_url(response.url || "");
-  } catch {}
-
-  if (!uaid) {
+  if (rolimons_backing_off()) return "";
+  let ran = await rolimons_queue(async () => {
     try {
-      let response = await fetch_rolimons_html(url);
+      let response = await fetch_with_timeout(url, {
+        ...ROLIMONS_HTML_FETCH_INIT,
+        redirect: "manual",
+      });
       uaid =
-        extract_trade_history_uaid_from_url(response.url || "") ||
         extract_trade_history_uaid_from_url(
           response.headers.get("location") || "",
-        );
-    } catch {}
-  }
+        ) || extract_trade_history_uaid_from_url(response.url || "");
+    } catch {
+      failed = true;
+    }
 
+    if (!uaid && !rolimons_backing_off()) {
+      try {
+        let response = await fetch_rolimons_html(url);
+        rolimons_note(response.status);
+        // A blocked or failed page is not a "no uaid" answer; don't cache it.
+        if (response.status === 403 || response.status === 429 || response.status >= 500)
+          failed = true;
+        uaid =
+          extract_trade_history_uaid_from_url(response.url || "") ||
+          extract_trade_history_uaid_from_url(
+            response.headers.get("location") || "",
+          );
+      } catch {
+        failed = true;
+      }
+    }
+    return true;
+  });
+
+  // Not run (a back-off started while queued) or failed: not a "no uaid" answer.
+  if (ran === null || (!uaid && failed)) return "";
+  if (!uaid && rolimons_backing_off()) return "";
   return set_trade_history_cached_value(
     trade_history_ciiid_cache,
     key,
@@ -3227,7 +3254,7 @@ async function fetch_trade_history_thumb_chunk(ids, is_bundle) {
   ];
   if (!chunk.length) return out;
   try {
-    let response = await fetch(
+    let response = await fetch_with_timeout(
       is_bundle
         ? `https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=${chunk.join(",")}&size=150x150&format=Png&isCircular=false`
         : `https://thumbnails.roblox.com/v1/assets?assetIds=${chunk.join(",")}&size=150x150&format=Png&isCircular=false`,
@@ -3444,7 +3471,7 @@ async function fetch_trade_history_api(query, limit = 6) {
   url.searchParams.set("limit", String(safe_limit));
   if (ciiid) url.searchParams.set("ciiid", ciiid);
 
-  let response = await fetch(url.toString(), {
+  let response = await fetch_with_timeout(url.toString(), {
     headers: nte_api_headers(),
     cache: "no-store",
     credentials: "omit",
@@ -3515,13 +3542,24 @@ async function evaluate_trade_analysis(message) {
   if (!body.receive_item_ids.length && body.receive_robux <= 0)
     throw new Error("Could not read what you receive from this trade.");
 
-  let response = await fetch(trade_analysis_api_url, {
-    method: "POST",
-    headers: nte_api_headers({ "Content-Type": "application/json" }),
-    body: JSON.stringify(body),
-    cache: "no-store",
-    credentials: "omit",
-  });
+  let response;
+  try {
+    response = await fetch_with_timeout(
+      trade_analysis_api_url,
+      {
+        method: "POST",
+        headers: nte_api_headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body),
+        cache: "no-store",
+        credentials: "omit",
+      },
+      35000,
+    );
+  } catch (err) {
+    if (err?.name === "TimeoutError")
+      throw new Error("Trade analysis took too long. Try again.");
+    throw err;
+  }
   let text = await response.text().catch(() => "");
   let payload = null;
   try {
@@ -3601,7 +3639,7 @@ async function resolve_trade_history_users(user_ids) {
   }
 
   if (missing.length) {
-    let response = await fetch("https://users.roblox.com/v1/users", {
+    let response = await fetch_with_timeout("https://users.roblox.com/v1/users", {
       method: "POST",
       headers: {
         Accept: "application/json",
@@ -3936,10 +3974,46 @@ async function send_test_webhook_notification(webhook_override = null) {
   return { ok: true };
 }
 
+// rolimons lane: open -> backing off after Rolimons answers 429/403 (60 s, doubling to 10 min) -> open.
+// Player and UAID lookups run one at a time, >= 300 ms apart: a 400-row trade list used to fire them
+// all at once and get the user's IP banned by Rolimons (Cloudflare 1015).
+let rolimons_lane = Promise.resolve();
+let rolimons_lane_last_at = 0;
+let rolimons_backoff_until = 0;
+let rolimons_backoff_ms = 0;
+const rolimons_lane_gap_ms = 300;
+
+function rolimons_backing_off() {
+  return Date.now() < rolimons_backoff_until;
+}
+
+function rolimons_note(status) {
+  if (status === 429 || status === 403) {
+    rolimons_backoff_ms = Math.min(10 * 60 * 1000, rolimons_backoff_ms ? rolimons_backoff_ms * 2 : 60 * 1000);
+    rolimons_backoff_until = Date.now() + rolimons_backoff_ms;
+  } else if (status >= 200 && status < 400) {
+    rolimons_backoff_ms = 0;
+  }
+}
+
+// Runs fn in the lane; resolves null without calling it if a back-off started while it waited.
+function rolimons_queue(fn) {
+  let task = rolimons_lane.then(async () => {
+    if (rolimons_backing_off()) return null;
+    let wait = rolimons_lane_last_at + rolimons_lane_gap_ms - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    rolimons_lane_last_at = Date.now();
+    return fn();
+  });
+  rolimons_lane = task.catch(() => {});
+  return task;
+}
+
 let rolimons_player_info_cache = new Map();
+// rolimons player info: miss -> inflight (rolimons lane) -> cached (ok) | error (not cached); inflight entry removed in finally
 let rolimons_player_info_inflight = new Map();
 const rolimons_player_info_ttl_ms = 15 * 60 * 1000;
-const rolimons_player_info_cache_max = 200;
+const rolimons_player_info_cache_max = 1000;
 
 function prune_rolimons_player_info_cache() {
   if (rolimons_player_info_cache.size <= rolimons_player_info_cache_max) return;
@@ -3962,14 +4036,18 @@ async function fetch_rolimons_player_info(user_id) {
   if (rolimons_player_info_inflight.has(id)) {
     return rolimons_player_info_inflight.get(id);
   }
+  if (rolimons_backing_off()) return { ok: false, error: "rate_limited" };
 
-  let job = (async () => {
+  let lookup = async () => {
     try {
       try {
-        let api_res = await fetch(
+        let api_res = await fetch_with_timeout(
           `https://api.rolimons.com/players/v1/playerinfo/${id}`,
           { cache: "no-store" },
         );
+        rolimons_note(api_res.status);
+        // Rate limited: don't double the load by loading the www page instead.
+        if (api_res.status === 429) return { ok: false, error: "rate_limited" };
         if (api_res.ok) {
           let d = await api_res.json().catch(() => null);
           if (d && d.success === true) {
@@ -4003,7 +4081,8 @@ async function fetch_rolimons_player_info(user_id) {
           }
         }
       } catch {}
-      let res = await fetch(`https://www.rolimons.com/player/${id}`, {
+      if (rolimons_backing_off()) return { ok: false, error: "rate_limited" };
+      let res = await fetch_with_timeout(`https://www.rolimons.com/player/${id}`, {
         cache: "no-store",
         credentials: "omit",
         headers: {
@@ -4011,6 +4090,7 @@ async function fetch_rolimons_player_info(user_id) {
           Accept: "text/html",
         },
       });
+      rolimons_note(res.status);
       if (!res.ok) return { ok: false, error: `http_${res.status}` };
       let html = await res.text();
       let m = html.match(
@@ -4048,21 +4128,24 @@ async function fetch_rolimons_player_info(user_id) {
       return rec;
     } catch {
       return { ok: false, error: "exception" };
-    } finally {
-      rolimons_player_info_inflight.delete(id);
     }
-  })();
+  };
 
+  let job = rolimons_queue(lookup)
+    .then((res) => res || { ok: false, error: "rate_limited" })
+    .catch(() => ({ ok: false, error: "exception" }))
+    .finally(() => rolimons_player_info_inflight.delete(id));
   rolimons_player_info_inflight.set(id, job);
   return job;
 }
 
+// friends list: empty -> inflight -> cached (only when every page hydrated) | failed (not cached); inflight cleared in finally
 let roblox_friends_cache = null;
 let roblox_friends_cache_at = 0;
 let roblox_friends_inflight = null;
 const roblox_friends_ttl_ms = 30 * 60 * 1000;
 
-async function hydrate_roblox_friend_names(friends) {
+async function hydrate_roblox_friend_names(friends, status = {}) {
   let list = Array.isArray(friends) ? friends.slice() : [];
   let need = list.filter((row) => row.userId > 0 && !String(row.name || "").trim());
   if (!need.length) {
@@ -4075,7 +4158,7 @@ async function hydrate_roblox_friend_names(friends) {
   for (let i = 0; i < need.length; i += 100) {
     let ids = need.slice(i, i + 100).map((row) => row.userId);
     try {
-      let res = await fetch(
+      let res = await fetch_with_timeout(
         "https://apis.roblox.com/user-profile-api/v1/user/profiles/get-profiles",
         {
           method: "POST",
@@ -4090,7 +4173,10 @@ async function hydrate_roblox_friend_names(friends) {
           }),
         },
       );
-      if (!res.ok) continue;
+      if (!res.ok) {
+        status.failed = true;
+        continue;
+      }
       let json = await res.json().catch(() => null);
       for (let profile of json?.profileDetails || []) {
         let id = Number(profile.userId) || 0;
@@ -4105,7 +4191,9 @@ async function hydrate_roblox_friend_names(friends) {
           isFriend: true,
         });
       }
-    } catch {}
+    } catch {
+      status.failed = true;
+    }
   }
 
   return [...by_id.values()].filter(
@@ -4125,7 +4213,7 @@ async function fetch_roblox_friends_list() {
 
   roblox_friends_inflight = (async () => {
     try {
-      let me = await fetch("https://users.roblox.com/v1/users/authenticated", {
+      let me = await fetch_with_timeout("https://users.roblox.com/v1/users/authenticated", {
         credentials: "include",
         cache: "no-store",
       });
@@ -4134,7 +4222,7 @@ async function fetch_roblox_friends_list() {
       let my_id = Number(me_json?.id) || 0;
       if (!my_id) return { ok: false, friends: [], error: "no_user" };
 
-      let res = await fetch(
+      let res = await fetch_with_timeout(
         `https://friends.roblox.com/v1/users/${my_id}/friends`,
         { credentials: "include", cache: "no-store" },
       );
@@ -4142,6 +4230,7 @@ async function fetch_roblox_friends_list() {
         return { ok: false, friends: [], error: `friends_${res.status}` };
       }
       let json = await res.json().catch(() => null);
+      let hydrate_status = {};
       let friends = await hydrate_roblox_friend_names(
         (Array.isArray(json?.data) ? json.data : [])
           .map((row) => ({
@@ -4151,9 +4240,15 @@ async function fetch_roblox_friends_list() {
             isFriend: true,
           }))
           .filter((row) => row.userId > 0),
+        hydrate_status,
       );
-      roblox_friends_cache = friends;
-      roblox_friends_cache_at = Date.now();
+      // Names failed to load and every friend was dropped: report that, not an empty list.
+      if (hydrate_status.failed && !friends.length)
+        return { ok: false, friends: [], error: "names_unavailable" };
+      if (!hydrate_status.failed) {
+        roblox_friends_cache = friends;
+        roblox_friends_cache_at = Date.now();
+      }
       return { ok: true, friends };
     } catch {
       return { ok: false, friends: [], error: "exception" };
@@ -4365,7 +4460,7 @@ async function get_item_sales_data(message) {
   if (hit && Date.now() - hit.at < 5 * 60 * 1000) return hit.data;
 
   let get_json = async (url) => {
-    let res = await fetch(url, { credentials: "include" }).catch(() => null);
+    let res = await fetch_with_timeout(url, { credentials: "include" }).catch(() => null);
     return res?.ok ? res.json().catch(() => null) : null;
   };
   let detail = await get_json(
@@ -4447,7 +4542,7 @@ async function fetch_rolimons_player_thumbs(ids, is_bundles) {
     let url = is_bundles
       ? `https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=${chunk.join(",")}&size=150x150&format=Png&isCircular=false`
       : `https://thumbnails.roblox.com/v1/assets?assetIds=${chunk.join(",")}&size=150x150&format=Png&isCircular=false`;
-    let res = await fetch(url).catch(() => null);
+    let res = await fetch_with_timeout(url).catch(() => null);
     if (!res?.ok) continue;
     let data = await res.json().catch(() => ({}));
     for (let row of data.data || []) {
@@ -4508,7 +4603,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           )
         )
           return respond({ ok: false });
-        let response = await fetch(url, { credentials: "omit" });
+        let response = await fetch_with_timeout(url, { credentials: "omit" });
         if (!response.ok) return respond({ ok: false });
         let blob = await response.blob();
         try {
@@ -5203,6 +5298,7 @@ async function request_host_permissions() {
   });
 }
 
+// ta run: idle -> fetching -> checking -> declining -> idle (done | cancelled | failed); Stop or a new run retires the old one
 let ta_state = {
   running: false,
   action: "",
@@ -5216,6 +5312,9 @@ let ta_state = {
   wait_until: 0,
 };
 let ta_abort = false;
+let ta_run_id = 0;
+// Helpers take ta_run_id when they start; Stop or a newer run retires that id, so an old request never acts again.
+let ta_gone = (id) => ta_abort || id !== ta_run_id;
 let ta_wake = null;
 const TA_RATE_LIMIT_BUFFER = 2;
 const TA_RATE_LIMIT_RESET_PAD_MS = 1000;
@@ -5239,10 +5338,12 @@ function ta_sleep(ms) {
 
 function ta_stop_now() {
   ta_abort = true;
+  ta_run_id++;
   if (ta_state.running) {
     ta_state.wait_until = 0;
     ta_state.error = "Cancelled by user";
     ta_state.running = false;
+    ta_state.finished_at = Date.now();
   }
   if (ta_wake) {
     ta_wake();
@@ -5282,12 +5383,13 @@ async function ta_get_csrf() {
 }
 
 async function ta_fetch(url, init) {
-  if (ta_abort) return { ok: false, status: 0, headers: { get: () => null } };
-  let resp = await fetch(url, init);
-  if (resp.status === 429 && !ta_abort) {
+  let id = ta_run_id;
+  if (ta_gone(id)) return { ok: false, status: 0, headers: { get: () => null } };
+  let resp = await fetch_with_timeout(url, init);
+  if (resp.status === 429 && !ta_gone(id)) {
     await ta_wait_for_rate_limit(resp);
-    if (ta_abort) return resp;
-    resp = await fetch(url, init);
+    if (ta_gone(id)) return resp;
+    resp = await fetch_with_timeout(url, init);
   }
   await ta_wait_for_rate_limit(resp);
   return resp;
@@ -5296,10 +5398,11 @@ async function ta_fetch(url, init) {
 async function ta_get_trade_detail(trade_id, cache) {
   if (cache[trade_id] || cache[String(trade_id)])
     return cache[trade_id] || cache[String(trade_id)];
+  let id = ta_run_id;
   let resp = await ta_fetch(`https://trades.roblox.com/v1/trades/${trade_id}`, {
     credentials: "include",
   });
-  if (ta_abort) return null;
+  if (ta_gone(id)) return null;
   if (!resp.ok) return null;
   let trade = await resp.json();
   cache_trade_detail(cache, trade_id, trade);
@@ -5307,9 +5410,10 @@ async function ta_get_trade_detail(trade_id, cache) {
 }
 
 async function ta_decline_trade(trade_id, csrf) {
+  let id = ta_run_id;
   let do_decline = async (token) => {
-    if (ta_abort) return { ok: false, status: 0, headers: { get: () => null } };
-    return fetch(`https://trades.roblox.com/v1/trades/${trade_id}/decline`, {
+    if (ta_gone(id)) return { ok: false, status: 0, headers: { get: () => null } };
+    return fetch_with_timeout(`https://trades.roblox.com/v1/trades/${trade_id}/decline`, {
       method: "POST",
       credentials: "include",
       headers: { "x-csrf-token": token },
@@ -5320,41 +5424,46 @@ async function ta_decline_trade(trade_id, csrf) {
     let new_csrf = resp.headers.get("x-csrf-token");
     if (new_csrf) {
       await ta_wait_for_rate_limit(resp);
-      if (ta_abort) return { ok: false, csrf, status: 0 };
+      if (ta_gone(id)) return { ok: false, csrf, status: 0 };
       csrf = new_csrf;
       resp = await do_decline(csrf);
     }
   }
-  if (resp.status === 429 && !ta_abort) {
+  if (resp.status === 429 && !ta_gone(id)) {
     await ta_wait_for_rate_limit(resp);
-    if (ta_abort) return { ok: false, csrf, status: 0 };
+    if (ta_gone(id)) return { ok: false, csrf, status: 0 };
     resp = await do_decline(csrf);
   }
   await ta_wait_for_rate_limit(resp);
-  if (ta_abort) return { ok: false, csrf, status: 0 };
+  // The decline may have landed even after Stop, so record it before the gone check.
   if (resp.ok) await mark_self_declined_trade(trade_id);
+  if (ta_gone(id)) return { ok: false, csrf, status: 0 };
   return { ok: resp.ok, csrf, status: resp.status };
 }
 
-async function ta_fetch_user_collectibles(user_id) {
-  let ids = new Set();
+// Does user_id still own this exact copy (UAID)? true | false | null (unknown).
+// One request per item instead of paging the whole inventory, which hit 429s
+// after ~10 partners and left their side unchecked.
+async function ta_user_owns_copy(user_id, asset_id, uaid) {
+  if (!user_id || !(asset_id > 0) || !uaid) return null;
+  let id = ta_run_id;
   let cursor = "";
-  for (let page = 0; page < 40; page++) {
-    if (ta_abort) break;
-    let url = `https://inventory.roblox.com/v1/users/${user_id}/assets/collectibles?limit=100&sortOrder=Asc`;
-    if (cursor) url += `&cursor=${cursor}`;
+  for (let page = 0; page < 10; page++) {
+    let url = `https://inventory.roblox.com/v1/users/${user_id}/items/Asset/${asset_id}?limit=100`;
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
     let resp = await ta_fetch(url, { credentials: "include" });
-    if (ta_abort) break;
+    if (ta_gone(id)) return null;
+    // Private inventory: only "owns no copy at all" is certain.
+    if (resp.status === 403)
+      return (await ta_user_owns_asset(user_id, asset_id)) === false ? false : null;
     if (!resp.ok) return null;
-    let json = await resp.json();
-    if (json.data)
-      for (let item of json.data) {
-        if (item.userAssetId) ids.add(item.userAssetId);
-      }
+    let json = await resp.json().catch(() => null);
+    if (!Array.isArray(json?.data)) return null;
+    if (json.data.some((row) => String(row?.instanceId) === String(uaid))) return true;
     cursor = json.nextPageCursor;
-    if (!cursor) break;
+    if (!cursor) return false;
   }
-  return ids;
+  return null;
 }
 
 function ta_get_trade_item_target_id(item) {
@@ -5431,6 +5540,8 @@ async function ta_run_action(
   item_filter = null,
 ) {
   if (ta_state.running) return;
+  let run = ++ta_run_id;
+  let stopped = () => ta_abort || run !== ta_run_id;
   ta_state = {
     running: true,
     action,
@@ -5439,9 +5550,11 @@ async function ta_run_action(
     total: 0,
     checked: 0,
     skipped: 0,
+    unchecked: 0,
     fetched_pages: 0,
     error: "",
     wait_until: 0,
+    finished_at: 0,
     min_overpay_pct,
     max_trade_age_ms,
   };
@@ -5461,12 +5574,16 @@ async function ta_run_action(
     let trades = [];
     let cursor = "";
     for (let page = 0; page < 50; page++) {
-      if (ta_abort) break;
+      if (stopped()) break;
       let url = `https://trades.roblox.com/v1/trades/${trade_type}?limit=100&sortOrder=Desc`;
       if (cursor) url += `&cursor=${cursor}`;
       let resp = await ta_fetch(url, { credentials: "include" });
-      if (ta_abort) break;
-      if (!resp.ok) break;
+      if (stopped()) break;
+      if (!resp.ok) {
+        if (!trades.length)
+          throw new Error(`Couldn't load your trades (HTTP ${resp.status}). Try again.`);
+        break;
+      }
       let json = await resp.json();
       if (json.data) trades.push(...json.data);
       ta_state.fetched_pages++;
@@ -5475,9 +5592,11 @@ async function ta_run_action(
       if (!cursor) break;
     }
 
-    if (ta_abort) {
-      ta_state.error = "Cancelled by user";
-      ta_state.running = false;
+    if (stopped()) {
+      if (run === ta_run_id) {
+        ta_state.error = "Cancelled by user";
+        ta_state.running = false;
+      }
       return;
     }
 
@@ -5490,7 +5609,9 @@ async function ta_run_action(
     if (overpaying_only) {
       ta_state.phase = "checking";
       let item_data = await get_cached_item_data();
-      let auth_resp = await fetch(
+      if (!has_item_data(item_data))
+        throw new Error("Couldn't load item values from Rolimons. Try again in a minute.");
+      let auth_resp = await fetch_with_timeout(
         "https://users.roblox.com/v1/users/authenticated",
         { credentials: "include" },
       );
@@ -5498,8 +5619,8 @@ async function ta_run_action(
       let my_user_id = auth_json.id;
 
       for (let trade of trades) {
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         ta_state.checked++;
@@ -5509,8 +5630,8 @@ async function ta_run_action(
         }
 
         let detail = await ta_get_trade_detail(trade.id, trade_cache);
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         if (!detail) {
@@ -5542,8 +5663,8 @@ async function ta_run_action(
         }
 
         let result = await ta_decline_trade(trade.id, csrf);
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         if (result.csrf) csrf = result.csrf;
@@ -5551,18 +5672,17 @@ async function ta_run_action(
       }
     } else if (unowned_check) {
       ta_state.phase = "checking";
-      let auth_resp = await fetch(
+      let auth_resp = await fetch_with_timeout(
         "https://users.roblox.com/v1/users/authenticated",
         { credentials: "include" },
       );
       let auth_json = auth_resp.ok ? await auth_resp.json() : {};
       let my_user_id = auth_json.id;
-      let collectibles_cache = {};
-      let asset_ownership_cache = {};
+      let copy_cache = {};
 
       for (let trade of trades) {
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         ta_state.checked++;
@@ -5572,8 +5692,8 @@ async function ta_run_action(
         }
 
         let detail = await ta_get_trade_detail(trade.id, trade_cache);
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         if (!detail) {
@@ -5595,12 +5715,15 @@ async function ta_run_action(
           offer?.userCollectibles ||
           offer?.collectibles ||
           [];
+        // v1 trade details carry the copy's id (UAID) in `id`.
         let get_user_asset_id = (item) =>
           item?.userAssetId ??
           item?.userAsset?.userAssetId ??
-          item?.userAsset?.id;
+          item?.userAsset?.id ??
+          item?.id;
 
         let has_unowned = false;
+        let unknown = false;
         let sides = [
           { user_id: my_offer.user?.id, items: get_items(my_offer) },
           { user_id: their_offer.user?.id, items: get_items(their_offer) },
@@ -5608,45 +5731,35 @@ async function ta_run_action(
 
         for (let side of sides) {
           if (!side.user_id || !side.items.length) continue;
-          if (ta_abort) break;
-          if (!collectibles_cache[side.user_id]) {
-            collectibles_cache[side.user_id] = await ta_fetch_user_collectibles(
-              side.user_id,
-            );
-          }
-          let owned = collectibles_cache[side.user_id];
-          if (!owned) continue;
           for (let item of side.items) {
-            let ua_id = get_user_asset_id(item);
-            if (ua_id && owned.has(ua_id)) continue;
-            let target_id = ta_get_trade_item_target_id(item);
-            let cache_key = `${side.user_id}:${target_id}`;
-            let asset_owned = asset_ownership_cache[cache_key];
-            if (asset_owned === undefined) {
-              asset_owned = await ta_user_owns_asset(side.user_id, target_id);
-              asset_ownership_cache[cache_key] = asset_owned;
-            }
-            if (asset_owned === true) continue;
-            if (asset_owned === false) {
+            if (stopped()) break;
+            let uaid = get_user_asset_id(item);
+            let asset_id = ta_get_trade_item_target_id(item);
+            let key = `${side.user_id}:${asset_id}:${uaid}`;
+            if (!(key in copy_cache))
+              copy_cache[key] = await ta_user_owns_copy(side.user_id, asset_id, uaid);
+            if (copy_cache[key] === false) {
               has_unowned = true;
               break;
             }
+            if (copy_cache[key] === null) unknown = true;
           }
-          if (has_unowned) break;
+          if (has_unowned || stopped()) break;
         }
 
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         if (!has_unowned) {
           ta_state.skipped++;
+          if (unknown) ta_state.unchecked++;
           continue;
         }
 
         let result = await ta_decline_trade(trade.id, csrf);
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         if (result.csrf) csrf = result.csrf;
@@ -5657,7 +5770,7 @@ async function ta_run_action(
       let item_id = Number(item_filter?.id) || 0;
       let side = item_filter?.side || "any";
       if (!item_id) throw new Error("Pick an item first.");
-      let auth_resp = await fetch(
+      let auth_resp = await fetch_with_timeout(
         "https://users.roblox.com/v1/users/authenticated",
         { credentials: "include" },
       );
@@ -5668,8 +5781,8 @@ async function ta_run_action(
         );
 
       for (let trade of trades) {
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         ta_state.checked++;
@@ -5678,8 +5791,8 @@ async function ta_run_action(
           continue;
         }
         let detail = await ta_get_trade_detail(trade.id, trade_cache);
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         let { my_offer, their_offer } = ta_split_offers(detail, my_user_id);
@@ -5691,8 +5804,8 @@ async function ta_run_action(
           continue;
         }
         let result = await ta_decline_trade(trade.id, csrf);
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         if (result.csrf) csrf = result.csrf;
@@ -5701,8 +5814,8 @@ async function ta_run_action(
     } else if (age_filter) {
       ta_state.phase = "checking";
       for (let trade of trades) {
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         ta_state.checked++;
@@ -5715,8 +5828,8 @@ async function ta_run_action(
           continue;
         }
         let result = await ta_decline_trade(trade.id, csrf);
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         if (result.csrf) csrf = result.csrf;
@@ -5725,8 +5838,8 @@ async function ta_run_action(
     } else {
       ta_state.phase = "declining";
       for (let trade of trades) {
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         if (is_locked_trade(trade)) {
@@ -5734,8 +5847,8 @@ async function ta_run_action(
           continue;
         }
         let result = await ta_decline_trade(trade.id, csrf);
-        if (ta_abort) {
-          ta_state.error = "Cancelled by user";
+        if (stopped()) {
+          if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
         if (result.csrf) csrf = result.csrf;
@@ -5743,10 +5856,17 @@ async function ta_run_action(
       }
     }
   } catch (err) {
-    ta_state.error = err?.message || String(err);
+    if (run === ta_run_id)
+      ta_state.error =
+        err?.name === "TimeoutError"
+          ? "Roblox didn't answer in time. Try again."
+          : err?.message || String(err);
   }
 
-  ta_state.running = false;
+  if (run === ta_run_id) {
+    ta_state.running = false;
+    ta_state.finished_at = Date.now();
+  }
 }
 
 chrome.runtime.onInstalled.addListener(async () => {

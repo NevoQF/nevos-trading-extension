@@ -2,6 +2,8 @@
   "use strict";
 
   window.nte_create_analyze_trade_feature = function nte_create_analyze_trade_feature(deps) {
+    // analyze run: idle -> loading -> active (result | error) -> idle (close); a new run or close retires the old one; no reply in 30 s is an error
+    const ANALYZE_TIMEOUT_MS = 30000;
     let request_token = 0;
     let escape_handler = null;
     let style_injected = false;
@@ -787,7 +789,11 @@
           throw new Error(composing ? "Add the items you're asking for first." : "Could not read what you receive from this trade.");
 
         let data = await new Promise((resolve) => {
-          deps.send_message({ type: "analyzeTrade", ...payload }, resolve);
+          let timer = setTimeout(() => resolve(null), ANALYZE_TIMEOUT_MS);
+          deps.send_message({ type: "analyzeTrade", ...payload }, (response) => {
+            clearTimeout(timer);
+            resolve(response);
+          });
         });
         if (current_token !== request_token) return;
         if (!data?.success) {

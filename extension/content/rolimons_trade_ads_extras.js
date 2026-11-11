@@ -4,10 +4,10 @@
   const OPTION_NAME = "Fix Rolimons Pages";
   const PATCH_PATH = "scripts/rolimons_trade_ads_patch.js";
   const TIER_LABELS = { 0: "<10 ads", 10: "10+ ads", 100: "100+ ads", 1000: "1k+ ads", 10000: "10k+ ads" };
+  // ad tiers: active -> backing-off (3 s, 6 s, 12 s, then every 3 min) -> active; a success resets
   let tiers = {};
   let pending = new Set();
   let paint_timer = 0;
-  let tiers_off = false;
   let tier_failures = 0;
   let tier_retry_at = 0;
   let tier_retry_timer = 0;
@@ -15,6 +15,7 @@
   const TIER_MAX_FAILURES = 4;
   const TIER_RETRY_BASE_MS = 3000;
   const TIER_SKIP_RETRY_MS = 5 * 60 * 1000;
+  const TIER_SLOW_RETRY_MS = 3 * 60 * 1000;
 
   function send_message(msg) {
     return new Promise((resolve) => {
@@ -104,13 +105,14 @@
       }
       let label = TIER_LABELS[tier] || "";
       if (badge.textContent !== label) badge.textContent = label;
-      badge.title = "Trade ads this player has created (from RoliBadges)";
+      let title = "Trade ads this player has created (from RoliBadges)";
+      if (badge.title !== title) badge.title = title;
       badge.classList.toggle("is-heavy", tier >= 1000);
     }
   }
 
   async function load_missing() {
-    if (tiers_off || Date.now() < tier_retry_at) return paint();
+    if (Date.now() < tier_retry_at) return paint();
     let ids = [];
     for (let card of document.querySelectorAll(".mix_item")) {
       let id = card_player(card)?.id;
@@ -129,19 +131,19 @@
     let players = res?.players || {};
     // ok with nothing usable is a decoy/non-2xx answer: count it as a failure.
     let usable = ids.some((id) => id in players);
-    // Transient failure: back off and retry; give up for this page after a few.
+    // Transient failure: back off, then retry slowly for as long as the page lives.
     if (res?.ok && usable) {
       tier_failures = 0;
     } else {
       tier_failures += 1;
-      if (tier_failures >= TIER_MAX_FAILURES) tiers_off = true;
-      else {
-        tier_retry_at =
-          Date.now() + TIER_RETRY_BASE_MS * 2 ** (tier_failures - 1);
-        // Static page: no DOM change will call schedule(), so retry on a timer.
-        clearTimeout(tier_retry_timer);
-        tier_retry_timer = setTimeout(schedule, tier_retry_at - Date.now() + 50);
-      }
+      tier_retry_at =
+        Date.now() +
+        (tier_failures >= TIER_MAX_FAILURES
+          ? TIER_SLOW_RETRY_MS
+          : TIER_RETRY_BASE_MS * 2 ** (tier_failures - 1));
+      // Static page: no DOM change will call schedule(), so retry on a timer.
+      clearTimeout(tier_retry_timer);
+      tier_retry_timer = setTimeout(schedule, tier_retry_at - Date.now() + 50);
     }
     for (let id of ids) {
       pending.delete(id);

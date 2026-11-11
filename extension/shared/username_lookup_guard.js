@@ -6,6 +6,7 @@
   const cache_key_prefix = "nte_username_lookup:";
   const hit_ttl_ms = 6 * 60 * 60 * 1000;
   const miss_ttl_ms = 5 * 60 * 1000;
+  // username lookup: unknown -> pending -> cached-hit (6 h) | cached-miss (5 min, parsed body only) | passthrough (uncached)
   const memory_cache = new Map();
   const pending_fetches = new Map();
 
@@ -74,9 +75,11 @@
   async function guarded_lookup(input, init, key) {
     let response = await native_fetch(input, init);
     if (!response.ok) return { passthrough: response };
-    let body = await response.clone().json().catch(() => ({ data: [] }));
-    let has_result = Array.isArray(body?.data) && body.data.length > 0;
-    return write_cache(key, body && typeof body === "object" ? body : { data: [] }, has_result ? hit_ttl_ms : miss_ttl_ms);
+    // A body that doesn't parse says nothing about the username: pass it through uncached.
+    let body = await response.clone().json().catch(() => null);
+    if (!body || typeof body !== "object") return { passthrough: response };
+    let has_result = Array.isArray(body.data) && body.data.length > 0;
+    return write_cache(key, body, has_result ? hit_ttl_ms : miss_ttl_ms);
   }
 
   globalThis.fetch = function nte_guarded_fetch(input, init) {

@@ -45,8 +45,10 @@
 
     let TRADE_DETAIL_CACHE_MAX = 500;
     let TRADE_DETAIL_CACHE_TTL = 30 * 60 * 1000;
+    // trade detail cache: entries expire 30 min after their stamp; a raw-cache hit keeps the stamp of when that raw object was first seen.
     let trade_detail_cache = new Map(),
-      trade_detail_pending = new Map();
+      trade_detail_pending = new Map(),
+      raw_first_seen = new Map();
 
     function trade_detail_cache_get(key) {
       let entry = trade_detail_cache.get(key);
@@ -60,9 +62,9 @@
       return entry.v;
     }
 
-    function trade_detail_cache_set(key, value) {
+    function trade_detail_cache_set(key, value, stamp) {
       if (trade_detail_cache.has(key)) trade_detail_cache.delete(key);
-      trade_detail_cache.set(key, { v: value, t: Date.now() });
+      trade_detail_cache.set(key, { v: value, t: stamp ?? Date.now() });
       while (trade_detail_cache.size > TRADE_DETAIL_CACHE_MAX) {
         let first = trade_detail_cache.keys().next().value;
         trade_detail_cache.delete(first);
@@ -134,9 +136,15 @@
       let trade = cache[key];
       if (!trade || "object" != typeof trade) return null;
       if (!trade.participantAOffer && !trade.participantBOffer && !Array.isArray(trade.offers)) return null;
+      let seen = raw_first_seen.get(key);
+      if (!seen || seen.v !== trade) {
+        seen = { v: trade, t: Date.now() };
+        raw_first_seen.set(key, seen);
+      }
+      // Keep the expired stamp: deleting it would re-stamp the same stale raw trade as fresh.
+      if (Date.now() - seen.t > TRADE_DETAIL_CACHE_TTL) return null;
       let normalized_trade = null == trade.tradeId ? { ...trade, tradeId: parseInt(key, 10) || key } : trade;
-      trade_detail_cache_set(key, normalized_trade);
-      return normalized_trade;
+      return { trade: normalized_trade, stamp: seen.t };
     }
 
     function trade_detail_has_offers(trade) {
@@ -163,11 +171,18 @@
       if (!key) return Promise.resolve(null);
       if (trade_detail_pending.has(key)) return trade_detail_pending.get(key);
 
+      let stamp = null;
       let request = Promise.resolve()
         .then(() => {
           let cached = trade_detail_cache_get(key);
-          if (cached !== undefined) return cached;
-          return get_live_trade_detail(key);
+          if (cached !== undefined) {
+            stamp = trade_detail_cache.get(key)?.t ?? null;
+            return cached;
+          }
+          let live = get_live_trade_detail(key);
+          if (!live) return null;
+          stamp = live.stamp;
+          return live.trade;
         })
         .then((trade) => {
           if (trade_detail_has_offers(trade)) return price_trade_detail(trade);
@@ -179,7 +194,7 @@
             null == trade.tradeId
               ? { ...trade, tradeId: parseInt(key, 10) || key }
               : trade;
-          trade_detail_cache_set(key, normalized_trade);
+          trade_detail_cache_set(key, normalized_trade, stamp);
           try {
             if (
               !window.__nte_trade_row_raw_cache ||
@@ -188,6 +203,7 @@
               window.__nte_trade_row_raw_cache = {};
             }
             window.__nte_trade_row_raw_cache[key] = normalized_trade;
+            raw_first_seen.set(key, { v: normalized_trade, t: stamp ?? Date.now() });
           } catch {}
           return normalized_trade;
         })

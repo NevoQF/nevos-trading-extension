@@ -116,6 +116,7 @@ document.addEventListener("nru_add_trade_id_to_row", (event) => {
 
   if (!Number.isInteger(index) || index < 0) return;
 
+  // row id: pending(attempt n) -> assigned | retrying (100 ms, max 20) -> gave-up (token removed)
   let attempts = 0;
   let max_attempts = 20;
 
@@ -123,7 +124,10 @@ document.addEventListener("nru_add_trade_id_to_row", (event) => {
     let row =
       (token && document.querySelector(`[data-nru-row-token="${token}"]`)) ||
       document.querySelectorAll(".trade-row")[index];
-    if (!row) return;
+    if (!row) {
+      if (++attempts < max_attempts) setTimeout(assign_trade_id, 100);
+      return;
+    }
 
     let trade = resolve_trade_from_row(row) || {
       id: row.getAttribute("data-trade-id") || row.dataset.tradeId,

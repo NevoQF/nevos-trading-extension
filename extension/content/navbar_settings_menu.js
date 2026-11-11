@@ -154,6 +154,7 @@
     link.appendChild(inner);
   }
 
+  // settings item: absent -> built (logo when available) -> bound; rebuilt only when the logo is missing
   function ensure_settings_menu_item() {
     const menu = document.getElementById("settings-popover-menu");
     if (!menu) return;
@@ -162,7 +163,7 @@
 
     let link = menu.querySelector(".nte-settings-toggle");
     if (link) {
-      if (!link.querySelector(".nte-settings-menu-logo")) build_menu_content(link);
+      if (get_logo_url() && !link.querySelector(".nte-settings-menu-logo")) build_menu_content(link);
       wire_settings_link(link);
       return;
     }

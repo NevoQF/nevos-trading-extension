@@ -255,12 +255,13 @@
     });
   }
 
+  // save: picking -> naming -> saving -> saved (theme applied) | save failed (error shown, nothing applied)
   function set_storage(values) {
     return new Promise((resolve) => {
       try {
-        chrome.storage.local.set(values, () => resolve());
+        chrome.storage.local.set(values, () => resolve(!chrome.runtime.lastError));
       } catch {
-        resolve();
+        resolve(false);
       }
     });
   }
@@ -647,11 +648,15 @@
       let packed = pack_theme({ ...pending_upload, name });
       let custom_themes = normalize_custom_themes(saved[custom_themes_key]);
       custom_themes = [packed, ...custom_themes.filter((item) => item.name.toLowerCase() !== packed.name.toLowerCase())].slice(0, 16);
-      await set_storage({
+      let saved_ok = await set_storage({
         [custom_themes_key]: custom_themes,
         [enabled_key]: true,
         [theme_key]: packed,
       });
+      if (!saved_ok) {
+        set_status("Couldn't save the theme. Try again.");
+        return;
+      }
       apply_theme(normalize_theme(packed));
       set_status(`${packed.name} saved.`);
       setTimeout(close_modal, 450);

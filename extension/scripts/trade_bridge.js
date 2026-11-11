@@ -10,6 +10,8 @@
   let cached_trade_items = new Map();
   let cancelled_request_ids = new Set();
   const cancelled_request_ids_max = 64;
+  // select queue: selectItemByInstanceId runs one at a time on the shared pager; a failed select does not block the next
+  let select_queue = Promise.resolve();
 
   function remember_cancelled_request(request_id) {
     let id = String(request_id || "");
@@ -163,6 +165,8 @@
 
   async function run_in_scope(scope, task) {
     return await new Promise((resolve, reject) => {
+      // A destroyed scope never runs $evalAsync, so reject instead of hanging the select queue.
+      if (scope?.$$destroyed) return reject(Error("Trade inventory was reloaded"));
       let run_task = () => {
         try {
           resolve(task());
@@ -442,6 +446,11 @@
         (live_card.__nte_react_item || read_react_trade_item(live_card))) ||
       build_react_toggle_item(tradable_item, collectible_item_instance_id);
     if (!item?.collectibleItemInstanceId) return false;
+    if (
+      normalize_instance_id(item.collectibleItemInstanceId) !==
+      normalize_instance_id(collectible_item_instance_id)
+    )
+      return false;
     handler(item);
     return true;
   }
@@ -681,11 +690,9 @@
   }
   bind_ownership_badge_clicks();
   let trade_detail_stamp_queued = false;
+  // ownership observer: watches body so React replacing a trades container can't leave it on a detached node; the node filter below limits work
   function watch_trade_detail_items() {
-    let root =
-      document.querySelector(".trades-container") ||
-      document.querySelector(".trades-list-detail") ||
-      document.body;
+    let root = document.body;
     if (!root) return;
     stamp_trade_detail_item_ids();
     new MutationObserver((mutations) => {
@@ -1715,6 +1722,13 @@
           if (!native_item) {
             return send_result(request_id, false, "Trade item could not be materialized");
           }
+          // The materialized item takes its id from tradable_item, which may differ from the requested id: never click a different item.
+          if (
+            normalize_instance_id(native_item.collectibleItemInstanceId) !==
+            normalize_instance_id(collectible_item_instance_id)
+          ) {
+            return send_result(request_id, false, "Trade item does not match the requested item");
+          }
 
           await click_trade_item(binding, native_item);
           return send_result(request_id, true);
@@ -1731,12 +1745,16 @@
         }
 
         if ("selectItemByInstanceId" === action) {
-          await select_trade_item_by_instance_id(
-            Number(detail.side_index) || 0,
-            detail.collectible_item_instance_id,
-            detail.target_page,
-            request_id,
+          let run = select_queue.then(() =>
+            select_trade_item_by_instance_id(
+              Number(detail.side_index) || 0,
+              detail.collectible_item_instance_id,
+              detail.target_page,
+              request_id,
+            ),
           );
+          select_queue = run.catch(() => {});
+          await run;
           cancelled_request_ids.delete(String(request_id));
           return send_result(request_id, true);
         }

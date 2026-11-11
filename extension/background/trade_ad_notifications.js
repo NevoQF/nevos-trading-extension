@@ -13,6 +13,8 @@ const trade_ad_notif_max_catchup_pages = 10;
 const trade_ad_notif_page_gap_ms = 3200;
 const trade_ad_notif_want_ids_query_max = 150;
 const trade_ad_notif_feed_429_retries = 4;
+const trade_ad_notif_feed_retry_min_ms = 60000;
+const trade_ad_notif_feed_retry_max_ms = 300000;
 
 let trade_ad_notif_poll_in_flight = false;
 let trade_ad_notif_inventory_cache = {
@@ -169,15 +171,52 @@ function trade_ad_notif_apply_scan_results(
 }
 
 // A Clear/dismiss/settings reset bumps scanGeneration while a scan awaits the
-// network; a scan from an older generation must not overwrite that.
+// network; a scan from an older generation must not overwrite that. Otherwise
+// merge only the scan's own fields onto fresh storage, so a dismiss, ignore or
+// alert toggle made during the awaits survives (and enabled is never flipped on).
+// tan state blob: one object in storage; scan and want-item writes merge only the fields they own onto fresh storage
+const trade_ad_notif_scan_owned_fields = [
+  "lastPollAt",
+  "lastError",
+  "viewerUserId",
+  "ownedCount",
+  "watchableItemCount",
+  "feedScanOffset",
+  "feedExhausted",
+  "feedAdCount",
+  "feedAdsChecked",
+  "feedScanFetchedAt",
+  "feedRetryAt",
+  "feedRetryCount",
+];
+
 async function trade_ad_notif_save_if_current(state) {
   let fresh = await trade_ad_notif_load_state();
   if ((Number(fresh.scanGeneration) || 0) !== (Number(state.scanGeneration) || 0))
     return fresh;
-  await trade_ad_notif_save_state(state);
-  return state;
+  if (!fresh.enabled) return fresh;
+  for (let key of trade_ad_notif_scan_owned_fields) fresh[key] = state[key];
+  fresh.lastPollAt = Math.max(Number(fresh.lastPollAt) || 0, Number(state.lastPollAt) || 0);
+  fresh.matches = trade_ad_notif_filter_matches_by_dismissed(
+    trade_ad_notif_filter_matches_by_ignored_users(
+      state.matches,
+      fresh.ignoredUsers,
+    ),
+    fresh.dismissedTrades,
+  );
+  await trade_ad_notif_save_state(fresh);
+  return fresh;
 }
 
+// Feed 429 backoff: 60 s, then 120 s, 240 s, capped at 5 min.
+function trade_ad_notif_feed_retry_delay_ms(retry_count) {
+  return Math.min(
+    trade_ad_notif_feed_retry_min_ms * 2 ** retry_count,
+    trade_ad_notif_feed_retry_max_ms,
+  );
+}
+
+// tan backfill: idle -> batching -> busy (429: feedRetryAt, poll_once retries with backoff) | exhausted | error; a Clear, reset or disable retires it via scanGeneration/enabled
 async function trade_ad_notif_backfill_feed(state, max_batches = 30) {
   let generation = Number(state.scanGeneration) || 0;
   for (let i = 0; i < max_batches; i++) {
@@ -185,12 +224,18 @@ async function trade_ad_notif_backfill_feed(state, max_batches = 30) {
     state = await trade_ad_notif_load_more_once();
     if ((Number(state.scanGeneration) || 0) !== generation) return state;
     if (state.lastError) {
-      // Soft rate-limit: keep progress, try again on the next poll cycle.
-      if (/429|rate limit|unavailable \(429\)/i.test(String(state.lastError))) {
+      // Keep progress and retry later with backoff (see poll_once); a due retry that fails again moves further out,
+      // so the regular poll keeps running in between.
+      let retry_count = Number(state.feedRetryCount) || 0;
+      if (/429|rate limit|busy/i.test(String(state.lastError)))
         state.lastError = "Trade ads feed is busy. Retrying soon…";
-      }
+      state.feedRetryAt =
+        Date.now() + trade_ad_notif_feed_retry_delay_ms(retry_count);
+      state.feedRetryCount = retry_count + 1;
       break;
     }
+    state.feedRetryAt = 0;
+    state.feedRetryCount = 0;
     if (i + 1 < max_batches && !state.feedExhausted) {
       await new Promise((r) => setTimeout(r, trade_ad_notif_page_gap_ms));
     }
@@ -451,6 +496,8 @@ function trade_ad_notif_reset_scan_progress(state) {
   state.matches = [];
   state.lastScannedCreatedAt = 0;
   state.lastError = "";
+  state.feedRetryAt = 0;
+  state.feedRetryCount = 0;
 }
 
 function trade_ad_notif_rescore_matches(state, owned_ids, get_row, viewer_user_id) {
@@ -1066,6 +1113,19 @@ async function trade_ad_notif_poll_once(options) {
     }
     return existing;
   }
+  // A feed 429 backfill schedules its own retry; run it here on the alarm tick.
+  if (
+    Number(existing.feedRetryAt) > 0 &&
+    Date.now() >= Number(existing.feedRetryAt) &&
+    !existing.feedExhausted
+  ) {
+    trade_ad_notif_poll_in_flight = true;
+    try {
+      return await trade_ad_notif_backfill_feed(existing);
+    } finally {
+      trade_ad_notif_poll_in_flight = false;
+    }
+  }
   if (!force) {
     let since = Date.now() - Number(existing.lastPollAt || 0);
     if (since >= 0 && since < trade_ad_notif_min_poll_ms) {
@@ -1499,6 +1559,7 @@ function trade_ad_notif_handle_message(message, respond) {
   if (message?.type === "trade_ad_notifications_set_disabled_want_items") {
     (async () => {
       let prev = await trade_ad_notif_load_state();
+      let start_gen = Number(prev.scanGeneration) || 0;
       let prev_disabled = trade_ad_notif_normalize_disabled_want_items(
         prev.disabledWantItemIds,
       );
@@ -1518,7 +1579,10 @@ function trade_ad_notif_handle_message(message, respond) {
         scanGeneration: (Number(prev.scanGeneration) || 0) + 1,
       };
 
+      let rescanned = false;
+      let rescan_failed = false;
       if (re_enabled.length && next.enabled === true) {
+        rescanned = true;
         try {
           let ctx = await trade_ad_notif_get_scan_context(false);
           next.watchableItemCount = ctx.viewer.owned.size;
@@ -1548,12 +1612,35 @@ function trade_ad_notif_handle_message(message, respond) {
           );
           next.lastError = "";
         } catch (err) {
+          rescan_failed = true;
           next.lastError = err?.message || String(err);
         }
       }
 
-      await trade_ad_notif_save_state(next);
-      respond({ ok: true, state: trade_ad_notif_state_for_ui(next) });
+      // Merge onto fresh storage so dismisses, ignores and toggles made during
+      // the awaits above survive; only the fields this handler computed are written.
+      let fresh = await trade_ad_notif_load_state();
+      let is_current_gen = (Number(fresh.scanGeneration) || 0) === start_gen;
+      fresh.disabledWantItemIds = next.disabledWantItemIds;
+      fresh.scanGeneration = (Number(fresh.scanGeneration) || 0) + 1;
+      if (rescanned && is_current_gen) {
+        if (rescan_failed) {
+          fresh.lastError = next.lastError;
+        } else {
+          fresh.watchableItemCount = next.watchableItemCount;
+          fresh.seenAdIds = next.seenAdIds;
+          fresh.lastError = next.lastError;
+          fresh.matches = trade_ad_notif_filter_matches_by_dismissed(
+            trade_ad_notif_filter_matches_by_ignored_users(
+              next.matches,
+              fresh.ignoredUsers,
+            ),
+            fresh.dismissedTrades,
+          );
+        }
+      }
+      await trade_ad_notif_save_state(fresh);
+      respond({ ok: true, state: trade_ad_notif_state_for_ui(fresh) });
     })().catch((err) => {
       respond({ ok: false, error: err?.message || String(err) });
     });
