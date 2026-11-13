@@ -505,6 +505,8 @@
     }
     const values_to_use_key = "values_to_use";
     let values_to_use_cache = "rolimons";
+    // "both" counts as Rolimons for every calculation; the trade window adds Routility rows.
+    let values_to_use_both = !1;
     function normalize_values_to_use(value) {
       return String(value || "").toLowerCase() === "routility"
         ? "routility"
@@ -512,6 +514,10 @@
     }
     function sync_values_to_use_cache(value) {
       values_to_use_cache = normalize_values_to_use(value);
+      // LITE has no Routility icon and no Both choice, so a stored "both" stays plain Rolimons there.
+      values_to_use_both =
+        "both" === String(value || "").toLowerCase() &&
+        !(typeof nte_is_lite === "function" && nte_is_lite());
     }
     try {
       chrome.storage.local.get([values_to_use_key], (result) => {
@@ -1027,6 +1033,7 @@
       r(e.exports, "getUSD", () => get_usd),
       r(e.exports, "getRoutilityValue", () => get_routility_value),
       r(e.exports, "getRoutilityData", () => get_routility_data),
+      r(e.exports, "showsBothValues", () => () => values_to_use_both),
       r(e.exports, "getExtensionTitle", () => f),
       r(e.exports, "getColorMode", () => g),
       r(e.exports, "getUserInventory", () => y),
@@ -2415,9 +2422,20 @@
         return { parent: divider, before: null, mode: "detail_divider" };
     }
     if ("sendOrCounter" === c.getPageType()) {
-      // Next to the offer totals, above the send button: users read win/loss there, not under the inventory.
-      // The page has two offer columns; the button lives in the second one.
-      for (let offers_column of document.querySelectorAll(".trade-request-window-offers")) {
+      // Between "Your Offer" and "Your Request", the way the details page shows it between the two
+      // offers. Roblox's send page has one offers column per offer, and the first ends in a gap.
+      let offer_columns = document.querySelectorAll(".trade-request-window-offers");
+      if (offer_columns.length >= 2) {
+        let first_offer = offer_columns[0].querySelector(
+          ":scope > .trade-request-window-offer",
+        );
+        // Still rendering: no mount yet, the caller retries. (Appending now would fight the tax warning.)
+        if (!first_offer) return null;
+        // nextSibling is this row once mounted; ensure_trade_win_loss_container allows for that.
+        return { parent: offer_columns[0], before: first_offer.nextSibling };
+      }
+      // A single offers column (older layout): next to the totals, above the send button.
+      for (let offers_column of offer_columns) {
         let send_button = find_trade_request_send_button(offers_column);
         if (send_button?.parentElement)
           return { parent: send_button.parentElement, before: send_button };
@@ -2730,7 +2748,8 @@
       return clear_trade_win_loss_retry(), h();
     let t = !(await c.getOption("Disable Win/Loss Stats RAP"));
     let show_usd = !!(await c.getOption("Show Routility USD Values"));
-    let value_source = await get_trade_value_source();
+    // "Both" in Values to use shows both win/loss chips too.
+    let value_source = c.showsBothValues() ? "both" : await get_trade_value_source();
     // A superseded run must not hide the chip the newest run just drew.
     if (run !== trade_win_loss_run) return;
     let show_roli_value = value_source === "rolimons" || value_source === "both";
@@ -2980,6 +2999,7 @@
     trade_value_source_key,
     "values_to_use",
     "Quick Proof",
+    "Relative Trade Times",
   ];
   let trade_profit_colorblind_mode = !1;
   let trade_profit_colorblind_profile = colorblind_mode_profile_default;
@@ -3547,25 +3567,29 @@
     let pct = get_trade_percent(diff, left);
     return [pct, diff];
   }
-  async function routility_value_side(offer, use_post_tax = !1) {
-    let pt = c.getPageType();
+  // Routility value of an offer's items, without Robux.
+  function routility_items_total(offer) {
     let total = 0;
-    if ("details" === pt) {
+    if ("details" === c.getPageType()) {
       for (let item of offer.querySelectorAll(".item-card-container"))
         total += get_trade_context_routility_value(
           item,
           item.querySelector(".item-card-price"),
         );
-    } else {
-      let slots = offer.querySelectorAll(
-        '[ng-repeat="slot in offer.slots"], .trade-request-item:not(.blank-item):not(.draggable-border)',
-      );
-      for (let item of slots)
-        total += get_trade_context_routility_value(
-          item,
-          item.querySelector(".item-card-price, .item-value"),
-        );
+      return total;
     }
+    let slots = offer.querySelectorAll(
+      '[ng-repeat="slot in offer.slots"], .trade-request-item:not(.blank-item):not(.draggable-border)',
+    );
+    for (let item of slots)
+      total += get_trade_context_routility_value(
+        item,
+        item.querySelector(".item-card-price, .item-value"),
+      );
+    return total;
+  }
+  async function routility_value_side(offer, use_post_tax = !1) {
+    let total = routility_items_total(offer);
     let robux = get_trade_offer_robux_total(offer);
     if (use_post_tax) robux = Math.round(0.7 * robux);
     return total + (Number.isFinite(robux) ? robux : 0);
@@ -7228,9 +7252,10 @@
         for (let offer of e.getElementsByClassName("trade-list-detail-offer")) {
           let robux_line = find_trade_offer_total_line(offer);
           if (robux_line)
-            T(
+            set_trade_offer_totals(
+              offer,
               robux_line.querySelector(".robux-line-amount"),
-              await c.calculateValueTotalDetails(offer),
+              await c.calculateValueTotalDetails(offer, !0),
             );
         }
     }
@@ -7240,11 +7265,20 @@
       )) {
         let robux_line = find_trade_offer_total_line(offer);
         if (robux_line)
-          T(
+          set_trade_offer_totals(
+            offer,
             robux_line.querySelector(".robux-line-amount"),
-            await c.calculateValueTotalSendOrCounter(offer),
+            await c.calculateValueTotalSendOrCounter(offer, !0),
           );
       }
+  }
+  // [items, robux] from the total calculators; "Both" adds the Routility total with the same Robux.
+  function set_trade_offer_totals(offer, amount_el, [items_value, robux_value]) {
+    T(amount_el, items_value + robux_value);
+    set_trade_total_routility_row(
+      amount_el,
+      c.showsBothValues() ? routility_items_total(offer) + robux_value : 0,
+    );
   }
   function format_trade_item_routility_usd(value) {
     let numeric = Number(value) || 0,
@@ -7254,45 +7288,32 @@
       maximumFractionDigits: 2,
     })}`;
   }
-  function set_trade_item_routility_usd(price_el, usd_value) {
-    if (!(price_el instanceof Element)) return;
-    price_el.querySelector(".nte-routility-usd-row")?.remove();
-    price_el.querySelector(".nte-routility-usd-break")?.remove();
-    price_el.querySelector(".nte-routility-usd-inline")?.remove();
-    let inline = !!price_el.closest(
-      ".trade-request-window-offer .trade-request-item, .trade-request-window-offer .item-value",
-    );
-    if (inline) {
-      price_el.style.removeProperty("height");
-      price_el.style.removeProperty("min-height");
-      price_el.style.removeProperty("overflow");
-    } else if (!(usd_value > 0)) {
-      price_el.style.height = "44px";
-      price_el.style.removeProperty("min-height");
-      price_el.style.removeProperty("overflow");
-    }
-    if (!(usd_value > 0)) return;
+  // Routility rows under an item's value: the Routility value ("Both" in Values to use) and the
+  // Routility USD price. Both carry the USD row classes, so layout, the totals clearance and the
+  // thumbnail filters treat them alike.
+  function build_trade_item_routility_row(kind, amount, inline) {
     let row = document.createElement("span"),
       icon = document.createElement("img"),
       text = document.createElement("span"),
       dark = "dark" === c.getColorMode();
-    row.className = inline
-      ? "valueSpan nte-routility-usd-inline"
-      : "valueSpan nte-routility-usd-row";
-    row.style.display = inline ? "flex" : "inline-flex";
+    row.className =
+      (inline
+        ? "valueSpan nte-routility-usd-inline"
+        : "valueSpan nte-routility-usd-row") +
+      ("value" === kind ? " nte-routility-value-row" : "");
+    row.title =
+      "value" === kind
+        ? "Routility value (RAP when Routility has none)"
+        : "Routility USD price";
+    row.style.display = "inline-flex";
     row.style.alignItems = "center";
     row.style.gap = inline ? "4px" : "6px";
-    row.style.marginLeft = inline ? "0" : "2px";
+    row.style.marginLeft = inline ? "8px" : "2px";
     if (!inline) row.style.marginTop = "4px";
     row.style.minHeight = inline ? "18px" : "20px";
     row.style.lineHeight = inline ? "18px" : "20px";
     row.style.whiteSpace = "nowrap";
     row.style.verticalAlign = "middle";
-    if (inline) {
-      row.style.width = "100%";
-      row.style.boxSizing = "border-box";
-      row.style.marginTop = "2px";
-    }
     icon.className = "nte-routility-usd-logo";
     icon.src = c.getURL("assets/routility.png");
     icon.alt = "";
@@ -7305,16 +7326,52 @@
     icon.style.objectFit = "contain";
     icon.style.flex = "0 0 16px";
     text.className = "valueSpan text-robux";
-    text.style.color = dark ? "rgba(125, 211, 252, 0.96)" : "#0369a1";
+    if ("usd" === kind)
+      text.style.color = dark ? "rgba(125, 211, 252, 0.96)" : "#0369a1";
     text.style.display = "inline-flex";
     text.style.alignItems = "center";
     text.style.minHeight = inline ? "18px" : "20px";
     text.style.lineHeight = inline ? "18px" : "20px";
-    text.textContent = format_trade_item_routility_usd(usd_value);
+    text.textContent =
+      "value" === kind
+        ? c.commafy(Math.round(amount))
+        : format_trade_item_routility_usd(amount);
     row.appendChild(icon);
     row.appendChild(text);
+    return row;
+  }
+  function set_trade_item_routility_rows(price_el, rout_value, usd_value) {
+    if (!(price_el instanceof Element)) return;
+    let inline = !!price_el.closest(
+      ".trade-request-window-offer .trade-request-item, .trade-request-window-offer .item-value",
+    );
+    let rows = [];
+    if (rout_value > 0) rows.push(["value", rout_value]);
+    if (usd_value > 0) rows.push(["usd", usd_value]);
+    // Rebuild only when the amounts, theme or row count changed.
+    let key = `${rows.map((r) => r.join(":")).join("|")}|${c.getColorMode()}`;
+    let present = price_el.querySelectorAll(
+      ".nte-routility-usd-row, .nte-routility-usd-inline",
+    ).length;
+    if (price_el.dataset.nteRoutilityRows === key && present === rows.length)
+      return;
+    price_el.dataset.nteRoutilityRows = key;
+    for (let old of price_el.querySelectorAll(
+      ".nte-routility-usd-row, .nte-routility-usd-break, .nte-routility-usd-inline",
+    ))
+      old.remove();
     if (inline) {
-      let roli_value = null;
+      price_el.style.removeProperty("height");
+      price_el.style.removeProperty("min-height");
+      price_el.style.removeProperty("overflow");
+    } else if (!rows.length) {
+      price_el.style.height = "44px";
+      price_el.style.removeProperty("min-height");
+      price_el.style.removeProperty("overflow");
+    }
+    if (!rows.length) return;
+    if (inline) {
+      let anchor = null;
       let roli_icon = price_el.querySelector(".icon-rolimons");
       if (roli_icon) {
         let node = roli_icon.nextElementSibling;
@@ -7324,35 +7381,76 @@
             !node.classList.contains("nte-routility-usd-inline") &&
             !node.classList.contains("nte-routility-usd-row")
           ) {
-            roli_value = node;
+            anchor = node;
             break;
           }
           node = node.nextElementSibling;
         }
       }
-      if (!roli_value) {
-        roli_value = [
+      if (!anchor) {
+        anchor = [
           ...price_el.querySelectorAll(
             ".valueSpan:not(.nte-routility-usd-inline):not(.nte-routility-usd-row)",
           ),
         ].pop();
       }
-      if (roli_value) roli_value.insertAdjacentElement("afterend", row);
-      else price_el.appendChild(row);
+      for (let [kind, amount] of rows) {
+        let row = build_trade_item_routility_row(kind, amount, !0);
+        if (anchor) anchor.insertAdjacentElement("afterend", row);
+        else price_el.appendChild(row);
+        anchor = row;
+      }
       price_el.style.overflow = "visible";
       return;
     }
-    let br = document.createElement("br");
-    br.className = "nte-routility-usd-break";
-    price_el.appendChild(br);
-    price_el.appendChild(row);
+    for (let [kind, amount] of rows) {
+      let br = document.createElement("br");
+      br.className = "nte-routility-usd-break";
+      price_el.appendChild(br);
+      price_el.appendChild(build_trade_item_routility_row(kind, amount, !1));
+    }
     price_el.style.height = "auto";
-    price_el.style.minHeight = "72px";
+    price_el.style.minHeight = rows.length > 1 ? "92px" : "72px";
     price_el.style.overflow = "visible";
+  }
+  // "Both" in Values to use: the offer's Routility total under its Rolimons total. The row has the
+  // valueSpan class so the RAP-total parser and the "values off" cleanup both skip or remove it.
+  function set_trade_total_routility_row(amount_el, amount) {
+    if (!(amount_el instanceof Element)) return;
+    let row = amount_el.querySelector(".nte-routility-total-row");
+    // createValuesSpans fixes this cell at 44px; a third line has to grow it, or it covers the buttons.
+    if (!(amount > 0)) {
+      if (row) {
+        row.remove();
+        if ("auto" === amount_el.style.height) amount_el.style.height = "44px";
+      }
+      return;
+    }
+    if ("auto" !== amount_el.style.height) amount_el.style.height = "auto";
+    if (!row) {
+      row = document.createElement("span");
+      row.className = "valueSpan nte-routility-total-row";
+      row.title = "Routility total (RAP for items Routility has no value for)";
+      let icon = document.createElement("img");
+      icon.className = "nte-routility-usd-logo";
+      icon.src = c.getURL("assets/routility.png");
+      icon.alt = "";
+      icon.decoding = "async";
+      icon.width = 18;
+      icon.height = 18;
+      // valueSpan keeps it out of the details-page RAP reader (last two .text-robux-lg:not(.valueSpan)).
+      let text = document.createElement("span");
+      text.className = "valueSpan text-robux-lg";
+      row.appendChild(icon);
+      row.appendChild(text);
+      amount_el.appendChild(row);
+    }
+    set_text_if_changed(row.lastChild, c.commafy(Math.round(amount)));
   }
   async function k() {
     let show_routility_usd = !!(await c.getOption("Show Routility USD Values"));
-    sync_trade_routility_usd_layout(show_routility_usd);
+    let show_routility_value = c.showsBothValues();
+    sync_trade_routility_usd_layout(show_routility_usd, show_routility_value);
     for (let item of document.querySelectorAll(".item-card-container")) {
       let e = item.querySelector(".item-card-price");
       if (!e) continue;
@@ -7371,8 +7469,9 @@
       e.querySelector(".valueSpan") || c.createValuesSpans(e);
       let o = c.getValueOrRAP(a.targetId, a.name, a.rap);
       set_text_if_changed(e.querySelector(".valueSpan"), c.commafy(o));
-      set_trade_item_routility_usd(
+      set_trade_item_routility_rows(
         e,
+        show_routility_value ? get_trade_context_routility_value(item, e) : 0,
         show_routility_usd
           ? Number(
               c.getUSD(a.targetId, a.name) ||
@@ -7412,8 +7511,9 @@
       let value_text = c.commafy(o);
       if (value_span && value_span.innerText !== value_text)
         value_span.innerText = value_text;
-      set_trade_item_routility_usd(
+      set_trade_item_routility_rows(
         e,
+        show_routility_value ? get_trade_context_routility_value(item, e) : 0,
         show_routility_usd
           ? Number(
               c.getUSD(a.targetId, a.name) ||
@@ -8472,6 +8572,7 @@
     );
     if (row_time > 0) return nte_quick_proof_format_date(row_time);
     let text =
+      trade_row_date_text(row) ||
       row?.querySelector(".text-date-hint, .trade-sent-date")?.textContent ||
       row?.textContent ||
       "";
@@ -12302,11 +12403,7 @@
     } catch {
       user_id = 0;
     }
-    let date =
-      row
-        .querySelector(".trade-sent-date")
-        ?.textContent?.replace(/\s+/g, " ")
-        .trim() || "";
+    let date = trade_row_date_text(row).replace(/\s+/g, " ").trim();
     let name =
       row
         .querySelector(".text-lead")
@@ -13292,6 +13389,7 @@
       let id = t?.id ?? t?.tradeId;
       if (null == id || "" === id) continue;
       mapped.push({ id: String(id), status: t.status, listTrade: t });
+      remember_trade_created_at(id, t?.created);
     }
     if (!mapped.length) return 0;
     let now = Date.now();
@@ -13401,6 +13499,91 @@
       setTimeout(() => finish({}), Math.max(200, timeout_ms));
     });
   }
+  // Trade row dates: Roblox's "11/11/2026" reads "8 hours ago" for trades under 30 days old,
+  // with the exact time in the tooltip. Only the existing text node's value changes, so Roblox's
+  // own re-render just puts the date back until the next pass.
+  const relative_trade_times_option_name = "Relative Trade Times";
+  const trade_row_relative_max_days = 30;
+  let trade_created_at_by_id = new Map();
+  let trade_row_age_timer = 0;
+  function remember_trade_created_at(id, created) {
+    let time = Date.parse(created || "");
+    if (!(time > 0)) return;
+    trade_created_at_by_id.set(String(id), time);
+    if (trade_created_at_by_id.size > 2000)
+      trade_created_at_by_id.delete(trade_created_at_by_id.keys().next().value);
+  }
+  // Roblox's own date for a row, also while it reads "8 hours ago" (row fingerprints, Quick Proof).
+  function trade_row_date_text(row) {
+    let el = row?.querySelector?.(".trade-sent-date");
+    if (!el) return "";
+    let text = el.textContent || "";
+    return el.hasAttribute("data-nte-date") && text === el.getAttribute("data-nte-shown")
+      ? el.getAttribute("data-nte-date") || ""
+      : text;
+  }
+  function format_trade_row_age(ms) {
+    let minutes = Math.floor(Math.max(0, ms) / 60000);
+    if (minutes < 1) return "Just now";
+    if (minutes < 60) return `${minutes} min ago`;
+    let hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours} ${1 === hours ? "hour" : "hours"} ago`;
+    let days = Math.floor(hours / 24);
+    return `${days} ${1 === days ? "day" : "days"} ago`;
+  }
+  async function sync_trade_row_relative_times() {
+    let on;
+    try {
+      on = false !== (await c.getOption(relative_trade_times_option_name));
+    } catch {
+      return;
+    }
+    let now = Date.now();
+    for (let row of document.querySelectorAll(".trade-row")) {
+      let date_el = row.querySelector(".trade-sent-date");
+      let text = date_el?.firstChild;
+      if (!text || 3 !== text.nodeType) continue;
+      // By trade id first: a reused row can keep an older trade's time attribute.
+      let time =
+        trade_created_at_by_id.get(row.getAttribute("nruTradeId") || "") ||
+        Number(row.getAttribute("data-nte-trade-time")) ||
+        0;
+      let relative =
+        on && time > 0 && now - time < trade_row_relative_max_days * 86400000;
+      // Roblox may have put its date back; remember whatever it shows now.
+      if (!date_el.hasAttribute("data-nte-date") || text.nodeValue !== date_el.getAttribute("data-nte-shown"))
+        date_el.setAttribute("data-nte-date", text.nodeValue);
+      let next = relative ? format_trade_row_age(now - time) : date_el.getAttribute("data-nte-date");
+      if (text.nodeValue !== next) text.nodeValue = next;
+      set_attr_if_changed(date_el, "data-nte-shown", next);
+      // Keep any tooltip another extension put there; put it back when the date returns.
+      if (relative) {
+        if (!date_el.hasAttribute("data-nte-title"))
+          date_el.setAttribute("data-nte-title", date_el.getAttribute("title") || "");
+        set_attr_if_changed(date_el, "title", new Date(time).toLocaleString());
+      } else if (date_el.hasAttribute("data-nte-title")) {
+        let previous = date_el.getAttribute("data-nte-title");
+        if (previous) date_el.setAttribute("title", previous);
+        else date_el.removeAttribute("title");
+        date_el.removeAttribute("data-nte-title");
+      }
+    }
+    let keep_ticking = on && !!document.querySelector(".trade-row");
+    if (keep_ticking && !trade_row_age_timer)
+      trade_row_age_timer = setInterval(() => {
+        // A reloaded extension leaves this page's copy behind; stop instead of failing every minute.
+        if (!nte_extension_alive()) {
+          clearInterval(trade_row_age_timer);
+          trade_row_age_timer = 0;
+          return;
+        }
+        if (!document.hidden) void sync_trade_row_relative_times();
+      }, 60000);
+    else if (!keep_ticking && trade_row_age_timer) {
+      clearInterval(trade_row_age_timer);
+      trade_row_age_timer = 0;
+    }
+  }
   async function L() {
     if (trade_page_should_skip_hidden()) return;
     if (trade_category_soft_mode()) {
@@ -13415,6 +13598,7 @@
     try {
       await L_inner();
     } finally {
+      void sync_trade_row_relative_times();
       L_running = false;
       if (L_queued) {
         L_queued = false;
@@ -16447,8 +16631,8 @@
       style.id = "nte-trade-item-price-style";
       document.head.appendChild(style);
     }
-    if (style.dataset.nteVer === "usd-send-1") return;
-    style.dataset.nteVer = "usd-send-1";
+    if (style.dataset.nteVer === "usd-send-3") return;
+    style.dataset.nteVer = "usd-send-3";
     let scopes = [
       ".trade-list-detail-offer",
       ".trade-request-window-offer",
@@ -16462,6 +16646,12 @@
       ${sel("", ".text-robux-tile")}{margin-left:5px!important;padding-left:0!important}
       ${sel(".light-theme ", ".text-robux-tile")}{color:rgb(32,34,39)}
       ${sel(".dark-theme ", ".text-robux-tile")}{color:rgb(247,247,248)}
+      /* Roblox overlaps inventory rows by 20px, which fits its one-line price. Our value line under a
+         two-line name ran into the next row, so cards that show a value keep their full height.
+         (With Routility rows the cards already grow, and their spacing is tuned for the overlap.) */
+      .trade-inventory-panel:not(.nte-has-routility-usd) li.trade-item-card:has(.item-card-price .valueSpan){
+        margin-bottom:0!important;
+      }
       /* Routility USD adds a 3rd price row — grow inventory tiles so it isn't clipped */
       .trade-inventory-panel.nte-has-routility-usd .item-cards,
       .trade-inventory-panel.nte-has-routility-usd .item-cards-stackable{
@@ -16487,6 +16677,33 @@
         max-height:none!important;
         overflow:visible!important;
       }
+      /* Routility value and USD together ("Both" + USD): a 4th row */
+      .trade-inventory-panel.nte-has-two-routility-rows .trade-inventory-card,
+      .trade-inventory-panel.nte-has-two-routility-rows .list-item.item-card,
+      .trade-inventory-panel.nte-has-two-routility-rows .list-item.grid-item-container,
+      .trade-inventory-panel.nte-has-two-routility-rows .item-card-container{
+        min-height:284px!important;
+      }
+      .trade-inventory-panel.nte-has-two-routility-rows .item-card-price,
+      .trade-list-detail-offer.nte-has-two-routility-rows .item-card-price,
+      .trade-request-window-offer .item-card-price:has(.nte-routility-value-row):has(.nte-routility-usd-row:not(.nte-routility-value-row)){
+        min-height:92px!important;
+      }
+      .robux-line-amount .nte-routility-total-row{
+        display:flex!important;
+        align-items:center!important;
+        justify-content:flex-end!important;
+        gap:6px!important;
+        margin:2px 0 8px!important;
+        white-space:nowrap!important;
+      }
+      .robux-line-amount .nte-routility-total-row img{
+        display:block!important;
+        width:18px!important;
+        height:18px!important;
+        object-fit:contain!important;
+        flex:0 0 18px!important;
+      }
       .item-card-price .nte-routility-usd-row{
         display:inline-flex!important;
         align-items:center!important;
@@ -16500,26 +16717,39 @@
         overflow:visible!important;
         max-width:100%!important;
       }
-      .trade-request-window-offer .trade-request-item .item-value .nte-routility-usd-inline{
+      /* Routility rows wrap beside the thumbnail (a flex box keeps clear of the float) and the tile grows to fit. */
+      .trade-request-window-offer .trade-request-item:has(.nte-routility-usd-inline){
+        height:auto!important;
+        min-height:70px!important;
+      }
+      .trade-request-window-offer .trade-request-item .item-value:has(.nte-routility-usd-inline){
         display:flex!important;
-        width:100%!important;
-        box-sizing:border-box!important;
+        flex-wrap:wrap!important;
+        align-items:center!important;
+        row-gap:2px!important;
+      }
+      /* On the value line next to RAP and Rolimons: a full-width row drops under the thumbnail and out of the tile. */
+      .trade-request-window-offer .trade-request-item .item-value .nte-routility-usd-inline{
+        display:inline-flex!important;
+        width:auto!important;
+        vertical-align:middle!important;
         align-items:center!important;
         gap:4px!important;
-        margin:2px 0 0!important;
+        margin:0 0 0 8px!important;
         min-height:18px!important;
         line-height:18px!important;
         white-space:nowrap!important;
       }
     `;
   }
-  function sync_trade_routility_usd_layout(show_usd) {
+  function sync_trade_routility_usd_layout(show_usd, show_value = !1) {
     ensure_trade_item_price_styles();
-    let on = !!show_usd;
     for (let el of document.querySelectorAll(
       ".trade-inventory-panel, .trade-list-detail-offer",
-    ))
-      el.classList.toggle("nte-has-routility-usd", on);
+    )) {
+      el.classList.toggle("nte-has-routility-usd", !!show_usd || !!show_value);
+      el.classList.toggle("nte-has-two-routility-rows", !!show_usd && !!show_value);
+    }
   }
   function ensure_trade_page_dominance_styles() {
     let style = document.getElementById("nte-trade-dominance-style");

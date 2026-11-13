@@ -23,7 +23,7 @@ const chevron_svg =
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Relative Trade Times","enabledByDefault":true,"path":"relative-trade-times"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 
@@ -129,9 +129,9 @@ function normalize_trade_value_source(value) {
 }
 
 function normalize_values_to_use(value) {
-  return String(value || "").toLowerCase() === "routility"
-    ? "routility"
-    : "rolimons";
+  let mode = String(value || "").toLowerCase();
+  // "both": Rolimons drives every calculation; the trade window also shows Routility values.
+  return mode === "routility" || mode === "both" ? mode : "rolimons";
 }
 
 function normalize_counter_trade_choice_mode(value) {
@@ -2151,6 +2151,8 @@ function create_values_to_use_toggle(mode) {
     choices: [
       { value: "rolimons", label: "Rolimons" },
       { value: "routility", label: "Routility" },
+      // LITE has no Routility icon for the extra rows.
+      ...(typeof nte_is_lite === "function" && nte_is_lite() ? [] : [{ value: "both", label: "Both" }]),
     ],
     on_change: async (value) => {
       await set_option_value(values_to_use_key, value);
@@ -6337,6 +6339,8 @@ const ta_actions = [
 ];
 
 let ta_poll_timer = null;
+// finished_at of the bulk result this popup is showing; a result already seen elsewhere is not shown again.
+let ta_result_shown_at = 0;
 const ta_locked_trade_ids_key = "nteLockedTradeIds";
 
 function ta_send(type, extra) {
@@ -6770,14 +6774,24 @@ function ta_update_buttons(progress) {
         if (svg) svg.style.display = "";
       }
 
-      // A finished run's result shows for 10 minutes, then the row goes back to normal.
+      // A finished run's result shows once: in the popup that's open when it finishes, or in the
+      // next one opened within 10 minutes. After that the row goes back to normal.
       let result_age = progress?.finished_at ? Date.now() - progress.finished_at : 0;
+      let show_result =
+        result_age < 10 * 60 * 1000 &&
+        (!progress?.seen || ta_result_shown_at === progress.finished_at);
       if (
         !progress?.running &&
         progress?.action === action.id &&
         (progress?.total > 0 || progress?.error) &&
-        result_age < 10 * 60 * 1000
+        show_result
       ) {
+        // Only once the row is on screen: the Actions tab can open on Mass Sending, and polling
+        // keeps running while another tab is showing.
+        if (btn.offsetParent && ta_result_shown_at !== progress.finished_at) {
+          ta_result_shown_at = progress.finished_at;
+          void ta_send("ta_result_seen", { finished_at: progress.finished_at });
+        }
         if (progress.error === "Cancelled by user") {
           status_el.textContent = `Stopped. ${progress.done} of ${progress.total} done`;
         } else if (progress.error) {
@@ -6867,6 +6881,9 @@ function actions_bind_category_picks(root) {
       if (btn.dataset.actionsCategory === "mass") {
         let ms_root = root.querySelector("#actions-ms-root");
         if (ms_root) void render_mass_send_panel(ms_root);
+      } else {
+        // The bulk rows are on screen now: a result drawn while they were hidden counts as seen from here.
+        void ta_send("ta_progress").then((progress) => progress && ta_update_buttons(progress));
       }
     });
   });
@@ -7097,59 +7114,6 @@ function ms_send(type, extra) {
       else resolve(r);
     });
   });
-}
-
-async function ms_active_tab_is_roblox() {
-  if (is_mobile_browser()) return true;
-  try {
-    let tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    let url = String(tabs[0]?.url || tabs[0]?.pendingUrl || "");
-    let host = new URL(url).hostname.toLowerCase();
-    return host === "roblox.com" || host.endsWith(".roblox.com");
-  } catch {
-    return false;
-  }
-}
-
-async function ms_focus_or_open_roblox_tab() {
-  try {
-    let tabs = await chrome.tabs.query({
-      url: ["https://www.roblox.com/*", "https://roblox.com/*"],
-    });
-    let tab = tabs.find((t) => t.active) || tabs[0];
-    if (tab?.id != null) {
-      await chrome.tabs.update(tab.id, { active: true });
-      if (tab.windowId != null)
-        await chrome.windows.update(tab.windowId, { focused: true });
-      return true;
-    }
-  } catch {}
-  try {
-    await chrome.tabs.create({ url: "https://www.roblox.com/trades" });
-    return true;
-  } catch {}
-  return false;
-}
-
-function ms_append_go_roblox_button(line) {
-  if (!line) return;
-  let btn = document.createElement("button");
-  btn.type = "button";
-  btn.className = "ms-go-roblox";
-  btn.textContent = "Go to Roblox";
-  btn.addEventListener("click", (ev) => {
-    ev.preventDefault();
-    void ms_focus_or_open_roblox_tab();
-  });
-  line.appendChild(btn);
-}
-
-function ms_show_switch_tab_hint(root) {
-  let line = root.querySelector("#ms-progress-line");
-  if (!line) return;
-  line.classList.add("ta-err");
-  line.textContent = "Switch to a Roblox tab to mass send.";
-  ms_append_go_roblox_button(line);
 }
 
 function ms_default_config() {
@@ -7729,7 +7693,7 @@ function ms_progress_text(progress) {
   if (!progress) return "Idle";
   if (progress.running) {
     let status = String(progress.status || "");
-    if (/ratelimited waiting \d+s/i.test(status)) return status;
+    if (/^rate limited by roblox/i.test(status)) return status;
     if (/waiting for new 2fa code/i.test(status)) return status;
     if (progress.prompt?.kind === "code") {
       if (progress.prompt.error) return progress.prompt.error;
@@ -7740,7 +7704,7 @@ function ms_progress_text(progress) {
     let wait_sec = progress.wait_until
       ? Math.max(0, Math.ceil((progress.wait_until - Date.now()) / 1000))
       : 0;
-    if (wait_sec > 0) return `Ratelimited waiting ${wait_sec}s`;
+    if (wait_sec > 0) return `Rate limited by Roblox. Waiting ${wait_sec}s`;
     return (
       status ||
       `Sending… ${progress.sent || 0} sent, ${progress.skipped || 0} skipped, ${progress.failed || 0} failed`
@@ -7844,8 +7808,6 @@ function ms_update_progress_ui(root, progress) {
         progress.error !== ms_cancelled_by_user_error
       ),
     );
-    if (/switch to a roblox tab/i.test(line.textContent))
-      ms_append_go_roblox_button(line);
   }
   let running = !!progress?.running;
   root.classList.toggle("is-running", running);
@@ -8896,10 +8858,6 @@ async function render_mass_send_panel(root) {
         }
       }
     }
-    if (!(await ms_active_tab_is_roblox())) {
-      ms_show_switch_tab_hint(root);
-      return;
-    }
     let confirmed = await ms_confirm_start(cfg, slot_metrics);
     if (!confirmed) return;
     let start_res = await ms_send("ms_start", {
@@ -8985,3 +8943,379 @@ render_update_banner();
 if (typeof init_tap_tooltips === "function") {
   init_tap_tooltips(document);
 }
+// Report a problem. The panel's data-state is the send machine: editing -> sending -> sent | error,
+// and an edit after an error goes back to editing. Opening the panel collects diagnostics, page details
+// and a screenshot (the newest collect wins); Send and Copy wait for it. One send runs at a time, and
+// it uses the screenshot that was showing when Send was clicked.
+const report_prompt_off_key = "nte_report_prompt_off";
+const report_draft_key = "nte_report_draft";
+const report_last_id_key = "nte_report_last_id";
+const report_prompt_max_age_ms = 30 * 60 * 1000;
+const report_shot_max_width = 1600;
+const report_lite = typeof nte_is_lite === "function" && nte_is_lite();
+let report_shot = "";
+let report_page = null;
+let report_bg = null;
+let report_settings = {};
+let report_collect_run = 0;
+let report_collecting = false;
+let report_sending = false;
+let report_preview_timer = 0;
+// Firefox 140+ asks the user before an extension sends data (permissions with data_collection).
+let report_consent_api = false;
+try {
+  Promise.resolve(chrome.permissions?.getAll?.())
+    .then((all) => {
+      report_consent_api = Array.isArray(all?.data_collection);
+    })
+    .catch(() => {});
+} catch {}
+
+function report_el(id) {
+  return document.getElementById(id);
+}
+
+function report_sync_buttons() {
+  let busy = report_sending || report_collecting;
+  report_el("reportSend").disabled = busy;
+  report_el("reportCopy").disabled = busy;
+}
+
+function report_set_state(state, status = "", tone = "") {
+  let panel = report_el("panel-report");
+  if (!panel) return;
+  if (panel.dataset.state !== state) panel.dataset.state = state;
+  let status_el = report_el("reportStatus");
+  status_el.textContent = status;
+  status_el.classList.toggle("is-ok", tone === "ok");
+  status_el.classList.toggle("is-error", tone === "error");
+  report_sync_buttons();
+}
+
+async function report_changed_settings() {
+  let saved = await get_storage(get_option_names());
+  let changed = {};
+  for (let entry of option_groups) {
+    if (typeof entry === "string") continue;
+    let value = saved[entry.name];
+    if (typeof value === "boolean" && value !== !!entry.enabledByDefault) changed[entry.name] = value;
+  }
+  return changed;
+}
+
+function report_payload() {
+  let report = {
+    v: 1,
+    description: report_el("reportText").value.trim().slice(0, 2000),
+    extension: {
+      version: String(chrome.runtime.getManifest()?.version || ""),
+      variant: report_lite ? "lite" : "full",
+    },
+  };
+  if (report_el("reportDiag").checked) {
+    report.diagnostics = {
+      browser: navigator.userAgent,
+      language: navigator.language,
+      settings_changed: report_settings,
+      state: report_bg?.state || null,
+      errors: report_bg?.errors || [],
+      requests: report_bg?.requests || [],
+    };
+  }
+  if (report_page && report_el("reportPage").checked) report.page = report_page;
+  return report;
+}
+
+function report_include_shot() {
+  return !report_lite && !!report_shot && report_el("reportShot").checked;
+}
+
+function report_paint_preview() {
+  report_el("reportPreview").textContent = report_collecting
+    ? "Collecting…"
+    : JSON.stringify(report_payload(), null, 2) + (report_include_shot() ? "\n\n+ the screenshot shown above" : "");
+  report_el("reportShotImg").hidden = !report_include_shot();
+}
+
+function report_copy_text(report) {
+  let time = (at) => new Date(Number(at) || 0).toLocaleTimeString();
+  let frame = (stack) => {
+    let match = String(stack || "").match(/ext\/[\w./-]+:\d+:\d+/);
+    return match ? ` (${match[0]})` : "";
+  };
+  let lines = [];
+  let diag = report.diagnostics;
+  if (diag) {
+    lines.push(`Browser: ${diag.browser}`);
+    let changed = Object.entries(diag.settings_changed || {}).map(([name, on]) => `${name} ${on ? "on" : "off"}`);
+    if (changed.length) lines.push(`Changed settings: ${changed.join(", ")}`);
+    if (diag.state?.trade_actions) lines.push(`Trade actions: ${JSON.stringify(diag.state.trade_actions)}`);
+    if (diag.state?.mass_send) lines.push(`Mass send: ${JSON.stringify(diag.state.mass_send)}`);
+    if (diag.state?.rolimons_wait_s) lines.push(`Rolimons paused for ${diag.state.rolimons_wait_s}s`);
+    let errors = diag.errors.slice(-8);
+    if (errors.length) lines.push(`Errors (last ${errors.length} of ${diag.errors.length}):`);
+    for (let entry of errors) lines.push(`- ${time(entry.at)} ${entry.where}: ${entry.message}${frame(entry.stack)}`);
+    let requests = diag.requests.slice(-8);
+    if (requests.length) lines.push(`Failed requests (last ${requests.length} of ${diag.requests.length}):`);
+    for (let entry of requests) lines.push(`- ${time(entry.at)} ${entry.url} -> ${entry.status} (${entry.ms} ms)`);
+  }
+  if (report.page) {
+    let page = report.page;
+    lines.push(`Page: ${page.url} (${page.viewport}${page.theme ? `, ${page.theme} theme` : ""})`);
+  }
+  let head = `Problem report, Trading Extension ${report.extension.variant === "lite" ? "LITE " : ""}${report.extension.version}`;
+  let body = lines.length ? `\n\`\`\`\n${lines.join("\n").replace(/`/g, "'")}\n\`\`\`` : "";
+  return `${head}\n${report.description || "(no description)"}${body}`;
+}
+
+// Big screens are scaled down to 1600px wide; smaller captures stay as they are.
+async function report_shrink(data_url) {
+  try {
+    let image = new Image();
+    image.src = data_url;
+    await image.decode();
+    if (image.naturalWidth <= report_shot_max_width) return data_url;
+    let canvas = document.createElement("canvas");
+    canvas.width = report_shot_max_width;
+    canvas.height = Math.round((image.naturalHeight * report_shot_max_width) / image.naturalWidth);
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.75);
+  } catch {
+    return data_url;
+  }
+}
+
+async function report_collect() {
+  let run = ++report_collect_run;
+  report_collecting = true;
+  report_shot = "";
+  report_page = null;
+  report_bg = null;
+  for (let id of ["reportShotRow", "reportShotImg", "reportPageRow"]) report_el(id).hidden = true;
+  report_sync_buttons();
+  report_paint_preview();
+  let tab = null;
+  let in_tab = false;
+  try {
+    in_tab = !!(await chrome.tabs.getCurrent?.());
+  } catch {}
+  if (!in_tab) {
+    try {
+      [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    } catch {}
+  }
+  // Only the sites the extension works on, so an unrelated tab is never captured.
+  let supported = tab?.id >= 0 && /^https:\/\/(?:www\.)?(?:roblox|rolimons)\.com\//.test(tab.url || "");
+  let [bg, page, shot, settings, stored] = await Promise.all([
+    ms_send("nte_report_diag"),
+    supported
+      ? (async () => chrome.tabs.sendMessage(tab.id, { type: "nte_report_page" }, { frameId: 0 }))().catch(() => null)
+      : null,
+    supported && !report_lite
+      ? (async () =>
+          report_shrink(await chrome.tabs.captureVisibleTab(tab.windowId, { format: "jpeg", quality: 75 })))().catch(
+          () => "",
+        )
+      : "",
+    report_changed_settings().catch(() => ({})),
+    get_storage([report_prompt_off_key]),
+  ]);
+  if (run !== report_collect_run) return;
+  let { sensitive = false, ...page_details } = page && typeof page === "object" ? page : {};
+  report_bg = bg && typeof bg === "object" ? bg : null;
+  report_page = page && typeof page === "object" ? page_details : null;
+  report_shot = typeof shot === "string" && shot.startsWith("data:image/") && shot.length < 5_500_000 ? shot : "";
+  report_settings = settings;
+  report_collecting = false;
+  report_el("reportShotRow").hidden = !report_shot;
+  if (report_shot) report_el("reportShotImg").src = report_shot;
+  // A 2FA code box or account settings may be on screen: the user decides whether to include it.
+  report_el("reportShot").checked = !!report_shot && !sensitive;
+  report_el("reportShotNote").hidden = !(report_shot && sensitive);
+  report_el("reportPageRow").hidden = !report_page;
+  report_el("reportPromptOn").checked = !stored[report_prompt_off_key];
+  report_sync_buttons();
+  report_paint_preview();
+}
+
+async function open_report_panel() {
+  document.querySelectorAll(".tab").forEach((tab) => tab.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach((panel) => panel.classList.add("hidden"));
+  report_el("panel-report").classList.remove("hidden");
+  for (let id of ["restoreDefaultSettings", "reportProblemBtn"]) {
+    let btn = document.getElementById(id);
+    if (btn) btn.hidden = true;
+  }
+  // A send in flight keeps its panel as it is; reopening never starts a second one.
+  if (report_sending) return;
+  report_set_state("editing");
+  try {
+    let saved = await chrome.storage.session?.get([report_draft_key, report_last_id_key]);
+    let draft = String(saved?.[report_draft_key] || "");
+    if (draft && !report_el("reportText").value) report_el("reportText").value = draft;
+    let last_id = String(saved?.[report_last_id_key] || "");
+    if (last_id && !report_sending) report_set_state("editing", `Your last report ID: ${last_id}`);
+  } catch {}
+  report_el("reportText").focus();
+  await report_collect();
+}
+
+function report_send() {
+  if (report_sending || report_collecting) return;
+  let report = report_payload();
+  if (report.description.length < 3) {
+    report_set_state("error", "Describe the problem in a few words first.", "error");
+    report_el("reportText").focus();
+    return;
+  }
+  // Read now: reopening the panel during Firefox's prompt starts a new capture.
+  let shot = report_include_shot() ? report_shot : "";
+  let needed = new Set();
+  if (report.diagnostics) ["technicalAndInteraction", "browsingActivity"].forEach((type) => needed.add(type));
+  if (shot || report.page) needed.add("websiteContent");
+  if (report.page) needed.add("browsingActivity");
+  // Called straight from the click: Firefox only shows its consent prompt for user actions.
+  let consent =
+    report_consent_api && needed.size
+      ? (async () => chrome.permissions.request({ data_collection: [...needed] }))().catch(() => false)
+      : Promise.resolve(true);
+  report_sending = true;
+  report_set_state("sending", "Sending…");
+  consent.then(async (granted) => {
+    try {
+      if (!granted) {
+        report_set_state("error", "Firefox didn't allow sending this. Untick some items, or use Copy instead.", "error");
+        return;
+      }
+      if (shot) report.screenshot = shot;
+      let result = await ms_send("nte_report_send", { report });
+      if (!result?.ok) {
+        report_set_state("error", result?.error || "Couldn't send the report. Use Copy instead.", "error");
+        return;
+      }
+      report_set_state(
+        "sent",
+        `Sent. Your report ID is ${result.id}. Mention it in #bugs on our Discord if you'd like a reply.`,
+        "ok",
+      );
+      // Clear the box only if it still holds the report that was sent.
+      if (report_el("reportText").value.trim() === report.description) report_el("reportText").value = "";
+      chrome.storage.session?.set({ [report_last_id_key]: result.id })?.catch?.(() => {});
+      chrome.storage.session?.remove(report_draft_key)?.catch?.(() => {});
+    } finally {
+      report_sending = false;
+      report_sync_buttons();
+      report_paint_preview();
+    }
+  });
+}
+
+async function report_copy() {
+  let report = report_payload();
+  try {
+    await navigator.clipboard.writeText(report_copy_text(report));
+    report_set_state("editing", "Copied. Paste it in #bugs on our Discord.", "ok");
+  } catch {
+    report_set_state("error", "Couldn't copy. Open \"See exactly what's sent\" and copy it from there.", "error");
+  }
+}
+
+function report_clear_badge(tab_id) {
+  let quiet = (call) => {
+    try {
+      call()?.catch?.(() => {});
+    } catch {}
+  };
+  // null hands the tab back to the global badge (mass send's "2FA"); "" where null is refused.
+  try {
+    chrome.action.setBadgeText({ tabId: tab_id, text: null })?.catch?.(() =>
+      quiet(() => chrome.action.setBadgeText({ tabId: tab_id, text: "" })),
+    );
+  } catch {
+    quiet(() => chrome.action.setBadgeText({ tabId: tab_id, text: "" }));
+  }
+  quiet(() => chrome.action.setBadgeBackgroundColor({ tabId: tab_id, color: null }));
+}
+
+// The background puts "!" on the toolbar icon after the first extension error on a page each
+// session; opening the popup on that tab within 30 minutes offers the report once.
+async function render_report_prompt() {
+  let area = chrome.storage.session;
+  if (!area) return;
+  let prompt = null;
+  let tab = null;
+  try {
+    prompt = (await area.get("nte_report_prompt"))?.nte_report_prompt;
+    if (!prompt?.tab_id) return;
+    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  } catch {
+    return;
+  }
+  let fresh = Date.now() - (Number(prompt.at) || 0) < report_prompt_max_age_ms;
+  if (fresh && tab?.id !== prompt.tab_id) return;
+  area.remove("nte_report_prompt").catch?.(() => {});
+  report_clear_badge(prompt.tab_id);
+  if (!fresh) return;
+  let banner = document.createElement("div");
+  banner.className = "permissions-banner report-prompt";
+  banner.innerHTML = `
+    <div class="permissions-banner-inner">
+      <svg class="permissions-banner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <div class="permissions-banner-text">
+        <strong>Something broke in this tab</strong>
+        <span>A report with diagnostics helps us fix it.</span>
+      </div>
+      <button type="button" class="permissions-banner-btn" data-report-prompt="open">Report</button>
+      <button type="button" class="report-prompt-dismiss" data-report-prompt="dismiss">Not now</button>
+    </div>`;
+  banner.addEventListener("click", (event) => {
+    let action = event.target.closest("[data-report-prompt]")?.dataset.reportPrompt;
+    if (!action) return;
+    banner.remove();
+    if (action === "open") void open_report_panel();
+  });
+  let content = document.getElementById("content");
+  content.parentNode.insertBefore(banner, content);
+}
+
+(() => {
+  let panel = report_el("panel-report");
+  if (!panel) return;
+  if (report_lite) {
+    report_el("reportSend").hidden = true;
+    report_el("reportCopy").textContent = "Copy report";
+    report_el("reportNote").textContent =
+      "LITE never sends anything. Copy the report and paste it in #bugs on our Discord.";
+  }
+  report_el("reportProblemBtn")?.addEventListener("click", () => void open_report_panel());
+  // Leaving the panel through any tab brings the footer button back.
+  document.querySelectorAll(".tab").forEach((tab) =>
+    tab.addEventListener("click", () => {
+      report_el("reportProblemBtn").hidden = false;
+    }),
+  );
+  report_el("reportBack").addEventListener("click", () => {
+    document.querySelector('.tab[data-tab="options"]')?.click();
+  });
+  report_el("reportText").addEventListener("input", () => {
+    if (panel.dataset.state === "error") report_set_state("editing");
+    clearTimeout(report_preview_timer);
+    report_preview_timer = setTimeout(() => {
+      report_paint_preview();
+      let draft = report_el("reportText").value.slice(0, 2000);
+      chrome.storage.session?.set({ [report_draft_key]: draft })?.catch?.(() => {});
+    }, 250);
+  });
+  for (let id of ["reportDiag", "reportShot", "reportPage"]) {
+    report_el(id).addEventListener("change", () => {
+      if (panel.dataset.state === "error") report_set_state("editing");
+      report_paint_preview();
+    });
+  }
+  report_el("reportPromptOn").addEventListener("change", (event) => {
+    set_storage({ [report_prompt_off_key]: !event.target.checked });
+  });
+  report_el("reportSend").addEventListener("click", report_send);
+  report_el("reportCopy").addEventListener("click", () => void report_copy());
+  void render_report_prompt();
+})();

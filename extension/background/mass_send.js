@@ -3,8 +3,6 @@ const mass_send_owners_api_url =
 const mass_send_send_url = "https://trades.roblox.com/v2/trades/send";
 const mass_send_delay_ms = 3000;
 const mass_send_rate_limit_wait_ms = 61000;
-const ms_need_roblox_tab_error = "Switch to a Roblox tab to mass send.";
-const ms_need_roblox_tab_wait = "Switch to a Roblox tab to keep sending.";
 const mass_send_rate_unlocked_key = "mass_send_rate_unlocked";
 const ms_totp_secret_key = "roblox_totp_secret_b32";
 const ms_totp_mode_key = "roblox_totp_storage_mode";
@@ -325,51 +323,6 @@ async function ms_write_trade_daily_limit_snapshot(state) {
       fetched_at: Date.now(),
     });
   } catch {}
-}
-
-function ms_is_roblox_url(url) {
-  try {
-    let host = new URL(String(url || "")).hostname.toLowerCase();
-    return host === "roblox.com" || host.endsWith(".roblox.com");
-  } catch {
-    return false;
-  }
-}
-
-function ms_is_mobile() {
-  return /android|iphone|ipod|iemobile|mobile/i.test(navigator.userAgent || "");
-}
-
-async function ms_roblox_tab_is_in_front() {
-  // Mobile has no way to keep a Roblox tab in front while the extension is open.
-  if (ms_is_mobile()) return true;
-  if (!chrome?.windows?.getLastFocused || !chrome?.tabs?.query) return false;
-  let win = null;
-  try {
-    win = await chrome.windows.getLastFocused({ windowTypes: ["normal"] });
-  } catch {
-    win = null;
-  }
-  let tabs = [];
-  try {
-    if (win?.id != null) {
-      tabs = await chrome.tabs.query({ active: true, windowId: win.id });
-    } else {
-      tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    }
-  } catch {
-    return false;
-  }
-  return ms_is_roblox_url(tabs[0]?.url || tabs[0]?.pendingUrl);
-}
-
-async function ms_wait_for_roblox_tab() {
-  while (!ms_abort) {
-    if (await ms_roblox_tab_is_in_front()) return;
-    ms_state.status = ms_need_roblox_tab_wait;
-    await ms_sleep(400);
-  }
-  throw new Error("Cancelled by user");
 }
 
 function ms_tab_message(tab_id, message, timeout_ms = 1500) {
@@ -1147,13 +1100,19 @@ async function ms_get_csrf() {
   return resp.headers.get("x-csrf-token") || "";
 }
 
-async function ms_wait_rate_limit(run_id) {
+// Roblox's per-minute send limit clears after one wait. A 429 that outlasts five waits is its
+// 24-hour cap, which our own count can only estimate, so the run stops instead of waiting forever.
+const ms_max_rate_limit_waits = 5;
+const ms_rate_limit_stuck_error =
+  "Roblox kept rate limiting trade sends for 5 minutes. Its limit of 100 trades in 24 hours is probably used up: trades sent from another device or tool count too, even ones already declined. Try again in a few hours.";
+
+async function ms_wait_rate_limit(run_id, attempt = 1) {
   if (!ms_run_live(run_id)) return;
   let ends = Date.now() + mass_send_rate_limit_wait_ms;
   ms_state.wait_until = ends;
   while (ms_run_live(run_id) && Date.now() < ends) {
     let left = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
-    ms_state.status = `Ratelimited waiting ${left}s`;
+    ms_state.status = `Rate limited by Roblox. Waiting ${left}s (try ${attempt} of ${ms_max_rate_limit_waits})`;
     let slice = Math.min(1000, Math.max(0, ends - Date.now()));
     if (slice <= 0) break;
     await ms_sleep(slice);
@@ -1206,8 +1165,10 @@ async function ms_send_trade_with_rate_limit(
   };
   let result = await send();
   csrf = result.csrf || csrf;
-  while (ms_run_live(run_id) && result?.resp?.status === 429) {
-    await ms_wait_rate_limit(run_id);
+  for (let attempt = 1; ms_run_live(run_id) && result?.resp?.status === 429; attempt++) {
+    if (attempt > ms_max_rate_limit_waits)
+      return { ...result, csrf, error: ms_rate_limit_stuck_error };
+    await ms_wait_rate_limit(run_id, attempt);
     if (!ms_run_live(run_id)) break;
     result = await send();
     csrf = result.csrf || csrf;
@@ -2096,7 +2057,6 @@ async function ms_run(config) {
 
   ms_keep_alive_tick();
   try {
-    await ms_wait_for_roblox_tab();
     let offer_assets = ms_normalize_asset_ids(config?.offer_slots);
     let request_assets = ms_normalize_asset_ids(config?.request_slots);
     let hours = ms_clamp_hours(config?.online_hours);
@@ -2400,13 +2360,6 @@ function mass_send_handle_message(message, respond) {
           respond({
             ok: false,
             error: "Rate the extension 5 stars to unlock Mass Sending.",
-          });
-          return;
-        }
-        if (!(await ms_roblox_tab_is_in_front())) {
-          respond({
-            ok: false,
-            error: ms_need_roblox_tab_error,
           });
           return;
         }

@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: Apr 30, 2026
+Last updated: Nov 13, 2026
 
 The extension is designed to run in the browser and keep ordinary settings and feature state in local browser extension storage.
 
@@ -19,6 +19,22 @@ The extension contacts Roblox, Rolimons, Routility, and nevos-extension.com APIs
 ## Trade history and analysis
 
 If trade history or trade analysis features are used, trade-related data may be sent to nevos-extension.com endpoints so the feature can evaluate or store trade information. These requests are used to provide the requested extension features.
+
+## Problem reports
+
+The popup's "Report a problem" sends a report only when you press Send. It contains what you typed plus the parts you leave ticked:
+
+- **Diagnostics:** Extension version, browser, settings you changed, and the Extension's last errors and failed requests, each with the kind of page it happened on. Addresses are cut to host and path, with names and long IDs removed.
+- **Screenshot:** the current tab, offered only on Roblox and Rolimons tabs.
+- **Page details:** page address and title, window size.
+
+The popup shows exactly what will be sent first. Diagnostics never include passwords, cookies or 2FA codes. A screenshot shows whatever is on screen, so the popup unticks it when a 2FA code box or account settings may be visible.
+
+Until you send a report, the Extension keeps its last errors and failed requests in browser session storage, which the browser clears when it closes.
+
+A sent report is stored on nevos-extension.com and posted to a private staff channel on our Discord server. Both copies are deleted after 30 days. Your IP address only limits spam and is not stored with the report.
+
+The LITE build never sends reports; it only copies them for you to paste.
 
 ## No sale of user data
 

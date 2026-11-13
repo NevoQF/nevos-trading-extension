@@ -11,6 +11,7 @@
   "background": {
     "service_worker": "background/background.js",
     "scripts": [
+      "shared/browser_compat.js",
       "shared/build_variant.js",
       "shared/rolimons_item_details.js",
       "shared/nte_sales_core.js",
@@ -20,6 +21,7 @@
       "background/trade_ad_notifications.js",
       "background/inbound_trade_webhook_preview.js",
       "background/mass_send.js",
+      "background/problem_report.js",
       "background/background.js"
     ]
   },
@@ -30,6 +32,11 @@
       "data_collection_permissions": {
         "required": [
           "none"
+        ],
+        "optional": [
+          "technicalAndInteraction",
+          "websiteContent",
+          "browsingActivity"
         ]
       }
     },
@@ -320,7 +327,7 @@
     "clipboardWrite"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.55",
+  "version": "3.10.56",
   "web_accessible_resources": [
     {
       "matches": [

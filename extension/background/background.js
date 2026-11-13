@@ -5,37 +5,34 @@ if (
   globalThis.chrome = globalThis.browser;
 }
 
-function nte_mark_roblox_request_url(value) {
-  try {
-    let url = new URL(String(value), "https://www.roblox.com/");
-    if (url.hostname === "roblox.com" || url.hostname.endsWith(".roblox.com")) {
-      url.searchParams.set("NTERequest", "1");
-      return url.toString();
+// Roblox request marking and problem-report diagnostics. Firefox loads this from the manifest.
+if (typeof importScripts === "function") importScripts("../shared/browser_compat.js");
+
+// Problem reports: every context's errors and failed requests end up here, in session
+// storage so a worker restart keeps them and a browser restart forgets them.
+const nte_diag_key = "nte_diag_v1";
+const nte_diag_limits = { errors: 50, requests: 30 };
+let nte_diag_save_timer = 0;
+function nte_diag_keep(list, entry) {
+  let items = nte_diag[list];
+  items.push(entry);
+  if (items.length > nte_diag_limits[list]) items.splice(0, items.length - nte_diag_limits[list]);
+  clearTimeout(nte_diag_save_timer);
+  nte_diag_save_timer = setTimeout(() => {
+    let saved = { errors: nte_diag.errors, requests: nte_diag.requests };
+    chrome.storage.session?.set({ [nte_diag_key]: saved })?.catch?.(() => {});
+  }, 1000);
+}
+nte_diag.sink = nte_diag_keep;
+let nte_diag_ready = Promise.resolve(chrome.storage.session?.get(nte_diag_key))
+  .then((saved) => {
+    let old = saved?.[nte_diag_key];
+    for (let list of ["errors", "requests"]) {
+      if (Array.isArray(old?.[list]))
+        nte_diag[list] = [...old[list], ...nte_diag[list]].slice(-nte_diag_limits[list]);
     }
-  } catch {}
-  return value;
-}
-
-function nte_mark_roblox_request_input(input) {
-  if ("string" === typeof input || input instanceof URL)
-    return nte_mark_roblox_request_url(input);
-  if ("undefined" !== typeof Request && input instanceof Request) {
-    let url = nte_mark_roblox_request_url(input.url);
-    return url === input.url ? input : new Request(url, input);
-  }
-  return input;
-}
-
-if (
-  "function" === typeof globalThis.fetch &&
-  !globalThis.fetch.__nte_request_marked
-) {
-  let native_fetch = globalThis.fetch.bind(globalThis);
-  let marked_fetch = (input, init) =>
-    native_fetch(nte_mark_roblox_request_input(input), init);
-  Object.defineProperty(marked_fetch, "__nte_request_marked", { value: true });
-  globalThis.fetch = marked_fetch;
-}
+  })
+  .catch(() => {});
 
 // One hung socket must not block the shared trade queue or leave poll flags set.
 function fetch_with_timeout(url, init = {}, ms = 20000) {
@@ -85,12 +82,13 @@ if (typeof importScripts === "function") {
     importScripts("trade_ad_notifications.js");
     importScripts("inbound_trade_webhook_preview.js");
     importScripts("mass_send.js");
+    importScripts("problem_report.js");
   }
 }
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Relative Trade Times","enabledByDefault":true,"path":"relative-trade-times"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
@@ -136,9 +134,9 @@ function normalize_trade_value_source(value) {
 }
 
 function normalize_values_to_use(value) {
-  return String(value || "").toLowerCase() === "routility"
-    ? "routility"
-    : "rolimons";
+  let mode = String(value || "").toLowerCase();
+  // "both": Rolimons drives every calculation; the trade window also shows Routility values.
+  return mode === "routility" || mode === "both" ? mode : "rolimons";
 }
 
 function normalize_counter_trade_choice_mode(value) {
@@ -4554,6 +4552,66 @@ async function fetch_rolimons_player_thumbs(ids, is_bundles) {
   return out;
 }
 
+// Report prompt: the first extension error on a page each browser session puts "!" on the
+// toolbar icon for that tab; the popup then offers to report it. Off when the user unticks it.
+let nte_report_prompting = false;
+async function nte_report_maybe_prompt(tab_id) {
+  let area = chrome.storage.session;
+  if (!area || nte_report_prompting) return;
+  nte_report_prompting = true;
+  try {
+    let [session, local] = await Promise.all([
+      area.get("nte_report_prompted"),
+      chrome.storage.local.get("nte_report_prompt_off"),
+    ]);
+    if (session?.nte_report_prompted || local?.nte_report_prompt_off) return;
+    await area.set({ nte_report_prompted: true, nte_report_prompt: { tab_id, at: Date.now() } });
+    await chrome.action?.setBadgeBackgroundColor?.({ tabId: tab_id, color: "#d93025" });
+    await chrome.action?.setBadgeText?.({ tabId: tab_id, text: "!" });
+  } catch {
+  } finally {
+    nte_report_prompting = false;
+  }
+}
+
+// What "Diagnostics" adds to a report besides the popup's own settings and version info.
+function nte_report_diag() {
+  let ms = typeof ms_state === "object" && ms_state ? ms_state : null;
+  return {
+    errors: nte_diag.errors.slice(),
+    requests: nte_diag.requests.slice(),
+    state: {
+      trade_actions: ta_state.action
+        ? {
+            running: ta_state.running,
+            action: ta_state.action,
+            phase: ta_state.phase,
+            done: ta_state.done,
+            total: ta_state.total,
+            skipped: ta_state.skipped,
+            unchecked: ta_state.unchecked,
+            error: String(ta_state.error || "").slice(0, 200),
+          }
+        : null,
+      mass_send:
+        ms && (ms.running || ms.total)
+          ? {
+              running: ms.running,
+              phase: ms.phase,
+              sent: ms.sent,
+              skipped: ms.skipped,
+              failed: ms.failed,
+              total: ms.total,
+              error: String(ms.error || "").slice(0, 200),
+            }
+          : null,
+      rolimons_wait_s: rolimons_backing_off()
+        ? Math.ceil((rolimons_backoff_until - Date.now()) / 1000)
+        : 0,
+    },
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (typeof trade_ad_notif_handle_message === "function") {
     let handled = trade_ad_notif_handle_message(message, respond);
@@ -4562,6 +4620,38 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (typeof mass_send_handle_message === "function") {
     let handled = mass_send_handle_message(message, respond);
     if (handled) return handled;
+  }
+  if (typeof problem_report_handle_message === "function") {
+    let handled = problem_report_handle_message(message, respond);
+    if (handled) return handled;
+  }
+
+  if (message?.type === "nte_diag") {
+    let list = message.list === "errors" || message.list === "requests" ? message.list : "";
+    let entry = message.entry;
+    // Incognito tabs share this worker; their traces must not end up in normal-window reports.
+    if (!list || !entry || typeof entry !== "object" || sender?.tab?.incognito) return false;
+    let text = (value, max) => String(value ?? "").slice(0, max);
+    let at = Number(entry.at) || Date.now();
+    nte_diag_keep(
+      list,
+      list === "errors"
+        ? { at, kind: text(entry.kind, 20), where: text(entry.where, 200), message: text(entry.message, 300), stack: text(entry.stack, 900) }
+        : {
+            at,
+            where: text(entry.where, 200),
+            url: text(entry.url, 200),
+            status: typeof entry.status === "number" ? entry.status : text(entry.status, 12),
+            ms: Number(entry.ms) || 0,
+          },
+    );
+    if (list === "errors" && sender?.tab?.id >= 0) void nte_report_maybe_prompt(sender.tab.id);
+    return false;
+  }
+
+  if (message?.type === "nte_report_diag") {
+    nte_diag_ready.then(() => respond(nte_report_diag()));
+    return true;
   }
 
   if (message === "getTradeListData") {
@@ -4938,6 +5028,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 
   if (message?.type === "ta_progress") {
     respond({ ...ta_state });
+    return false;
+  }
+
+  // The popup showed this finished result; the next popup opens without it.
+  if (message?.type === "ta_result_seen") {
+    if (!ta_state.running && ta_state.finished_at === message.finished_at) ta_state.seen = true;
     return false;
   }
 
@@ -5395,11 +5491,13 @@ async function ta_fetch(url, init) {
   return resp;
 }
 
+// v2 details, like the poller caches: v1 rejects any trade that contains a bundle, and only v2
+// names each copy (collectibleItemInstanceId). Cached list rows have no offers, so they are refetched.
 async function ta_get_trade_detail(trade_id, cache) {
-  if (cache[trade_id] || cache[String(trade_id)])
-    return cache[trade_id] || cache[String(trade_id)];
+  let cached = cache[trade_id] || cache[String(trade_id)];
+  if (cached?.participantAOffer && cached?.participantBOffer) return cached;
   let id = ta_run_id;
-  let resp = await ta_fetch(`https://trades.roblox.com/v1/trades/${trade_id}`, {
+  let resp = await ta_fetch(`https://trades.roblox.com/v2/trades/${trade_id}`, {
     credentials: "include",
   });
   if (ta_gone(id)) return null;
@@ -5441,29 +5539,56 @@ async function ta_decline_trade(trade_id, csrf) {
   return { ok: resp.ok, csrf, status: resp.status };
 }
 
-// Does user_id still own this exact copy (UAID)? true | false | null (unknown).
-// One request per item instead of paging the whole inventory, which hit 429s
-// after ~10 partners and left their side unchecked.
-async function ta_user_owns_copy(user_id, asset_id, uaid) {
-  if (!user_id || !(asset_id > 0) || !uaid) return null;
+// Does user_id still hold every one of these copies? true | false (one is gone for sure) | null (unknown).
+// Uses the tradable-items list the trade window and the trade page's "no longer own" banner use: it
+// has each copy's id and covers bundles. (It answers 403 for a user who made their inventory private,
+// about 1 in 300 traders; that stays unknown.) `listings` keeps one list per user for the run, paged
+// only until the copies are found (Roblox allows 40 pages a minute).
+//
+// A wrong "gone" declines a good trade, so a copy only counts as gone when the user's whole list,
+// read from the start in this call, is not empty and does not have it:
+//  - pages read for an earlier trade may be minutes old, so the list is read again first;
+//  - an empty list proves nothing (a Roblox hiccup looks the same; the trade page's banner agrees).
+const TA_TRADABLE_MAX_PAGES = 40;
+const ta_new_listing = () => ({ ids: new Set(), cursor: "", complete: false, pages: 0 });
+async function ta_user_owns_copies(listings, user_id, copy_ids) {
+  if (!user_id || !copy_ids.length || !copy_ids.every(Boolean)) return null;
   let id = ta_run_id;
-  let cursor = "";
-  for (let page = 0; page < 10; page++) {
-    let url = `https://inventory.roblox.com/v1/users/${user_id}/items/Asset/${asset_id}?limit=100`;
-    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
-    let resp = await ta_fetch(url, { credentials: "include" });
-    if (ta_gone(id)) return null;
-    // Private inventory: only "owns no copy at all" is certain.
-    if (resp.status === 403)
-      return (await ta_user_owns_asset(user_id, asset_id)) === false ? false : null;
-    if (!resp.ok) return null;
-    let json = await resp.json().catch(() => null);
-    if (!Array.isArray(json?.data)) return null;
-    if (json.data.some((row) => String(row?.instanceId) === String(uaid))) return true;
-    cursor = json.nextPageCursor;
-    if (!cursor) return false;
+  let listing = (listings[user_id] ||= { ...ta_new_listing(), gone: new Set() });
+  // One sold item is often in many trades: copies already shown gone need no second look.
+  if (copy_ids.some((copy_id) => listing.gone.has(copy_id))) return false;
+  let all_found = () => copy_ids.every((copy_id) => listing.ids.has(copy_id));
+  // Reads pages until the copies are found or the list ends; false when a page can't be read.
+  let read = async () => {
+    while (!all_found() && !listing.complete && listing.pages < TA_TRADABLE_MAX_PAGES) {
+      let resp = await ta_fetch(
+        `https://trades.roblox.com/v2/users/${user_id}/tradableitems?sortBy=CreationTime&cursor=${encodeURIComponent(listing.cursor)}&limit=100&sortOrder=Desc`,
+        { credentials: "include" },
+      );
+      if (ta_gone(id)) return false;
+      let json = resp.ok ? await resp.json().catch(() => null) : null;
+      // Not latched: the next trade with this user tries again from the same page.
+      if (!Array.isArray(json?.items)) return false;
+      for (let item of json.items)
+        for (let instance of item?.instances || [])
+          if (instance?.collectibleItemInstanceId)
+            listing.ids.add(String(instance.collectibleItemInstanceId).toLowerCase());
+      listing.pages++;
+      listing.cursor = json.nextPageCursor || "";
+      if (!listing.cursor) listing.complete = true;
+    }
+    return true;
+  };
+  let resumed = listing.pages > 0;
+  if (!(await read())) return null;
+  if (!all_found() && listing.complete && resumed) {
+    Object.assign(listing, ta_new_listing());
+    if (!(await read())) return null;
   }
-  return null;
+  if (all_found()) return true;
+  if (!listing.complete || !listing.ids.size) return null;
+  for (let copy_id of copy_ids) if (!listing.ids.has(copy_id)) listing.gone.add(copy_id);
+  return false;
 }
 
 function ta_get_trade_item_target_id(item) {
@@ -5482,23 +5607,6 @@ function ta_get_trade_item_target_id(item) {
   );
 }
 
-async function ta_user_owns_asset(user_id, target_id) {
-  if (!user_id || !(Number(target_id) > 0)) return null;
-  try {
-    let resp = await ta_fetch(
-      `https://inventory.roblox.com/v1/users/${user_id}/items/Asset/${target_id}/is-owned`,
-      { credentials: "include" },
-    );
-    if (!resp.ok) return null;
-    let value = await resp.json().catch(() => null);
-    return typeof value === "boolean"
-      ? value
-      : !!(value?.isOwned ?? value?.owned);
-  } catch {
-    return null;
-  }
-}
-
 function ta_trade_is_older_than(trade, max_age_ms, list_trade_type) {
   if (!(max_age_ms > 0)) return true;
   let ts = get_trade_timestamp_ms(trade, list_trade_type);
@@ -5508,16 +5616,17 @@ function ta_trade_is_older_than(trade, max_age_ms, list_trade_type) {
 
 // Splits a trade detail into my/their offers (v1 offers[] or v2 participants).
 function ta_split_offers(detail, my_user_id) {
+  // v2 offers first: a cache entry merged from both shapes must not fall back to v1, which has no copy ids.
+  let a = detail?.participantAOffer;
+  let b = detail?.participantBOffer;
+  if (a?.user?.id === my_user_id) return { my_offer: a, their_offer: b };
+  if (b?.user?.id === my_user_id) return { my_offer: b, their_offer: a };
   if (detail?.offers) {
     return {
       my_offer: detail.offers.find((o) => o.user?.id === my_user_id),
       their_offer: detail.offers.find((o) => o.user?.id !== my_user_id),
     };
   }
-  let a = detail?.participantAOffer;
-  let b = detail?.participantBOffer;
-  if (a?.user?.id === my_user_id) return { my_offer: a, their_offer: b };
-  if (b?.user?.id === my_user_id) return { my_offer: b, their_offer: a };
   return {};
 }
 
@@ -5678,7 +5787,8 @@ async function ta_run_action(
       );
       let auth_json = auth_resp.ok ? await auth_resp.json() : {};
       let my_user_id = auth_json.id;
-      let copy_cache = {};
+      // user id -> that user's tradable copies read so far this run.
+      let listings = {};
 
       for (let trade of trades) {
         if (stopped()) {
@@ -5696,55 +5806,34 @@ async function ta_run_action(
           if (run === ta_run_id) ta_state.error = "Cancelled by user";
           break;
         }
+        // Details that didn't load mean the trade wasn't checked; count it as such.
         if (!detail) {
           ta_state.skipped++;
+          ta_state.unchecked++;
           continue;
         }
 
         let { my_offer, their_offer } = ta_split_offers(detail, my_user_id);
         if (!my_offer || !their_offer) {
           ta_state.skipped++;
+          ta_state.unchecked++;
           continue;
         }
 
-        let get_items = (offer) =>
-          offer?.userAssets ||
-          offer?.assets ||
-          offer?.userItems ||
-          offer?.items ||
-          offer?.userCollectibles ||
-          offer?.collectibles ||
-          [];
-        // v1 trade details carry the copy's id (UAID) in `id`.
-        let get_user_asset_id = (item) =>
-          item?.userAssetId ??
-          item?.userAsset?.userAssetId ??
-          item?.userAsset?.id ??
-          item?.id;
-
         let has_unowned = false;
         let unknown = false;
-        let sides = [
-          { user_id: my_offer.user?.id, items: get_items(my_offer) },
-          { user_id: their_offer.user?.id, items: get_items(their_offer) },
-        ];
-
-        for (let side of sides) {
-          if (!side.user_id || !side.items.length) continue;
-          for (let item of side.items) {
-            if (stopped()) break;
-            let uaid = get_user_asset_id(item);
-            let asset_id = ta_get_trade_item_target_id(item);
-            let key = `${side.user_id}:${asset_id}:${uaid}`;
-            if (!(key in copy_cache))
-              copy_cache[key] = await ta_user_owns_copy(side.user_id, asset_id, uaid);
-            if (copy_cache[key] === false) {
-              has_unowned = true;
-              break;
-            }
-            if (copy_cache[key] === null) unknown = true;
+        for (let offer of [my_offer, their_offer]) {
+          let copy_ids = ta_offer_items(offer).map((item) =>
+            String(item?.collectibleItemInstanceId || "").toLowerCase(),
+          );
+          if (!copy_ids.length) continue;
+          let owned = await ta_user_owns_copies(listings, offer.user?.id, copy_ids);
+          if (stopped()) break;
+          if (owned === false) {
+            has_unowned = true;
+            break;
           }
-          if (has_unowned || stopped()) break;
+          if (owned === null) unknown = true;
         }
 
         if (stopped()) {

@@ -7,6 +7,7 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <link rel="stylesheet" href="popup.css" />
+    <script src="../shared/browser_compat.js"></script>
     <script src="../shared/build_variant.js"></script>
     <script src="../shared/tap_tooltip.js"></script>
     <script src="../shared/trade_ad_notifications_core.js"></script>
@@ -91,6 +92,67 @@
 
         <div class="panel hidden" id="panel-tradeads">
           <div id="trade-ads-root" class="trade-ads-root"></div>
+        </div>
+
+        <div class="panel hidden" id="panel-report" data-state="closed">
+          <div class="report-head">
+            <button type="button" class="report-back" id="reportBack">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+              Back
+            </button>
+            <h2 class="report-title">Report a problem</h2>
+          </div>
+          <label class="report-label" for="reportText">What went wrong?</label>
+          <textarea
+            id="reportText"
+            class="report-text"
+            rows="4"
+            maxlength="2000"
+            placeholder="What were you doing, and what happened instead?"
+          ></textarea>
+          <div class="report-include" role="group" aria-labelledby="reportIncludeLabel">
+            <div class="report-label" id="reportIncludeLabel">Include</div>
+            <label class="report-check">
+              <input type="checkbox" id="reportDiag" checked />
+              <span>
+                <strong>Diagnostics</strong>
+                <small>Extension version, browser, settings you changed, recent extension errors and failed requests</small>
+              </span>
+            </label>
+            <label class="report-check" id="reportShotRow">
+              <input type="checkbox" id="reportShot" checked />
+              <span>
+                <strong>Screenshot of this tab</strong>
+                <small>Untick it if anything private is on screen</small>
+                <small id="reportShotNote" class="report-shot-note" hidden>Unticked because a 2FA code or your account settings may be on screen</small>
+              </span>
+            </label>
+            <img id="reportShotImg" class="report-shot" alt="The screenshot that will be sent" hidden />
+            <label class="report-check" id="reportPageRow">
+              <input type="checkbox" id="reportPage" />
+              <span>
+                <strong>Page details</strong>
+                <small>Page address and title, window size</small>
+              </span>
+            </label>
+          </div>
+          <details class="report-preview">
+            <summary>See exactly what's sent</summary>
+            <pre id="reportPreview" class="report-preview-body"></pre>
+          </details>
+          <p class="report-note" id="reportNote">
+            Diagnostics never include passwords, cookies or 2FA codes. The screenshot shows what's on your
+            screen, so check it first. We delete reports after 30 days.
+          </p>
+          <div class="report-actions">
+            <button type="button" id="reportSend" class="about-settings-btn report-send">Send report</button>
+            <button type="button" id="reportCopy" class="about-settings-btn">Copy instead</button>
+          </div>
+          <div id="reportStatus" class="about-settings-status" role="status" aria-live="polite"></div>
+          <label class="report-check report-check-quiet">
+            <input type="checkbox" id="reportPromptOn" checked />
+            <span>Show a reminder when something breaks</span>
+          </label>
         </div>
 
         <div class="panel hidden" id="panel-about">
@@ -477,6 +539,24 @@
             />
           </svg>
         </a>
+        <button id="reportProblemBtn" class="btn-restore btn-report" type="button">
+          <svg
+            class="btn-restore-icon"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 22V4" />
+            <path d="M4 4h13l-2 4 2 4H4" />
+          </svg>
+          <span class="btn-restore-label">Report a problem</span>
+        </button>
         <button id="restoreDefaultSettings" class="btn-restore" type="button">
           <svg
             class="btn-restore-icon"
