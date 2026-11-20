@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Last updated: Nov 13, 2026
+Last updated: Nov 20, 2026
 
 The extension is designed to run in the browser and keep ordinary settings and feature state in local browser extension storage.
 
@@ -22,13 +22,13 @@ If trade history or trade analysis features are used, trade-related data may be 
 
 ## Problem reports
 
-The popup's "Report a problem" sends a report only when you press Send. It contains what you typed plus the parts you leave ticked:
+"Report a problem" (the flag button at the top of the Extension's settings window) sends a report only when you press Send. It contains what you typed plus the parts you leave ticked:
 
 - **Diagnostics:** Extension version, browser, settings you changed, and the Extension's last errors and failed requests, each with the kind of page it happened on. Addresses are cut to host and path, with names and long IDs removed.
 - **Screenshot:** the current tab, offered only on Roblox and Rolimons tabs.
 - **Page details:** page address and title, window size.
 
-The popup shows exactly what will be sent first. Diagnostics never include passwords, cookies or 2FA codes. A screenshot shows whatever is on screen, so the popup unticks it when a 2FA code box or account settings may be visible.
+The settings window shows exactly what will be sent first. Diagnostics never include passwords, cookies or 2FA codes. A screenshot shows whatever is on screen, so the settings window unticks it when a 2FA code box or account settings may be visible.
 
 Until you send a report, the Extension keeps its last errors and failed requests in browser session storage, which the browser clears when it closes.
 

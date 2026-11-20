@@ -384,11 +384,33 @@
     return new Uint8Array(bytes);
   }
 
+  // Codes come from the clock, so a PC clock a minute off fails every code ("says wrong").
+  // Roblox's Date header (same origin, so readable) is the reference; only big gaps are corrected.
+  let clock_offset_ms = 0;
+  let clock_checked = false;
+  async function sync_clock() {
+    if (clock_checked) return;
+    clock_checked = true;
+    try {
+      const sent = Date.now();
+      const resp = await fetch(`${location.origin}/robots.txt`, {
+        method: "HEAD",
+        cache: "no-store",
+        credentials: "omit",
+        signal: AbortSignal.timeout(5000),
+      });
+      // The header has 1 s resolution: +500 ms is its midpoint.
+      const offset = Date.parse(resp.headers.get("date") || "") + 500 - (sent + Date.now()) / 2;
+      if (Math.abs(offset) > 5000) clock_offset_ms = offset;
+    } catch {}
+  }
+  const now_ms = () => Date.now() + clock_offset_ms;
+
   async function make_totp(secret_b32, digits = 6, step_sec = 30) {
     const key_bytes = base32_to_bytes(secret_b32);
     if (!key_bytes.length) return null;
     const crypto_key = await crypto.subtle.importKey("raw", key_bytes, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
-    const counter = Math.floor(Date.now() / 1000 / step_sec);
+    const counter = Math.floor(now_ms() / 1000 / step_sec);
     const buf = new ArrayBuffer(8);
     new DataView(buf).setBigUint64(0, BigInt(counter), false);
     const sig = await crypto.subtle.sign("HMAC", crypto_key, buf);
@@ -433,7 +455,7 @@
   const MIN_CODE_LIFETIME_MS = 4000;
   function ms_left_in_step(step_sec = 30) {
     const step_ms = step_sec * 1000;
-    return step_ms - (Date.now() % step_ms);
+    return step_ms - (now_ms() % step_ms);
   }
 
   function set_native_value(input, value) {
@@ -498,6 +520,7 @@
     in_flight = true;
     try {
       try {
+        await sync_clock();
         const left = ms_left_in_step();
         if (left < MIN_CODE_LIFETIME_MS) await new Promise((r) => setTimeout(r, left + 250));
         const code = await make_totp(secret);

@@ -88,7 +88,7 @@ if (typeof importScripts === "function") {
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Relative Trade Times","enabledByDefault":true,"path":"relative-trade-times"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Show Win/Loss Percentages","enabledByDefault":true,"path":"show-win-loss-percentages"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Relative Trade Times","enabledByDefault":true,"path":"relative-trade-times"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 const legacy_show_usd_values_option_name = "Show USD Values";
@@ -402,12 +402,14 @@ async function nte_fetch_inventory_with_retries(url, init, options = {}) {
         : Math.min(1500 * (attempt + 1), 20000);
     let until = Date.now() + wait_ms;
     while (Date.now() < until) {
+      let left = Math.max(1, Math.ceil((until - Date.now()) / 1000));
+      let text =
+        res.status === 429
+          ? `Rate limited (429). Retrying in ${left}s…`
+          : `Server error (${res.status}). Retrying in ${left}s…`;
+      // Silent callers (a mass send run) still show the wait in their own status line.
+      options.on_wait?.(text);
       if (!silent) {
-        let left = Math.max(1, Math.ceil((until - Date.now()) / 1000));
-        let text =
-          res.status === 429
-            ? `Rate limited (429). Retrying in ${left}s…`
-            : `Server error (${res.status}). Retrying in ${left}s…`;
         nte_inventory_load_status(source, text, {
           status: res.status,
           retryAfterMs: Math.max(0, until - Date.now()),
@@ -415,6 +417,7 @@ async function nte_fetch_inventory_with_retries(url, init, options = {}) {
       }
       await trade_api_delay(Math.min(1000, Math.max(0, until - Date.now())));
     }
+    options.on_wait?.("");
     if (!silent) nte_inventory_load_status(source, "Loading your items…");
   }
   return res;
@@ -5555,17 +5558,22 @@ async function ta_user_owns_copies(listings, user_id, copy_ids) {
   if (!user_id || !copy_ids.length || !copy_ids.every(Boolean)) return null;
   let id = ta_run_id;
   let listing = (listings[user_id] ||= { ...ta_new_listing(), gone: new Set() });
+  // A private inventory stays private for the run: one 403 answers every trade with this user.
+  if (listing.private) return null;
   // One sold item is often in many trades: copies already shown gone need no second look.
   if (copy_ids.some((copy_id) => listing.gone.has(copy_id))) return false;
   let all_found = () => copy_ids.every((copy_id) => listing.ids.has(copy_id));
   // Reads pages until the copies are found or the list ends; false when a page can't be read.
   let read = async () => {
     while (!all_found() && !listing.complete && listing.pages < TA_TRADABLE_MAX_PAGES) {
-      let resp = await ta_fetch(
-        `https://trades.roblox.com/v2/users/${user_id}/tradableitems?sortBy=CreationTime&cursor=${encodeURIComponent(listing.cursor)}&limit=100&sortOrder=Desc`,
-        { credentials: "include" },
-      );
+      let url = `https://trades.roblox.com/v2/users/${user_id}/tradableitems?sortBy=CreationTime&cursor=${encodeURIComponent(listing.cursor)}&limit=100&sortOrder=Desc`;
+      let resp = await ta_fetch(url, { credentials: "include" });
+      // ta_fetch waits out one 429. Pages open on Roblox share this 40-a-minute budget and
+      // can cause another, so wait once more before the trade counts as unchecked.
+      if (resp.status === 429 && !ta_gone(id))
+        resp = await ta_fetch(url, { credentials: "include" });
       if (ta_gone(id)) return false;
+      if (resp.status === 403) listing.private = true;
       let json = resp.ok ? await resp.json().catch(() => null) : null;
       // Not latched: the next trade with this user tries again from the same page.
       if (!Array.isArray(json?.items)) return false;

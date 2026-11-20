@@ -147,7 +147,7 @@
 
     const primary = document.createElement("span");
     primary.className = "nte-settings-menu-primary";
-    primary.textContent = "Trading Extension";
+    primary.textContent = "Nevos Trading Extension";
 
     wrap.append(primary);
     inner.appendChild(wrap);
@@ -214,7 +214,7 @@
       if (n.nodeValue.trim() && (!label || n.nodeValue.trim().length > label.nodeValue.trim().length))
         label = n;
     }
-    if (label) label.nodeValue = "Trading Extension";
+    if (label) label.nodeValue = "Nevos Trading Extension";
 
     const icon = clone.querySelector("svg, [class*='icon']");
     const logo_url = get_logo_url();

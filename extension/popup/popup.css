@@ -6,30 +6,36 @@
   padding: 0;
 }
 
+/* Plus Jakarta Sans (OFL, see assets/fonts/OFL.txt), variable weight 200-800. */
 @font-face {
-  font-family: "Averta";
-  src: url("../assets/Averta.otf") format("opentype");
-  font-weight: 400;
+  font-family: "Plus Jakarta Sans";
+  src: url("../assets/fonts/PlusJakartaSans-latin-ext.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
 @font-face {
-  font-family: "Averta";
-  src: url("../assets/AvertaExtraBold.otf") format("opentype");
-  font-weight: 800;
+  font-family: "Plus Jakarta Sans";
+  src: url("../assets/fonts/PlusJakartaSans-latin.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
 :root {
-  --bg-primary: #0f1117;
-  --bg-secondary: #161921;
-  --bg-card: #1c1f2b;
-  --bg-card-hover: #222638;
-  --bg-toggle: #2a2e3f;
-  --bg-toggle-on: #6c5ce7;
-  --border: rgba(255, 255, 255, 0.06);
-  --border-hover: rgba(255, 255, 255, 0.1);
-  --text-primary: #e8eaed;
-  --text-secondary: #9ba0b4;
-  --text-muted: #858da5;
+  --bg-primary: #0e0f15;
+  --bg-secondary: #151722;
+  --bg-card: #151722;
+  --bg-card-hover: #1a1d29;
+  --bg-raised: #1e2130;
+  --bg-toggle: #2c2f42;
+  --bg-toggle-on: #8e80ff;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-hover: rgba(255, 255, 255, 0.12);
+  --text-primary: #eeeff6;
+  --text-secondary: #abaec0;
+  --text-muted: #7f8399;
   --accent: #6c5ce7;
   --accent-glow: rgba(108, 92, 231, 0.25);
   --accent-soft: rgba(108, 92, 231, 0.1);
@@ -47,7 +53,7 @@ html {
 
 body {
   font-family:
-    "Averta",
+    "Plus Jakarta Sans",
     -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
@@ -72,32 +78,28 @@ body {
 }
 
 .header {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 18px 20px;
-  background: linear-gradient(
-    135deg,
-    var(--accent) 0%,
-    #7c5ce7 50%,
-    #8b6ce7 100%
-  );
-  position: relative;
-  overflow: hidden;
+  gap: 6px;
+  height: 58px;
+  padding: 0 10px 0 14px;
   flex-shrink: 0;
 }
 
+/* The one decorative touch: a hairline in the logo's violet, brightest in the middle. */
 .header::after {
   content: "";
   position: absolute;
-  top: -50%;
-  right: -20%;
-  width: 200px;
-  height: 200px;
-  background: radial-gradient(
-    circle,
-    rgba(255, 255, 255, 0.08) 0%,
-    transparent 70%
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    rgba(142, 128, 255, 0),
+    rgba(142, 128, 255, 0.55) 50%,
+    rgba(142, 128, 255, 0)
   );
   pointer-events: none;
 }
@@ -105,57 +107,83 @@ body {
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
+  margin-right: auto;
 }
 
 .header-logo {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 9px;
   object-fit: cover;
   background: #100b2a;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.24),
-    0 8px 18px rgba(97, 78, 255, 0.24);
-  padding: 0;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 8px 20px -8px rgba(142, 128, 255, 0.9);
 }
 
 .header-title {
-  font-weight: 800;
-  font-size: 17px;
-  letter-spacing: -0.3px;
-  color: #fff;
-}
-
-.header-title-wrap {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
+  gap: 2px;
   min-width: 0;
+  line-height: 1.05;
+  color: var(--text-primary);
 }
 
-.header-discord-link {
-  font-size: 10px;
+.header-title-brand {
+  font-size: 15.5px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+
+.header-title-rest {
+  font-size: 11.5px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
-  text-decoration: none;
-  line-height: 1.2;
-  letter-spacing: 0.01em;
-  transition: color 0.15s ease;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
-.header-discord-link:hover {
-  color: #eef0ff;
-  text-decoration: underline;
+.header-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background var(--transition),
+    color var(--transition);
+}
+
+.header-icon-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.header-discord:hover {
+  color: #a3abff;
+}
+
+.header-icon-btn[hidden] {
+  display: none;
+}
+
+.header-icon-btn:focus-visible {
+  outline: 2px solid var(--bg-toggle-on);
+  outline-offset: 1px;
 }
 
 body.nte-lite .header-version {
-  color: #e0f2fe;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-body.nte-lite .header-discord-link {
-  color: #eef2ff;
+  color: #a9d8ff;
+  border-color: rgba(125, 196, 255, 0.28);
 }
 
 .ta-notifs-lite-card {
@@ -198,24 +226,13 @@ body.nte-lite .header-discord-link {
   margin: 4px 0 2px;
   padding: 22px 18px 20px;
   text-align: center;
-  border-radius: 14px;
-  border: 1px solid rgba(250, 204, 21, 0.28);
-  background:
-    radial-gradient(
-      circle at top right,
-      rgba(250, 204, 21, 0.2) 0%,
-      transparent 42%
-    ),
-    linear-gradient(
-      160deg,
-      rgba(245, 158, 11, 0.12) 0%,
-      rgba(251, 191, 36, 0.05) 42%,
-      var(--bg-card) 100%
-    );
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+  border-radius: 12px;
+  border: 1px solid rgba(250, 204, 21, 0.22);
+  background: rgba(245, 197, 66, 0.06);
 }
 
 .ms-rate-gate-glow {
+  display: none;
   pointer-events: none;
   position: absolute;
   inset: -40% auto auto 50%;
@@ -395,50 +412,101 @@ body.nte-lite .header-discord-link {
 }
 
 .header-version {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(0, 0, 0, 0.2);
-  padding: 3px 8px;
-  border-radius: 20px;
-  font-weight: 600;
   flex-shrink: 0;
+  margin-right: 2px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
 .tabs {
-  display: flex;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin: 12px 14px 10px;
+  padding: 3px;
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
   flex-shrink: 0;
 }
 
+/* The active tab's pill slides between tabs (one tab wide; moved by whole widths). */
+.tabs::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 3px;
+  width: calc((100% - 6px) / 5);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 2px 8px -2px rgba(0, 0, 0, 0.6);
+  transition:
+    transform 0.28s cubic-bezier(0.3, 0.7, 0.4, 1),
+    opacity 0.15s ease;
+}
+
+.tabs:has(.tab:nth-child(2).active)::before {
+  transform: translateX(100%);
+}
+
+.tabs:has(.tab:nth-child(3).active)::before {
+  transform: translateX(200%);
+}
+
+.tabs:has(.tab:nth-child(4).active)::before {
+  transform: translateX(300%);
+}
+
+.tabs:has(.tab:nth-child(5).active)::before {
+  transform: translateX(400%);
+}
+
+/* The report panel has no tab. */
+.tabs:not(:has(.tab.active))::before {
+  opacity: 0;
+}
+
 .tab {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 1;
   gap: 6px;
-  padding: 12px 8px;
-  font-size: 12px;
+  height: 30px;
+  padding: 0 4px;
+  font-size: 12.5px;
   font-weight: 600;
   font-family: inherit;
-  color: var(--text-muted);
+  white-space: nowrap;
+  color: var(--text-secondary);
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-radius: 8px;
   cursor: pointer;
-  transition:
-    color var(--transition),
-    border-color var(--transition);
+  transition: color var(--transition);
 }
 
 .tab:hover {
-  color: var(--text-secondary);
+  color: var(--text-primary);
 }
 
 .tab.active {
   color: var(--text-primary);
-  border-bottom-color: var(--accent);
+}
+
+.tab:focus-visible {
+  outline: 2px solid var(--bg-toggle-on);
+  outline-offset: -2px;
 }
 
 .tab svg {
@@ -491,7 +559,7 @@ body.nte-lite .header-discord-link {
 }
 
 .panel {
-  padding: 8px 14px 14px;
+  padding: 0 14px 14px;
 }
 
 .update-banner-root {
@@ -504,7 +572,7 @@ body.nte-lite .header-discord-link {
 }
 
 .options-search-wrap {
-  padding: 0 12px 8px;
+  padding: 0 0 10px;
 }
 
 .options-search-field {
@@ -515,7 +583,7 @@ body.nte-lite .header-discord-link {
 
 .options-search-icon {
   position: absolute;
-  left: 10px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -536,14 +604,14 @@ body.nte-lite .header-discord-link {
 
 .options-search {
   width: 100%;
-  height: 34px;
-  border-radius: var(--radius-sm);
+  height: 38px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--bg-secondary);
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 12px;
-  padding: 0 10px 0 32px;
+  font-size: 13px;
+  padding: 0 12px 0 34px;
   transition:
     border-color var(--transition),
     box-shadow var(--transition),
@@ -596,28 +664,33 @@ body.nte-lite .header-discord-link {
 }
 
 .option-section {
-  margin-bottom: 4px;
+  margin-bottom: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .section-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  height: 38px;
+  padding: 0 12px;
   cursor: pointer;
-  border-radius: var(--radius-sm);
   transition: background var(--transition);
   user-select: none;
 }
 
 .section-header:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.02);
 }
 
+/* Section icons are kept for Retro; the default look labels sections with text alone. */
 .section-icon {
+  display: none;
   width: 28px;
   height: 28px;
-  display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 8px;
@@ -631,26 +704,26 @@ body.nte-lite .header-discord-link {
 
 .section-title {
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.08em;
   color: var(--text-secondary);
-  flex: 1;
 }
 
 .section-count {
-  font-size: 10px;
+  font-size: 10.5px;
   color: var(--text-secondary);
-  background: var(--bg-toggle);
+  background: var(--bg-raised);
   padding: 1px 6px;
-  border-radius: 10px;
-  font-weight: 600;
+  border-radius: 999px;
+  font-weight: 700;
   line-height: 1.5;
 }
 
 .section-chevron {
   display: flex;
   align-items: center;
+  margin-left: auto;
   color: var(--text-muted);
   transition: transform var(--transition);
   flex-shrink: 0;
@@ -678,10 +751,11 @@ body.nte-lite .header-discord-link {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px 8px 46px;
-  border-radius: 6px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
   transition: background var(--transition);
-  gap: 12px;
+  gap: 10px;
 }
 
 .option-row:hover {
@@ -697,7 +771,7 @@ body.nte-lite .header-discord-link {
 .option-label {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 500;
   color: var(--text-primary);
   line-height: 1.35;
@@ -1110,16 +1184,16 @@ body.nte-lite .header-discord-link {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  max-width: 108px;
-  height: 26px;
-  padding: 0 9px 0 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-secondary);
+  max-width: 116px;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--border-hover);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  color: var(--text-primary);
   font: inherit;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 12.5px;
+  font-weight: 600;
   line-height: 1;
   cursor: pointer;
   transition:
@@ -1131,8 +1205,8 @@ body.nte-lite .header-discord-link {
 
 .option-mode-menu-trigger:hover {
   color: var(--text-primary);
-  border-color: rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.18);
+  background: #242838;
 }
 
 .option-mode-menu.is-open .option-mode-menu-trigger {
@@ -1360,8 +1434,8 @@ body.nte-lite .header-discord-link {
 
 .toggle {
   position: relative;
-  width: 38px;
-  height: 21px;
+  width: 34px;
+  height: 20px;
   flex-shrink: 0;
   cursor: pointer;
   display: inline-block;
@@ -1378,7 +1452,7 @@ body.nte-lite .header-discord-link {
   position: absolute;
   inset: 0;
   background: var(--bg-toggle);
-  border-radius: 11px;
+  border-radius: 999px;
   transition:
     background var(--transition),
     box-shadow var(--transition);
@@ -1388,34 +1462,36 @@ body.nte-lite .header-discord-link {
   position: absolute;
   top: 3px;
   left: 3px;
-  width: 15px;
-  height: 15px;
-  background: var(--text-muted);
+  width: 14px;
+  height: 14px;
+  background: #c6c9d8;
   border-radius: 50%;
   transition:
-    transform var(--transition),
+    transform 0.22s cubic-bezier(0.3, 0.7, 0.4, 1.3),
     background var(--transition);
 }
 
 .toggle input:checked ~ .toggle-track {
   background: var(--bg-toggle-on);
-  box-shadow: 0 0 10px var(--accent-glow);
 }
 
 .toggle input:checked ~ .toggle-thumb {
-  transform: translateX(17px);
+  transform: translateX(14px);
   background: #fff;
+}
+
+.toggle input:focus-visible ~ .toggle-track {
+  box-shadow:
+    0 0 0 2px var(--bg-primary),
+    0 0 0 4px var(--bg-toggle-on);
 }
 
 .about-hero {
   position: relative;
   overflow: hidden;
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(167, 139, 250, 0.22);
-  background: var(--bg-card);
-  box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
 }
 
 .about-hero::before {
@@ -1425,13 +1501,8 @@ body.nte-lite .header-discord-link {
   background:
     radial-gradient(
       90% 70% at 50% -25%,
-      rgba(129, 112, 255, 0.35),
+      rgba(129, 112, 255, 0.24),
       transparent 62%
-    ),
-    radial-gradient(
-      60% 50% at 100% 100%,
-      rgba(56, 189, 248, 0.08),
-      transparent 55%
     );
   pointer-events: none;
 }
@@ -1498,11 +1569,7 @@ body.nte-lite .header-discord-link {
   gap: 6px;
   width: 100%;
   max-width: 260px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.22);
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(8px);
+  padding: 0;
 }
 
 .about-hero-credit-line {
@@ -1667,26 +1734,6 @@ body.nte-lite .header-discord-link {
 
 .discord-btn:active {
   transform: translateY(0);
-}
-
-.btn-discord-sm {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  color: var(--text-muted);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  text-decoration: none;
-  transition: all var(--transition);
-}
-
-.btn-discord-sm:hover {
-  color: #5865f2;
-  background: rgba(88, 101, 242, 0.1);
-  border-color: rgba(88, 101, 242, 0.25);
 }
 
 .about-features {
@@ -2125,6 +2172,7 @@ body.nte-lite .header-discord-link {
   align-items: flex-start;
   gap: 3px;
   width: 100%;
+  font-family: inherit;
   padding: 10px 11px;
   color: var(--text-secondary);
   background: rgba(255, 255, 255, 0.02);
@@ -2166,36 +2214,34 @@ body.nte-lite .header-discord-link {
   line-height: 1.35;
 }
 
-.footer {
-  padding: 10px 14px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-secondary);
+/* Reset sits quietly at the end of the Settings list (it used to live in a footer). */
+.options-reset-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-shrink: 0;
+  justify-content: center;
+  padding: 2px 0;
 }
 
 .btn-restore {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  font-size: 12px;
+  gap: 7px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 12.5px;
   font-weight: 600;
   font-family: inherit;
-  color: var(--text-secondary);
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
   cursor: pointer;
   transition: all var(--transition);
 }
 
 .btn-restore:hover {
   color: var(--text-primary);
-  background: var(--bg-card-hover);
-  border-color: var(--border-hover);
+  background: var(--bg-secondary);
+  border-color: var(--border);
 }
 
 .btn-restore:active {
@@ -2227,6 +2273,7 @@ body.theme-retro {
   --bg-secondary: #d6d6d6;
   --bg-card: #ffffff;
   --bg-card-hover: #f4f4f4;
+  --bg-raised: #ffffff;
   --bg-toggle: #cfcfcf;
   --bg-toggle-on: #00a2e8;
   --border: #b8b8b8;
@@ -2257,7 +2304,8 @@ body.theme-retro .header {
   box-shadow:
     inset 0 -1px 0 rgba(255, 255, 255, 0.18),
     0 1px 0 rgba(0, 0, 0, 0.25);
-  padding: 10px 14px;
+  height: auto;
+  padding: 8px 8px 8px 14px;
 }
 
 body.theme-retro .header::after {
@@ -2279,11 +2327,29 @@ body.theme-retro .header-title {
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
 }
 
-body.theme-retro .header-discord-link {
-  font-family: Tahoma, sans-serif;
-  font-size: 10px;
-  font-weight: normal;
+body.theme-retro .header-title {
+  flex-direction: row;
+  align-items: baseline;
+  gap: 5px;
   color: #fff;
+}
+
+body.theme-retro .header-title-brand,
+body.theme-retro .header-title-rest {
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: 0;
+  color: inherit;
+}
+
+body.theme-retro .header-icon-btn {
+  color: #fff;
+  border-radius: 2px;
+}
+
+body.theme-retro .header-icon-btn:hover {
+  color: #fff;
+  background: rgba(0, 0, 0, 0.2);
 }
 
 body.theme-retro .header-version {
@@ -2484,8 +2550,7 @@ body.theme-retro .about-style-btn.active {
     0 0 0 1px rgba(196, 30, 21, 0.25);
 }
 
-body.theme-retro .discord-btn,
-body.theme-retro .btn-discord-sm {
+body.theme-retro .discord-btn {
   background: linear-gradient(180deg, #6679db 0%, #4858b8 100%);
   border: 1px solid #2f3a85;
   border-radius: 2px;
@@ -2495,8 +2560,7 @@ body.theme-retro .btn-discord-sm {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
-body.theme-retro .discord-btn:hover,
-body.theme-retro .btn-discord-sm:hover {
+body.theme-retro .discord-btn:hover {
   background: linear-gradient(180deg, #7888e6 0%, #5364c8 100%);
 }
 
@@ -2528,12 +2592,6 @@ body.theme-retro .ta-strip {
   border-radius: 2px;
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.12);
   font-family: Tahoma, sans-serif;
-}
-
-body.theme-retro .footer {
-  background: linear-gradient(180deg, #ececec 0%, #cfcfcf 100%);
-  border-top: 1px solid #9a9a9a;
-  box-shadow: inset 0 1px 0 #fff;
 }
 
 body.theme-retro a:not([class]) {
@@ -2668,7 +2726,6 @@ body.theme-retro .discord-btn {
   padding: 6px 12px;
   font-size: 12px;
 }
-body.theme-retro .btn-discord-sm svg,
 body.theme-retro .discord-btn svg {
   filter: none;
 }
@@ -4203,8 +4260,8 @@ body.is-tradeads-tab .popup {
 }
 
 .ta-preset-chip-name {
-  font-size: 10.5px;
-  font-weight: 800;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .ta-preset-chip-note {
@@ -4471,12 +4528,12 @@ body.is-tradeads-tab .popup {
 }
 
 .ta-btn-primary {
-  background: linear-gradient(135deg, var(--accent), #8b6ce7);
+  background: var(--accent);
   color: #fff;
 }
 
 .ta-btn-primary:hover {
-  filter: brightness(1.06);
+  background: #5f50dc;
 }
 
 .ta-btn-secondary {
@@ -5244,8 +5301,12 @@ body.is-tradeads-tab .popup {
 .ta-category-bar {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
-  margin-bottom: 8px;
+  gap: 0;
+  margin-bottom: 12px;
+  padding: 3px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 10px;
 }
 
 .ta-category-pick {
@@ -5255,13 +5316,13 @@ body.is-tradeads-tab .popup {
   justify-content: center;
   gap: 1px;
   width: 100%;
-  min-height: 0;
-  padding: 6px 8px;
+  min-height: 32px;
+  padding: 0 8px;
   text-align: center;
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: none;
+  border: 0;
+  border-radius: 7px;
   font-family: inherit;
   cursor: pointer;
   transition:
@@ -5274,15 +5335,14 @@ body.is-tradeads-tab .popup {
 
 .ta-category-pick:hover {
   color: var(--text-primary);
-  border-color: var(--border-hover);
-  background: rgba(255, 255, 255, 0.04);
 }
 
 .ta-category-pick.is-active {
   color: var(--text-primary);
-  border-color: rgba(108, 92, 231, 0.45);
-  background: var(--accent-soft);
-  box-shadow: 0 0 0 1px rgba(108, 92, 231, 0.18);
+  background: var(--bg-raised);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 2px 8px -2px rgba(0, 0, 0, 0.6);
 }
 
 .ta-category-pick:active {
@@ -5296,16 +5356,14 @@ body.is-tradeads-tab .popup {
 }
 
 .ta-category-pick-label {
-  font-size: 11px;
-  font-weight: 800;
+  font-size: 12.5px;
+  font-weight: 600;
   line-height: 1.15;
 }
 
+/* The tab names say enough; the old second line made each tab two lines tall. */
 .ta-category-pick-note {
-  font-size: 9px;
-  line-height: 1.25;
-  color: var(--text-muted);
-  font-weight: 600;
+  display: none;
 }
 
 .ta-category-pick.is-active .ta-category-pick-note {
@@ -9204,51 +9262,41 @@ body.is-tradeads-tab .popup {
 }
 
 .ta-section {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .ta-section-title {
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.08em;
   color: var(--text-secondary);
-  margin-bottom: 8px;
-  padding: 0 4px;
+  margin: 0 2px 8px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
 }
 
 .ta-section-icon {
-  width: 24px;
-  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
   flex-shrink: 0;
+  color: var(--text-secondary);
 }
 
 .ta-section-icon svg {
-  width: 13px;
-  height: 13px;
-}
-
-.ta-section-inbound .ta-section-icon {
-  background: rgba(46, 204, 113, 0.12);
-  color: #2ecc71;
-}
-
-.ta-section-outbound .ta-section-icon {
-  background: rgba(52, 152, 219, 0.12);
-  color: #3498db;
+  width: 14px;
+  height: 14px;
 }
 
 .ta-buttons {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
 }
 
 .ta-btn {
@@ -9280,6 +9328,45 @@ body.is-tradeads-tab .popup {
   transform: scale(0.98);
 }
 
+/* Bulk Cancel rows: one card per section, rows split by hairlines. */
+body:not(.theme-retro) .ta-buttons > .ta-btn {
+  min-height: 48px;
+  padding: 8px 10px 8px 12px;
+  font-size: 13.5px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  transition: background var(--transition);
+}
+
+body:not(.theme-retro) .ta-buttons > .ta-btn + .ta-btn {
+  border-top: 1px solid var(--border);
+}
+
+body:not(.theme-retro) .ta-buttons > .ta-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+body:not(.theme-retro) .ta-buttons > .ta-btn:active:not(:disabled) {
+  transform: none;
+}
+
+/* A chevron says the row opens a step; Stop takes its place while it runs. */
+.ta-btn-main::after {
+  content: "";
+  width: 15px;
+  height: 15px;
+  margin-left: auto;
+  flex-shrink: 0;
+  background: var(--text-muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 6 6 6-6 6'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.ta-btn.ta-running .ta-btn-main::after {
+  display: none;
+}
+
 .ta-btn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
@@ -9291,10 +9378,10 @@ body.is-tradeads-tab .popup {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 8px;
   flex-shrink: 0;
-  background: rgba(231, 76, 60, 0.12);
-  color: #e74c3c;
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
 }
 
 .ta-btn-icon svg {
@@ -9326,26 +9413,34 @@ body.is-tradeads-tab .popup {
 
 .ta-btn-status {
   display: block;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--text-muted);
-  margin-top: 1px;
+  color: var(--text-secondary);
+  margin-top: 2px;
 }
 
-.ta-btn.ta-running {
-  border-color: rgba(108, 92, 231, 0.3);
-  background: linear-gradient(
-    90deg,
-    var(--bg-card) 0%,
-    rgba(108, 92, 231, 0.08) 50%,
-    var(--bg-card) 100%
-  );
-  background-size: 200% 100%;
-  animation: ta-shimmer 1.8s ease-in-out infinite;
+.ta-btn-status:empty {
+  display: none;
 }
 
-.ta-btn.ta-done {
-  border-color: rgba(46, 204, 113, 0.3);
+/* Running: a progress bar under the row (--ta-progress, 0 to 1, set by the popup). */
+body:not(.theme-retro) .ta-buttons > .ta-btn.ta-running {
+  padding-bottom: 16px;
+}
+
+body:not(.theme-retro) .ta-buttons > .ta-btn.ta-running::after {
+  content: "";
+  position: absolute;
+  left: 50px;
+  right: 12px;
+  bottom: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background:
+    linear-gradient(var(--bg-toggle-on), var(--bg-toggle-on)) 0 0 /
+      calc(var(--ta-progress, 0) * 100%) 100% no-repeat,
+    var(--bg-raised);
+  transition: background-size 0.3s ease;
 }
 
 .ta-btn.ta-done .ta-btn-icon {
@@ -9353,8 +9448,16 @@ body.is-tradeads-tab .popup {
   color: #2ecc71;
 }
 
+.ta-btn.ta-done {
+  border-color: rgba(46, 204, 113, 0.3);
+}
+
 .ta-btn.ta-error {
   border-color: rgba(231, 76, 60, 0.3);
+}
+
+.ta-btn.ta-error .ta-btn-status {
+  color: #fca5a5;
 }
 
 .ta-spinner {
@@ -9585,20 +9688,22 @@ body.is-tradeads-tab .popup {
 
 .ta-stop-btn {
   flex-shrink: 0;
-  padding: 4px 12px;
-  font-size: 11px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
   font-weight: 700;
   font-family: inherit;
-  color: #fff;
-  background: #e74c3c;
-  border: none;
-  border-radius: 6px;
+  color: var(--text-primary);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hover);
+  border-radius: 7px;
   cursor: pointer;
   transition: all var(--transition);
 }
 
 .ta-stop-btn:hover {
-  background: #c0392b;
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.45);
 }
 
 html.is-mobile-browser,
@@ -9623,44 +9728,24 @@ body.is-mobile-browser .popup {
 }
 
 body.is-mobile-browser .header {
-  padding: 14px 14px calc(14px + env(safe-area-inset-top, 0px));
+  height: calc(58px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
-body.is-mobile-browser .header-left {
-  min-width: 0;
-  gap: 10px;
-}
-
-body.is-mobile-browser .header-logo {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-}
-
-body.is-mobile-browser .header-title {
-  font-size: 15px;
-  line-height: 1.15;
-}
-
-body.is-mobile-browser .header-discord-link {
-  font-size: 9px;
-}
-
-body.is-mobile-browser .header-version {
-  font-size: 10px;
-  padding: 3px 7px;
+body.is-mobile-browser .header-icon-btn {
+  width: 36px;
+  height: 36px;
 }
 
 body.is-mobile-browser .tabs {
-  padding: 0 4px;
+  margin: 10px 12px;
 }
 
 body.is-mobile-browser .tab {
   min-width: 0;
-  gap: 4px;
-  padding: 11px 4px;
-  font-size: 11px;
-  white-space: nowrap;
+  height: 34px;
+  padding: 0 2px;
+  font-size: 12.5px;
 }
 
 body.is-mobile-browser .tab svg,
@@ -9670,7 +9755,7 @@ body.is-mobile-browser .tab-icon-rolimons {
 }
 
 body.is-mobile-browser .panel {
-  padding: 10px 12px 14px;
+  padding: 0 12px 14px;
 }
 
 body.is-mobile-browser .content {
@@ -9685,7 +9770,7 @@ body.is-mobile-browser .content {
 }
 
 body.is-mobile-browser .section-header {
-  padding: 10px 10px;
+  height: 44px;
 }
 
 body.is-mobile-browser .section-icon {
@@ -9698,23 +9783,8 @@ body.is-mobile-browser .section-icon svg {
   height: 13px;
 }
 
-body.is-mobile-browser .section-title {
-  font-size: 10px;
-  letter-spacing: 0.45px;
-}
-
-body.is-mobile-browser .section-count {
-  font-size: 9px;
-}
-
 body.is-mobile-browser .option-row {
-  padding: 10px 10px 10px 38px;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-body.is-mobile-browser .option-label {
-  font-size: 12px;
+  min-height: 48px;
 }
 
 body.is-mobile-browser .option-note-btn {
@@ -9739,15 +9809,8 @@ body.is-mobile-browser .about-style-grid {
   grid-template-columns: 1fr;
 }
 
-body.is-mobile-browser .footer {
-  gap: 10px;
-  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
-}
-
-body.is-mobile-browser .btn-restore {
-  flex: 1;
-  justify-content: center;
-  padding: 10px 12px;
+body.is-mobile-browser .options-reset-row {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 body.is-mobile-browser .ta-confirm-box {
@@ -9779,18 +9842,14 @@ body.is-mobile-browser .ta-sheet {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  background: linear-gradient(
-    135deg,
-    rgba(88, 101, 242, 0.12),
-    rgba(108, 92, 231, 0.08)
-  );
-  border: 1px solid rgba(88, 101, 242, 0.2);
-  border-radius: var(--radius-md);
+  padding: 9px 6px 9px 12px;
+  margin-bottom: 10px;
+  background: rgba(142, 128, 255, 0.12);
+  border: 1px solid rgba(142, 128, 255, 0.24);
+  border-radius: 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #c9cdfb;
+  color: var(--text-primary);
   animation: nte-banner-in 0.35s ease both;
 }
 
@@ -9813,11 +9872,11 @@ body.is-mobile-browser .ta-sheet {
 
 .nte-discord-banner-text svg {
   flex-shrink: 0;
-  color: #aab0f7;
+  color: #c9c1ff;
 }
 
 .nte-discord-banner a {
-  color: #aab0f7;
+  color: #c9c1ff;
   text-decoration: underline;
   transition: color 0.15s ease;
 }
@@ -9829,7 +9888,7 @@ body.is-mobile-browser .ta-sheet {
 .nte-discord-banner-close {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
@@ -9851,18 +9910,14 @@ body.is-mobile-browser .ta-sheet {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
-  margin-bottom: 12px;
-  background: linear-gradient(
-    135deg,
-    rgba(245, 197, 66, 0.14),
-    rgba(108, 92, 231, 0.08)
-  );
-  border: 1px solid rgba(245, 197, 66, 0.24);
-  border-radius: var(--radius-md);
+  padding: 9px 6px 9px 12px;
+  margin-bottom: 10px;
+  background: rgba(245, 197, 66, 0.08);
+  border: 1px solid rgba(245, 197, 66, 0.22);
+  border-radius: 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #f3e2b8;
+  color: #f1e3bd;
   animation: nte-banner-in 0.35s ease both;
 }
 
@@ -9891,7 +9946,7 @@ body.is-mobile-browser .ta-sheet {
 .nte-rate-banner-close {
   background: none;
   border: none;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
@@ -10025,15 +10080,14 @@ body.theme-retro .nte-rate-banner-close:hover {
   text-align: center;
 }
 .ta-btn.ta-btn-primary {
-  background: linear-gradient(135deg, var(--accent), #8b6ce7);
+  background: var(--accent);
   border-color: transparent;
   color: #fff;
 }
 /* Retro keeps its own hover/press look. */
 body:not(.theme-retro) .ta-btn.ta-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--accent), #8b6ce7);
+  background: #5f50dc;
   border-color: transparent;
-  filter: brightness(1.06);
 }
 .ta-btn.ta-btn-secondary {
   background: var(--bg-toggle);
@@ -10065,10 +10119,6 @@ body.theme-retro .ta-preset-actions .ta-btn.ta-btn-ghost {
 }
 
 /* Report a problem */
-.btn-report {
-  margin-left: auto;
-  margin-right: 8px;
-}
 
 .report-head {
   display: flex;
@@ -10294,4 +10344,293 @@ body.theme-retro .report-check .report-shot-note {
 
 .report-prompt-dismiss:hover {
   color: var(--text-primary);
+}
+
+/* UI tab */
+.ui-root {
+  display: grid;
+  gap: 10px;
+}
+
+.ui-root .ui-card {
+  margin-top: 0;
+}
+
+.ui-section-title {
+  margin: 16px 2px 0;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-secondary);
+}
+
+.ui-card .option-row {
+  margin: 8px -4px 0;
+  padding: 8px 4px;
+}
+
+.ui-choice {
+  margin-top: 12px;
+}
+
+.ui-choice-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+}
+
+.ui-choice .about-style-grid {
+  margin-top: 6px;
+}
+
+.ui-choice-btn {
+  text-align: left;
+}
+
+.ui-choice-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.ui-prev {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  margin-bottom: 6px;
+  pointer-events: none;
+}
+
+.ui-prev-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 2px 5px;
+  border: 1px solid;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.ui-prev-card small {
+  font-size: 7.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.ui-prev-card.is-up {
+  color: #22a35a;
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.34);
+}
+
+.ui-prev-card.is-down {
+  color: #e05252;
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.34);
+}
+
+.ui-prev-pill {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 22px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.ui-prev-pill.is-up {
+  background: rgba(71, 180, 109, 0.85);
+}
+
+.ui-prev-pill.is-down {
+  background: rgba(204, 86, 82, 0.85);
+}
+
+.ui-prev-pill i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.ui-prev-stack {
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ui-prev-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 13px;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.16);
+  font-size: 8px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.ui-prev-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    rgba(34, 197, 94, 0.75) 0 50%,
+    rgba(239, 68, 68, 0.75) 50% 100%
+  );
+}
+
+.ui-theme-root .nte-theme-card {
+  margin-top: 10px;
+}
+
+.options-search-ui-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.options-search-ui-hint[hidden] {
+  display: none;
+}
+
+.options-search-ui-hint button {
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+body.theme-retro .ui-card .option-row {
+  border: 0;
+  box-shadow: none;
+}
+
+/* Retro keeps its own tabs, plain lists and section icons: undo the default look's
+   segmented tabs and section cards. */
+body.theme-retro .tabs {
+  display: flex;
+  margin: 0;
+  padding: 4px 6px 0;
+  border: 0;
+  border-bottom: 1px solid #9a9a9a;
+  border-radius: 0;
+}
+
+body.theme-retro .tabs::before {
+  display: none;
+}
+
+body.theme-retro .tab {
+  flex: 1;
+  height: auto;
+}
+
+body.theme-retro .option-section {
+  margin-bottom: 4px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+body.theme-retro .section-header {
+  height: auto;
+  padding: 8px 22px 8px 10px;
+}
+
+body.theme-retro .section-icon {
+  display: flex;
+}
+
+body.theme-retro .section-title {
+  flex: 1;
+}
+
+body.theme-retro .option-row {
+  min-height: 0;
+}
+
+body.theme-retro .options-reset-row {
+  padding-top: 6px;
+}
+
+body.theme-retro .ta-buttons {
+  gap: 6px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+body.theme-retro .ta-btn-main::after {
+  display: none;
+}
+
+body.theme-retro .ta-category-bar {
+  gap: 6px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+body.theme-retro .ta-category-pick {
+  min-height: 0;
+  padding: 6px 8px;
+  border: 1px solid #9a9a9a;
+  border-radius: 2px;
+}
+
+body.theme-retro .ta-category-pick-note {
+  display: block;
+}
+
+body.theme-retro .section-count {
+  color: var(--text-secondary);
+  background: var(--bg-toggle);
+}
+
+body.theme-retro .option-mode-menu-trigger {
+  height: 26px;
+  border-color: var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+body.theme-retro .option-mode-menu-trigger:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card-hover);
+}
+
+body.theme-retro .ta-category-pick.is-active {
+  color: #c41e15;
+  background: #fff;
+  box-shadow: inset 0 2px 0 #c41e15;
 }

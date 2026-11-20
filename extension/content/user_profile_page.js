@@ -556,7 +556,9 @@
           } catch {
             resp = null;
           }
-          if (resp && resp.status !== 429 && resp.status < 500) break;
+          // A 429 means the account's 40-a-minute budget is spent; retrying in 350 ms
+          // only spends more of it (bulk actions and trade pages share it).
+          if (resp && resp.status < 500) break;
           if (attempt < 2) await inventory_fetch_delay(350 * (attempt + 1));
         }
         // A partial scan is a failure: returning null keeps it out of the cache.
@@ -1429,9 +1431,10 @@
   var profile_inventory_cache = {};
   var profile_inventory_pending = {};
   var profile_private_until = {};
-  var profile_private_retry_ms = 5 * 60 * 1000;
+  // Private inventories rarely open up; checking every 5 min was a 403 forever on an open tab.
+  var profile_private_retry_ms = 60 * 60 * 1000;
   var profile_fail_until = {};
-  var profile_fail_retry_ms = 15 * 1000;
+  var profile_fail_retry_ms = 60 * 1000;
   var profile_dominance_frame = null;
   function get_profile_user_id() {
     return (
@@ -3155,7 +3158,7 @@
       let mark_gap = 6;
       ctx.fillStyle = dark ? "rgba(255,255,255,.55)" : "rgba(17,24,39,.55)";
       ctx.font = "800 12px Segoe UI, Arial, sans-serif";
-      let mark = "Trading Extension";
+      let mark = "Nevos Trading Extension";
       let mark_w = ctx.measureText(mark).width;
       let mark_total_w = mark_logo + mark_gap + mark_w;
       let mark_x = (width - mark_total_w) / 2;
@@ -3631,7 +3634,7 @@
       if (!el) return;
       var url = utils.getURL("assets/icons/logo128.png");
       el.setAttribute("src", url);
-      el.setAttribute("alt", "Trading Extension");
+      el.setAttribute("alt", "Nevos Trading Extension");
       el.setAttribute("width", "36");
       el.setAttribute("height", "36");
       el.setAttribute("decoding", "async");
@@ -3648,7 +3651,7 @@
       overlay.id = "nte-inv-modal";
       overlay.className = "nte-modal-overlay";
       overlay.innerHTML =
-        '<div class="nte-modal"><div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">Trading Extension</a></div></div><button class="nte-modal-close">\u00d7</button></div><div class="nte-loading-modal"><div class="spinner"></div>Trading Extension is loading inventory details...</div></div>';
+        '<div class="nte-modal"><div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">Nevos Trading Extension</a></div></div><button class="nte-modal-close">\u00d7</button></div><div class="nte-loading-modal"><div class="spinner"></div>Trading Extension is loading inventory details...</div></div>';
       document.body.appendChild(overlay);
       assert_profile_dominance();
       attach_modal_logo(overlay);
@@ -3820,7 +3823,7 @@
 
       var modal = overlay.querySelector(".nte-modal");
       modal.innerHTML =
-        '<div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">Trading Extension</a></div></div><button class="nte-modal-close">\u00d7</button></div>' +
+        '<div class="nte-modal-header"><div class="nte-modal-title"><img class="nte-modal-logo" alt="" width="36" height="36" decoding="async" /><div class="nte-modal-title-stack"><span class="nte-modal-title-text">Inventory Overview</span><a class="nte-modal-discord-sub" href="https://nevos-extension.com" target="_blank" rel="noopener noreferrer">Nevos Trading Extension</a></div></div><button class="nte-modal-close">\u00d7</button></div>' +
         '<div class="nte-stats">' +
         '<div class="' +
         estimated_usd_card_class +

@@ -2353,24 +2353,35 @@
         )
           ? total_line.parentElement
           : total_line;
-      clear_offer_total_usd_clearance(wrap);
+      // Measured with the current margin in place and written only when it changes:
+      // clearing and re-setting it on every stats pass flipped two attributes while idle.
+      let current = wrap.hasAttribute("data-nte-usd-total-clearance")
+        ? parseFloat(wrap.style.marginTop) || 0
+        : 0;
       let usd_rows = offer.querySelectorAll(
         ".item-card-price .nte-routility-usd-row",
       );
-      if (!usd_rows.length) continue;
+      if (!usd_rows.length) {
+        current && clear_offer_total_usd_clearance(wrap);
+        continue;
+      }
       let total_rect = total_line.getBoundingClientRect();
       if (!(total_rect.width || total_rect.height)) continue;
       let worst_overlap = 0;
       for (let row of usd_rows) {
         let rect = row.getBoundingClientRect();
         if (!(rect.width || rect.height)) continue;
-        let overlap = rect.bottom + 8 - total_rect.top;
+        let overlap = rect.bottom + 8 - total_rect.top + current;
         if (overlap > worst_overlap) worst_overlap = overlap;
       }
-      if (worst_overlap > 0) {
-        wrap.style.marginTop = `${Math.ceil(worst_overlap)}px`;
-        wrap.setAttribute("data-nte-usd-total-clearance", "1");
+      let next = worst_overlap > 0 ? Math.ceil(worst_overlap) : 0;
+      if (next === current) continue;
+      if (!next) {
+        clear_offer_total_usd_clearance(wrap);
+        continue;
       }
+      wrap.style.marginTop = `${next}px`;
+      wrap.setAttribute("data-nte-usd-total-clearance", "1");
     }
   }
   function clear_trade_win_loss_send_mount() {
@@ -2412,7 +2423,26 @@
       }) || null
     );
   }
-  function get_trade_win_loss_mount_point() {
+  // Send page, "Between inventories" (the 3.10.54 spot): under your inventory, above theirs.
+  function get_trade_win_loss_inventory_mount() {
+    let inventory_holder = document.querySelector(".inventory-panel-holder");
+    if (!(inventory_holder instanceof Element)) return null;
+    let second_panel = inventory_holder.querySelectorAll(
+      ".trade-inventory-panel",
+    )[1];
+    let second_panel_host =
+      second_panel instanceof Element
+        ? Array.from(inventory_holder.children).find((child) =>
+            child.contains(second_panel),
+          )
+        : null;
+    return {
+      parent: inventory_holder,
+      before: second_panel_host instanceof Element ? second_panel_host : null,
+      mode: "send_holder",
+    };
+  }
+  function get_trade_win_loss_mount_point(between_inventories = !0) {
     if ("details" === c.getPageType()) {
       let detail_offer = document.querySelectorAll(
         ".trade-list-detail-offer",
@@ -2422,6 +2452,10 @@
         return { parent: divider, before: null, mode: "detail_divider" };
     }
     if ("sendOrCounter" === c.getPageType()) {
+      if (between_inventories) {
+        let mount = get_trade_win_loss_inventory_mount();
+        if (mount) return mount;
+      }
       // Between "Your Offer" and "Your Request", the way the details page shows it between the two
       // offers. Roblox's send page has one offers column per offer, and the first ends in a gap.
       let offer_columns = document.querySelectorAll(".trade-request-window-offers");
@@ -2440,26 +2474,8 @@
         if (send_button?.parentElement)
           return { parent: send_button.parentElement, before: send_button };
       }
-      let inventory_holder = document.querySelector(".inventory-panel-holder");
-      let inventory_panels = inventory_holder?.querySelectorAll(
-        ".trade-inventory-panel",
-      );
-      if (inventory_holder instanceof Element) {
-        let second_panel = inventory_panels?.[1];
-        let second_panel_host =
-          second_panel instanceof Element
-            ? Array.from(inventory_holder.children).find((child) =>
-                child.contains(second_panel),
-              )
-            : null;
-        if (second_panel_host instanceof Element)
-          return {
-            parent: inventory_holder,
-            before: second_panel_host,
-            mode: "send_holder",
-          };
-        return { parent: inventory_holder, before: null, mode: "send_holder" };
-      }
+      let inventory_mount = get_trade_win_loss_inventory_mount();
+      if (inventory_mount) return inventory_mount;
       let offers = document.querySelector(".trade-request-window-offers");
       if (offers instanceof Element) {
         let action_button = find_trade_request_send_button(offers);
@@ -2579,6 +2595,12 @@
       row.style.marginTop = "0";
       row.style.marginLeft = "auto";
       row.style.marginRight = "auto";
+      // The tax warning mounts right after this row (mount_send_value_warning); the pair is one
+      // block, or "between inventories" moved the row under the warning and back every pass.
+      let tail =
+        row.nextElementSibling?.id === "valueWarningRow"
+          ? row.nextElementSibling
+          : row;
       if (mount?.parent && row.parentElement !== mount.parent)
         mount.parent.insertBefore(row, mount.before || null);
       else if (
@@ -2586,14 +2608,15 @@
         mount.before &&
         // The resolver uses offer.nextSibling, which is this row once mounted.
         mount.before !== row &&
-        row.nextSibling !== mount.before
+        mount.before !== tail &&
+        tail.nextSibling !== mount.before
       )
         mount.parent.insertBefore(row, mount.before);
       else if (
         mount?.parent &&
         !mount.before &&
         row.parentElement === mount.parent &&
-        row !== mount.parent.lastChild
+        tail !== mount.parent.lastChild
       )
         mount.parent.appendChild(row);
     }
@@ -2630,7 +2653,8 @@
       row.firstElementChild instanceof Element ? row.firstElementChild : row;
     let height = content.getBoundingClientRect().height;
     if (!(height > 0)) return;
-    parent.style.paddingTop = `${Math.max(38, Math.ceil(height + 16))}px`;
+    // Cards (and stacked pills) are taller and need more room off the totals above.
+    parent.style.paddingTop = `${Math.max(38, Math.ceil(height + (height > 40 ? 30 : 16)))}px`;
   }
   function align_trade_win_loss_container(row) {
     if (!(row instanceof Element)) return;
@@ -2732,9 +2756,34 @@
         });
     }, 80);
   }
+  // UI tab settings: "Win/Loss Stats Style" (cards | pills), "Show Win/Loss Percentages" and,
+  // on the send page, "Win/Loss Stats Position" (inventories | offer). Cards, percentages
+  // and between-inventories are the defaults.
+  function get_win_loss_layout() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(
+        [
+          "Win/Loss Stats Style",
+          "Win/Loss Stats Position",
+          "Show Win/Loss Percentages",
+        ],
+        (result) => {
+          chrome.runtime.lastError;
+          resolve({
+            cards: result?.["Win/Loss Stats Style"] !== "pills",
+            middle: result?.["Win/Loss Stats Position"] !== "offer",
+            pct: result?.["Show Win/Loss Percentages"] !== false,
+          });
+        },
+      );
+    });
+  }
   async function p() {
     let run = ++trade_win_loss_run;
-    let mount = get_trade_win_loss_mount_point();
+    let layout = await get_win_loss_layout();
+    // A newer p() started while this one read the settings; it owns the chip.
+    if (run !== trade_win_loss_run) return;
+    let mount = get_trade_win_loss_mount_point(layout.middle);
     let win_loss_trade_id = get_selected_list_trade_id();
     if (win_loss_trade_id !== trade_win_loss_last_trade_id) {
       trade_win_loss_last_trade_id = win_loss_trade_id;
@@ -2870,19 +2919,20 @@
         t && rap_ready,
         a,
         n,
-        s,
+        s && layout.pct,
         value_ready,
         value_ready ? i : 0,
         o,
-        d,
+        d && layout.pct,
         rout_ready,
         rout_amt,
         rout_pct,
-        rout_show_pct,
+        rout_show_pct && layout.pct,
         usd_ready,
         u_amt,
         u_pct,
-        u_show_pct,
+        u_show_pct && layout.pct,
+        layout.cards,
       );
       let both_values = value_ready && rout_ready;
       let tooltip = `${t && rap_ready ? l("RAP", g, s, a) + " " : ""}`;
@@ -3000,6 +3050,9 @@
     "values_to_use",
     "Quick Proof",
     "Relative Trade Times",
+    "Win/Loss Stats Style",
+    "Win/Loss Stats Position",
+    "Show Win/Loss Percentages",
   ];
   let trade_profit_colorblind_mode = !1;
   let trade_profit_colorblind_profile = colorblind_mode_profile_default;
@@ -3611,6 +3664,52 @@
       maximumFractionDigits: 2,
     });
   }
+  // "Cards" win/loss style (UI tab, the default): a labeled tile per stat with an
+  // arrow, on an opaque base so trade page themes can't wash it out. USD is a
+  // short pill centered under the tiles. Tones are [gain, loss] per colorblind profile.
+  const trade_card_tones = {
+    off: [[34, 197, 94], [239, 68, 68]],
+    deuteranopia: [[37, 99, 235], [234, 88, 12]],
+    protanopia: [[13, 148, 136], [225, 29, 72]],
+    tritanopia: [[22, 163, 74], [147, 51, 234]],
+    achromatopsia: [[100, 116, 139], [31, 41, 55]],
+  };
+  function build_trade_win_loss_cards(stats, usd) {
+    let dark = "dark" === c.getColorMode(),
+      [gain_rgb, loss_rgb] =
+        trade_card_tones[
+          trade_profit_colorblind_mode ? trade_profit_colorblind_profile : "off"
+        ] || trade_card_tones.off,
+      mix = (rgb, to, t) =>
+        rgb.map((v) => Math.round(v + (to - v) * t)).join(",");
+    let tile = ([label, amount, percent, show_percent], wide) => {
+      let state = get_trade_profit_state_meta(amount),
+        rgb = state.equal ? [100, 116, 139] : state.win ? gain_rgb : loss_rgb,
+        tint = rgb.join(","),
+        abs =
+          "USD" === label
+            ? `$${format_trade_usd_amount(amount)}`
+            : c.commafy(Math.abs(amount)),
+        text = state.equal ? "Even" : `${state.win ? "+" : "-"}${abs}`,
+        pct =
+          !state.equal && show_percent
+            ? ` (${format_trade_percent(percent, !0)}%)`
+            : "",
+        icon = state.equal
+          ? '<path fill="currentColor" d="M2.5 4.8h11V7h-11zm0 4.2h11v2.2h-11z"/>'
+          : `<path fill="currentColor" d="M8 1.6 14.4 8.3H10.1v6.1H5.9V8.3H1.6Z"${state.win ? "" : ' transform="rotate(180 8 8)"'}/>`,
+        size = wide ? 13 : 15;
+      return `<span style="flex:${wide ? "0 0 auto" : "1 1 128px"};min-width:0;box-sizing:border-box;display:flex;flex-direction:${wide ? "row;justify-content:center;padding:6px 14px" : "column;justify-content:center;padding:10px 12px 11px"};align-items:center;gap:${wide ? 9 : 6}px;border-radius:${wide ? 999 : 10}px;border:1px solid rgba(${tint},${dark ? 0.4 : 0.32});background:linear-gradient(180deg,rgba(${tint},${dark ? 0.1 : 0.05}),rgba(${tint},${dark ? 0.2 : 0.12})),${dark ? "#26282b" : "#fff"};color:rgb(${dark ? mix(rgb, 255, 0.42) : mix(rgb, 0, 0.3)});box-shadow:0 1px 2px rgba(0,0,0,${dark ? 0.24 : 0.05});line-height:1;"><span style="font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;opacity:.74;">${label}</span><span style="display:inline-flex;align-items:center;gap:6px;font-size:${wide ? 14 : 16}px;font-weight:700;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums;"><svg width="${size}" height="${size}" viewBox="0 0 16 16" aria-hidden="true" style="display:block;flex:0 0 auto;">${icon}</svg><span>${text}${pct}</span></span></span>`;
+    };
+    let e = document.createElement("div");
+    e.style.cssText =
+      "display:flex;flex-wrap:wrap;justify-content:center;gap:8px;width:100%;max-width:560px;margin:10px auto 6px;box-sizing:border-box;cursor:default;";
+    e.innerHTML =
+      stats.map((stat) => tile(stat)).join("") +
+      // USD sits on its own line as a short centered pill (full width read as a long bar).
+      (usd ? `<span style="flex-basis:100%;height:0;"></span>${tile(usd, !0)}` : "");
+    return e;
+  }
   function y(
     show_rap,
     rap_amount,
@@ -3628,7 +3727,34 @@
     usd_amount,
     usd_percent,
     show_usd_percent,
+    cards,
   ) {
+    if (cards) {
+      let both = show_roli_value && show_rout_value;
+      return build_trade_win_loss_cards(
+        [
+          show_rap && [
+            "RAP",
+            rap_amount,
+            rap_percent,
+            show_rap_percent,
+          ],
+          show_roli_value && [
+            both ? "Rolimons" : "Value",
+            value_amount,
+            value_percent,
+            show_value_percent,
+          ],
+          show_rout_value && [
+            both ? "Routility" : "Value",
+            rout_amount,
+            rout_percent,
+            show_rout_percent,
+          ],
+        ].filter(Boolean),
+        show_usd && ["USD", usd_amount, usd_percent, show_usd_percent],
+      );
+    }
     let dark = "dark" === c.getColorMode(),
       neutral_bg = dark
         ? "rgba(255, 255, 255, 0.12)"
@@ -9365,6 +9491,8 @@
     row_fetch_fast_q = [],
     // row fetch slots: taken on dequeue -> released once per task (finally, or a 60 s watchdog); soft mode bumps the generation, never the count
     row_active_requests = 0,
+    // slow (prewarm) tasks among them: capped at 2 so visible rows always get a slot
+    row_active_slow = 0,
     row_next_request_at = 0,
     row_fetch_generation = 0,
     roblox_owned_detail_until = {},
@@ -9765,11 +9893,15 @@
     let completed_tab = get_current_trade_tab() === "completed";
     let max_parallel = completed_tab ? 1 : 4;
     if (row_active_requests >= max_parallel) return;
+    // Slow tasks wait out the shared rate-limit pause inside fetch_trade_api; with all four
+    // slots theirs, visible rows sat empty for the whole pause.
     let q = completed_tab
       ? row_fetch_q
       : row_fetch_fast_q.length
         ? row_fetch_fast_q
-        : row_fetch_q;
+        : row_active_slow < 2
+          ? row_fetch_q
+          : [];
     if (0 === q.length) return;
     let next_item = null;
     if (completed_tab) {
@@ -9792,8 +9924,10 @@
     }
     if (!next_item) return;
     let { tradeId: e, resolve: t, row: queued_row = null } = next_item,
-      r = Math.max(0, row_next_request_at - Date.now());
+      r = Math.max(0, row_next_request_at - Date.now()),
+      slow = !completed_tab && !next_item.fast;
     row_active_requests++;
+    slow && row_active_slow++;
     let pace_ms = completed_tab ? 100 : 50;
     if (completed_tab) {
       let is_visible = is_trade_row_visible_in_scroll_view(queued_row);
@@ -9810,6 +9944,7 @@
         released = !0;
         clearTimeout(watchdog);
         row_active_requests--;
+        slow && row_active_slow--;
         process_row_fetch_q();
       };
       // await t.json() has no time limit; a stalled body must not hold the slot.
@@ -10062,7 +10197,17 @@
       let r = t?.[e] || t?.[Number(e)];
       if (r) return set_trade_row_cached_trade(e, r);
     }
-    if (row_trade_pending[e]) return row_trade_pending[e];
+    if (row_trade_pending[e]) {
+      // A visible row wants a trade a prewarm queued as slow: move it to the fast queue.
+      let i = fast ? row_fetch_q.findIndex((item) => item.tradeId === e) : -1;
+      if (i >= 0 && get_current_trade_tab() !== "completed") {
+        let item = row_fetch_q.splice(i, 1)[0];
+        item.fast = true;
+        row_fetch_fast_q.push(item);
+        process_row_fetch_q();
+      }
+      return row_trade_pending[e];
+    }
     return (row_trade_pending[e] = queue_row_fetch(e, fast, row)
       .then((t) => {
         return t || row_trade_cache[e] || null;
@@ -12979,11 +13124,11 @@
       trade_id = await J(row, 3);
     }
     if (!trade_id) return;
-    let trade = get_trade_row_cached_trade(trade_id);
-    trade ||
-      (trade = !row_trade_pending[trade_id]
-        ? await K(trade_id, null, !1, row).catch(() => null)
-        : await row_trade_pending[trade_id].catch(() => null));
+    if (get_trade_row_cached_trade(trade_id) || row_trade_pending[trade_id]) return;
+    // During a shared rate-limit pause a slow fetch only holds a slot until the pause ends,
+    // and a visible row that wanted the same trade waited with it.
+    if ((await get_shared_trade_api_resume_at()) > Date.now()) return;
+    await K(trade_id, null, !1, row).catch(() => null);
   }
   let trade_row_detail_prewarm_bound = false;
   function bind_trade_row_detail_prewarm() {
@@ -13241,6 +13386,18 @@
     let trade_id =
       restore_trade_row_id_from_fp(row) || get_selected_trade_id_sync(row);
     let wrap = query_trade_row_control(row, ".nte-trade-row-decline-wrap");
+    // One button per row: a second wrap (left in the row's light DOM) showed as a
+    // "Decline" stuck behind the value box.
+    if (row.classList?.contains("trade-row"))
+      for (let extra of query_all_trade_row_controls(".nte-trade-row-decline-wrap", row)) {
+        if (extra === wrap) continue;
+        // The row observer parks and re-attaches removed wraps (collect_stripped_trade_row_controls):
+        // unmark this one and drop its park slot first, or it comes straight back.
+        let parked = trade_row_control_park.get(String(extra.dataset.nteTradeId || ""));
+        if (parked?.decline === extra) delete parked.decline;
+        extra.className = "";
+        extra.remove();
+      }
     if (!trade_row_decline_enabled || !is_trade_row_decline_tab()) {
       remove_trade_row_decline_button(row);
       return;
@@ -16840,6 +16997,8 @@
       html.nte-trade-ui-backoff .nte-history-fallback-row,html.nte-trade-ui-backoff .nte-poison-fallback-row,html.nte-trade-ui-backoff .nte-trade-request-analyze-row{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
       html.nte-trade-ui-backoff .nte-trade-row-lock-wrap,html.nte-trade-ui-backoff .nte-trade-row-decline-wrap{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
       html.nte-trade-ui-backoff #winLossStatsContainer{z-index:auto!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
+      /* Switching trades re-renders the offers after the stats row for about a second, until the next pass moves it back. */
+      #winLossStatsContainer:has(~ .trade-list-detail-offer ~ .trade-list-detail-offer){display:none!important}
       html.nte-trade-ui-backoff .nte-history-panel{display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important}
     `;
     // Rewriting the text or re-appending in place queued head/style records
@@ -23241,7 +23400,7 @@
               ${logo ? `<img src="${nte_history_attr_esc(logo)}" alt="">` : "<span>E</span>"}
             </div>
             <div class="nte-counter-prompt-titles">
-              <div class="nte-counter-prompt-title">Trading Extension</div>
+              <div class="nte-counter-prompt-title">Nevos Trading Extension</div>
               <div class="nte-counter-prompt-sub">Trade action</div>
             </div>
             <button type="button" class="nte-counter-prompt-close" aria-label="Cancel">&times;</button>

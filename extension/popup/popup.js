@@ -23,7 +23,7 @@ const chevron_svg =
 
 const option_groups = nte_filter_option_groups(
   JSON.parse(
-    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Relative Trade Times","enabledByDefault":true,"path":"relative-trade-times"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
+    '["Values",{"name":"Values to use","enabledByDefault":true,"path":"values-to-use"},{"name":"Values on Trading Window","enabledByDefault":true,"path":"values-on-trading-window"},{"name":"Values on Trade Lists","enabledByDefault":true,"path":"values-on-trade-lists"},{"name":"Partner Value on Trade Lists","enabledByDefault":true,"path":"partner-value-on-trade-lists"},{"name":"Values on Catalog Pages","enabledByDefault":true,"path":"values-on-catalog-pages"},{"name":"Values on User Pages","enabledByDefault":true,"path":"values-on-user-pages"},{"name":"Show Routility USD Values","enabledByDefault":false,"path":"show-usd-values"},{"name":"USD on Rolimons Pages","enabledByDefault":true,"path":"rolimons-usd-values"},"Trading",{"name":"Trade Win/Loss Stats","enabledByDefault":true,"path":"trade-win-loss-stats"},{"name":"Show Win/Loss Percentages","enabledByDefault":true,"path":"show-win-loss-percentages"},{"name":"Fast Trade Loading","enabledByDefault":true,"path":"fast-trade-loading"},{"name":"Colorblind Mode","enabledByDefault":false,"path":"colorblind-profit-mode"},{"name":"Trade Window Search","enabledByDefault":true,"path":"trade-window-search"},{"name":"Duplicate Trade Warning","enabledByDefault":true,"path":"duplicate-trade-warning"},{"name":"Miss Send Warning","enabledByDefault":true,"path":"miss-send-warning"},{"name":"Show Quick Decline Button","enabledByDefault":true,"path":"show-quick-decline-button"},{"name":"Show Trade Lock Button","enabledByDefault":false,"path":"show-trade-lock-button"},{"name":"Relative Trade Times","enabledByDefault":true,"path":"relative-trade-times"},{"name":"Analyze Trade","enabledByDefault":true,"path":"analyze-trade"},{"name":"Counter Trade Choices","enabledByDefault":true,"path":"counter-trade-choices"},{"name":"Quick Proof","enabledByDefault":true,"path":"quick-proof"},{"name":"Reseller Trade Button","enabledByDefault":true,"path":"reseller-trade-button"},{"name":"Roblox New UI Compatible","enabledByDefault":true,"path":"roblox-new-ui-compatible"},"Trade Notifications",{"name":"Inbound Trade Notifications","enabledByDefault":false,"path":"inbound-trade-notifications"},{"name":"Declined Trade Notifications","enabledByDefault":false,"path":"declined-trade-notifications"},{"name":"Completed Trade Notifications","enabledByDefault":false,"path":"completed-trade-notifications"},"Item Flags",{"name":"Flag Rare Items","enabledByDefault":true,"path":"flag-rare-items"},{"name":"Flag Projected Items","enabledByDefault":true,"path":"flag-projected-items"},"Links",{"name":"Add Item Profile Links","enabledByDefault":true,"path":"add-item-profile-links"},{"name":"Add Item Ownership Buttons","enabledByDefault":true,"path":"add-uaid-links"},{"name":"Add User Profile Links","enabledByDefault":true,"path":"add-user-profile-links"},"Other",{"name":"Post-Tax Trade Values","enabledByDefault":true,"path":"post-tax-trade-values"},{"name":"Mobile Trade Items Button","enabledByDefault":true,"path":"mobile-trade-items-button"},{"name":"Disable Win/Loss Stats RAP","enabledByDefault":false,"path":"disable-win-loss-stats-rap"},{"name":"Quick Item Search","enabledByDefault":true,"path":"quick-item-search"},{"name":"Quick User Search","enabledByDefault":true,"path":"quick-user-search"},{"name":"Fix Rolimons Pages","enabledByDefault":true,"path":"fix-rolimons-pages"}]',
   ),
 );
 
@@ -41,7 +41,11 @@ document.querySelectorAll(".tab").forEach((tab) => {
       .getElementById(`panel-${tab.dataset.tab}`)
       .classList.remove("hidden");
     const reset_btn = document.getElementById("restoreDefaultSettings");
-    if (reset_btn) reset_btn.hidden = tab.dataset.tab !== "options";
+    if (reset_btn)
+      reset_btn.hidden = tab.dataset.tab !== "options";
+    if (tab.dataset.tab === "ui") {
+      render_ui_tab();
+    }
     if (tab.dataset.tab === "tradeactions") {
       render_actions_tab();
     }
@@ -136,6 +140,31 @@ function normalize_values_to_use(value) {
 
 function normalize_counter_trade_choice_mode(value) {
   return String(value || "").toLowerCase() === "buttons" ? "buttons" : "prompt";
+}
+
+// UI tab: how the trade window's win/loss stats look, and on the send/counter
+// page where they sit (between the two inventories, or under your offer).
+const win_loss_style_key = "Win/Loss Stats Style";
+const win_loss_style_default = "cards";
+const win_loss_position_key = "Win/Loss Stats Position";
+const win_loss_position_default = "inventories";
+// Visual options that live in the UI tab instead of Settings.
+const ui_tab_option_names = new Set([
+  "Trade Win/Loss Stats",
+  "Show Win/Loss Percentages",
+  "Disable Win/Loss Stats RAP",
+  "Colorblind Mode",
+  "Relative Trade Times",
+  "Show Quick Decline Button",
+  "Show Trade Lock Button",
+]);
+
+function normalize_win_loss_style(value) {
+  return String(value || "").toLowerCase() === "pills" ? "pills" : "cards";
+}
+
+function normalize_win_loss_position(value) {
+  return String(value || "").toLowerCase() === "offer" ? "offer" : "inventories";
 }
 
 const nte_roblox_tab_url_query_patterns = [
@@ -1047,7 +1076,8 @@ function normalize_popup_theme(value) {
 function apply_popup_theme(theme) {
   let normalized = normalize_popup_theme(theme);
   document.body.classList.toggle("theme-retro", normalized === "retro");
-  document.querySelectorAll(".about-style-btn").forEach((btn) => {
+  // Only the popup theme buttons: the UI tab's Style/Position pickers share the class.
+  document.querySelectorAll(".about-style-btn[data-popup-theme]").forEach((btn) => {
     btn.classList.toggle(
       "active",
       String(btn.getAttribute("data-popup-theme") || "").trim() === normalized,
@@ -1057,7 +1087,9 @@ function apply_popup_theme(theme) {
 }
 
 async function init_popup_theme_switcher() {
-  let buttons = Array.from(document.querySelectorAll(".about-style-btn"));
+  let buttons = Array.from(
+    document.querySelectorAll(".about-style-btn[data-popup-theme]"),
+  );
   if (!buttons.length) return;
   apply_popup_theme(popup_theme_default);
   let saved = await get_storage([popup_theme_storage_key]);
@@ -1205,7 +1237,7 @@ async function apply_extension_update(next_version = "") {
   if (!can_apply_extension_update()) {
     return {
       ok: false,
-      error: "This browser cannot apply updates from the extension popup.",
+      error: "This browser can't apply updates from the extension settings.",
     };
   }
 
@@ -1588,7 +1620,7 @@ function show_test_notification(name) {
     {
       type: "basic",
       iconUrl: chrome.runtime.getURL("assets/icons/logo128.png"),
-      title: "Trading Extension",
+      title: "Nevos Trading Extension",
       message: `${name} enabled`,
       priority: 2,
     },
@@ -3340,7 +3372,9 @@ async function render_trade_ads_composer(root, status) {
     );
     if (random_each_post) {
       let hint =
-        side === "offer" ? "Random offers each post" : "Random each post";
+        side === "offer"
+          ? "Random offers each post"
+          : "Random each post. Tap to choose items instead.";
       return `<div class="ta-slot" data-side="${side}" data-index="${i}" data-random="1"><span class="ta-slot-random" title="${escape_html(hint)}">🎲</span></div>`;
     }
     if (id != null) {
@@ -3702,6 +3736,24 @@ async function render_trade_ads_composer(root, status) {
           pick_opts.inventoryPromise = trade_ads_load_inventory_session();
         }
         trade_ads_attach_picker(root, pick_opts);
+      });
+    });
+
+  // Tapping a 🎲 request slot means "let me choose": random requests go off and the
+  // picker opens on that slot (it used to do nothing, so people thought picking was broken).
+  root
+    .querySelectorAll('.ta-slot[data-side="request"][data-random="1"]')
+    .forEach((el) => {
+      el.addEventListener("click", async () => {
+        await trade_ads_save_merged_config({ request_random: false });
+        let fresh = await trade_ads_fetch_status_from_bg();
+        if (!fresh?.verified) return render_trade_ads_tab();
+        await render_trade_ads_composer(root, fresh);
+        let slot = root.querySelector(
+          `.ta-slot[data-side="request"][data-index="${Number(el.dataset.index)}"]`,
+        );
+        // A save that didn't land re-renders the 🎲; clicking it again would loop.
+        if (slot && slot.dataset.random !== "1") slot.click();
       });
     });
 
@@ -4337,6 +4389,9 @@ async function render_trade_ads_tab() {
 
 async function refresh_all_panels() {
   await render_options();
+  if (!document.getElementById("panel-ui")?.classList.contains("hidden")) {
+    await render_ui_tab();
+  }
   if (!document.getElementById("panel-tradeads")?.classList.contains("hidden")) {
     await render_trade_ads_tab();
   }
@@ -4389,8 +4444,12 @@ function apply_options_search(query = "") {
     card.hidden = !match;
     if (match) any_visible = true;
   }
+  // Visual settings moved to the UI tab; point there instead of "no matches".
+  let ui_match = !empty && ui_tab_search_text.includes(needle);
+  let ui_hint = document.getElementById("options-search-ui-hint");
+  if (ui_hint) ui_hint.hidden = !ui_match;
   let empty_el = document.getElementById("options-search-empty");
-  if (empty_el) empty_el.hidden = empty || any_visible;
+  if (empty_el) empty_el.hidden = empty || any_visible || ui_match;
 }
 
 function ensure_options_search_bar() {
@@ -4403,6 +4462,11 @@ function ensure_options_search_bar() {
     timer = setTimeout(() => apply_options_search(input.value), 80);
   });
   input.addEventListener("search", () => apply_options_search(input.value));
+  document
+    .getElementById("options-search-ui-open")
+    ?.addEventListener("click", () =>
+      document.querySelector('.tab[data-tab="ui"]')?.click(),
+    );
 }
 
 const ROBLOX_TOTP_ENABLED_KEY = "roblox_totp_autofill_enabled";
@@ -4636,6 +4700,7 @@ async function render_options() {
 
     if (item.name === "Mobile Trade Items Button" && !is_mobile_browser())
       continue;
+    if (ui_tab_option_names.has(item.name)) continue;
     let value =
       item.name === colorblind_mode_option_name
         ? get_saved_colorblind_mode_value(saved)
@@ -4677,13 +4742,6 @@ async function render_options() {
   }
 
   append_roblox_totp_card(container, totp_snapshot);
-  append_trade_page_theme_card(container, {
-    enabled: saved[trade_page_theme_enabled_key],
-    theme: saved[trade_page_theme_key],
-    rolimons_enabled: saved[rolimons_profile_theme_enabled_key],
-    rolimons_theme: saved[rolimons_profile_theme_key],
-    custom_themes: saved[trade_page_custom_themes_key],
-  });
   ensure_options_search_bar();
   apply_options_search(document.getElementById("options-search")?.value || "");
   let search_active = !!(document.getElementById("options-search")?.value || "").trim();
@@ -4696,6 +4754,174 @@ async function render_options() {
   });
   saved_scrolls.forEach((top, el) => {
     el.scrollTop = top;
+  });
+}
+
+const ui_tab_search_text = build_option_search_text(
+  ...ui_tab_option_names,
+  "win/loss stats style cards pills position between inventories under your offer",
+  "themes settings popup theme modern retro trade page theme rolimons profile custom background",
+);
+
+const ui_preview_html = {
+  cards:
+    '<span class="ui-prev"><span class="ui-prev-card is-up"><small>RAP</small>&#8593; +1,240</span><span class="ui-prev-card is-down"><small>Value</small>&#8595; -800</span></span>',
+  pills:
+    '<span class="ui-prev"><span class="ui-prev-pill is-up"><i></i>+1,240</span><span class="ui-prev-pill is-down"><i></i>-800</span></span>',
+  inventories:
+    '<span class="ui-prev ui-prev-stack"><span class="ui-prev-block">Your inventory</span><span class="ui-prev-bar"></span><span class="ui-prev-block">Their inventory</span></span>',
+  offer:
+    '<span class="ui-prev ui-prev-stack"><span class="ui-prev-block">Your offer</span><span class="ui-prev-bar"></span><span class="ui-prev-block">Your request</span></span>',
+};
+
+function create_ui_choice({ label, hint, active, choices, on_change }) {
+  let current = active;
+  const wrap = document.createElement("div");
+  wrap.className = "ui-choice";
+  const title = document.createElement("div");
+  title.className = "ui-choice-label";
+  title.textContent = label;
+  const grid = document.createElement("div");
+  grid.className = "about-style-grid";
+  grid.setAttribute("role", "group");
+  grid.setAttribute("aria-label", label);
+  const sync = () => {
+    grid.querySelectorAll(".about-style-btn").forEach((btn) => {
+      let on = btn.dataset.value === current;
+      btn.classList.toggle("active", on);
+      btn.setAttribute("aria-pressed", String(on));
+    });
+  };
+  choices.forEach((choice) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "about-style-btn ui-choice-btn";
+    btn.dataset.value = choice.value;
+    btn.innerHTML = `${ui_preview_html[choice.value] || ""}<span class="about-style-name">${escape_html(choice.name)}</span><span class="about-style-note">${escape_html(choice.note)}</span>`;
+    btn.addEventListener("click", async () => {
+      if (current === choice.value) return;
+      current = choice.value;
+      sync();
+      await on_change(choice.value);
+    });
+    grid.append(btn);
+  });
+  sync();
+  wrap.append(title, grid);
+  if (hint) {
+    const note = document.createElement("p");
+    note.className = "ui-choice-hint";
+    note.textContent = hint;
+    wrap.append(note);
+  }
+  return wrap;
+}
+
+function create_ui_card(title, note) {
+  const card = document.createElement("section");
+  card.className = "about-style-card ui-card";
+  card.innerHTML = `<div class="about-style-copy"><strong>${escape_html(title)}</strong><span>${escape_html(note)}</span></div>`;
+  return card;
+}
+
+let render_ui_tab_seq = 0;
+
+async function render_ui_tab() {
+  const root = document.getElementById("ui-root");
+  const theme_root = document.getElementById("ui-theme-root");
+  if (!root || !theme_root) return;
+  const render_id = ++render_ui_tab_seq;
+  const ui_options = option_groups.filter(
+    (item) => typeof item !== "string" && ui_tab_option_names.has(item.name),
+  );
+  let saved = await get_storage([
+    ...ui_options.map((item) => item.name),
+    legacy_colorblind_mode_option_name,
+    colorblind_mode_profile_key,
+    trade_value_source_key,
+    win_loss_style_key,
+    win_loss_position_key,
+    trade_page_theme_enabled_key,
+    trade_page_theme_key,
+    trade_page_custom_themes_key,
+    rolimons_profile_theme_enabled_key,
+    rolimons_profile_theme_key,
+  ]);
+  saved = await ensure_colorblind_mode_settings(saved);
+  if (render_id !== render_ui_tab_seq) return;
+
+  const row_for = (name) => {
+    const option = ui_options.find((item) => item.name === name);
+    if (!option) return null;
+    let value =
+      name === colorblind_mode_option_name
+        ? get_saved_colorblind_mode_value(saved)
+        : saved[name];
+    if (value === undefined) value = option.enabledByDefault;
+    return create_option_row(option, value, {
+      colorblind_mode_profile: saved[colorblind_mode_profile_key],
+      trade_value_source: saved[trade_value_source_key],
+    });
+  };
+  const save_choice = async (key, value) => {
+    await set_option_value(key, value);
+    send_option_update(key);
+  };
+
+  const stats = create_ui_card(
+    "Win/Loss Stats",
+    "The gain or loss summary shown in the trade window.",
+  );
+  stats.append(
+    ...[
+      row_for("Trade Win/Loss Stats"),
+      create_ui_choice({
+        label: "Style",
+        active: normalize_win_loss_style(saved[win_loss_style_key]),
+        choices: [
+          { value: "cards", name: "Cards", note: "Labeled boxes with arrows" },
+          { value: "pills", name: "Pills", note: "Compact chips with icons" },
+        ],
+        on_change: (value) => save_choice(win_loss_style_key, value),
+      }),
+      create_ui_choice({
+        label: "Position",
+        hint: "On the send and counter pages. Trade details always show the stats between the two offers.",
+        active: normalize_win_loss_position(saved[win_loss_position_key]),
+        choices: [
+          { value: "inventories", name: "Between inventories", note: "Under your inventory" },
+          { value: "offer", name: "Under your offer", note: "Above Your Request" },
+        ],
+        on_change: (value) => save_choice(win_loss_position_key, value),
+      }),
+      row_for("Show Win/Loss Percentages"),
+      row_for("Disable Win/Loss Stats RAP"),
+    ].filter(Boolean),
+  );
+
+  const display = create_ui_card(
+    "Display",
+    "Colors and trade list buttons.",
+  );
+  display.append(
+    ...[
+      "Colorblind Mode",
+      "Relative Trade Times",
+      "Show Quick Decline Button",
+      "Show Trade Lock Button",
+    ]
+      .map(row_for)
+      .filter(Boolean),
+  );
+
+  root.replaceChildren(stats, display);
+  theme_root.replaceChildren();
+  append_trade_page_theme_card(theme_root, {
+    enabled: saved[trade_page_theme_enabled_key],
+    theme: saved[trade_page_theme_key],
+    rolimons_enabled: saved[rolimons_profile_theme_enabled_key],
+    rolimons_theme: saved[rolimons_profile_theme_key],
+    custom_themes: saved[trade_page_custom_themes_key],
   });
 }
 
@@ -5258,7 +5484,7 @@ function append_trade_page_theme_card(container, snapshot = {}) {
   card.innerHTML = `
     <div class="nte-theme-head">
       <div>
-        <span class="nte-theme-title">Themes</span>
+        <span class="nte-theme-title">Page themes</span>
         <span class="nte-theme-sub" id="nte-theme-sub">Recolor the Roblox trades page.</span>
       </div>
       <label class="nte-theme-toggle" title="Enable this theme">
@@ -5852,6 +6078,8 @@ function restore_defaults() {
     updates[trade_value_source_key] = trade_value_source_default;
     updates[values_to_use_key] = values_to_use_default;
     updates[counter_trade_choice_mode_key] = counter_trade_choice_mode_default;
+    updates[win_loss_style_key] = win_loss_style_default;
+    updates[win_loss_position_key] = win_loss_position_default;
     updates[legacy_counter_trade_prompt_option_name] = true;
     updates[ROBLOX_TOTP_ENABLED_KEY] = false;
     updates[ROBLOX_TOTP_SECRET_KEY] = "";
@@ -5897,6 +6125,8 @@ function get_settings_backup_keys() {
     trade_value_source_key,
     values_to_use_key,
     counter_trade_choice_mode_key,
+    win_loss_style_key,
+    win_loss_position_key,
     legacy_counter_trade_prompt_option_name,
     popup_theme_storage_key,
     trade_page_theme_enabled_key,
@@ -5932,6 +6162,8 @@ function get_settings_backup_defaults() {
   defaults[trade_value_source_key] = trade_value_source_default;
   defaults[values_to_use_key] = values_to_use_default;
   defaults[counter_trade_choice_mode_key] = counter_trade_choice_mode_default;
+  defaults[win_loss_style_key] = win_loss_style_default;
+  defaults[win_loss_position_key] = win_loss_position_default;
   defaults[popup_theme_storage_key] = popup_theme_default;
   defaults[trade_page_theme_enabled_key] = false;
   defaults[trade_page_theme_key] = pack_trade_page_theme(trade_page_theme_default);
@@ -5974,6 +6206,8 @@ function normalize_imported_setting(key, value) {
   if (key === values_to_use_key) return normalize_values_to_use(value);
   if (key === counter_trade_choice_mode_key)
     return normalize_counter_trade_choice_mode(value);
+  if (key === win_loss_style_key) return normalize_win_loss_style(value);
+  if (key === win_loss_position_key) return normalize_win_loss_position(value);
   if (key === legacy_counter_trade_prompt_option_name) return value === true;
   if (key === popup_theme_storage_key) return normalize_popup_theme(value);
   if (key === trade_page_theme_key || key === rolimons_profile_theme_key)
@@ -6035,6 +6269,8 @@ function notify_tabs_of_settings_patch(patch) {
   )
     send_colorblind_mode_update();
   if (profile_value_display_mode_key in patch) send_option_update("Values");
+  for (let key of [win_loss_style_key, win_loss_position_key])
+    if (key in patch) send_option_update(key);
   if (trade_value_source_key in patch) {
     send_option_update(trade_win_loss_stats_option_name);
     send_option_update(trade_value_source_key);
@@ -6158,12 +6394,12 @@ restore_btn.addEventListener("click", async () => {
       await refresh_all_panels();
     } catch (err) {
       console.info("Reset refresh failed", err);
-      label.textContent = "Reset done. Reopen the popup to refresh.";
+      label.textContent = "Reset done. Reopen the settings to refresh.";
     }
   } catch (err) {
     console.info("Reset to defaults failed", err);
     label.textContent = done
-      ? "Reset done. Reopen the popup to refresh."
+      ? "Reset done. Reopen the settings to refresh."
       : "Reset failed. Try again";
   } finally {
     setTimeout(() => {
@@ -6338,6 +6574,11 @@ const ta_actions = [
   },
 ];
 
+// The section title already says inbound or outbound, so the row leaves it out.
+function ta_row_label(label) {
+  return label.replace(/ (?:inbound|outbound) /, " ");
+}
+
 let ta_poll_timer = null;
 // finished_at of the bulk result this popup is showing; a result already seen elsewhere is not shown again.
 let ta_result_shown_at = 0;
@@ -6476,9 +6717,9 @@ async function ta_show_duration_config(action_label, on_confirm) {
   overlay.innerHTML = `
     <div class="ta-confirm-box">
       <div class="ta-confirm-title">Configure duration</div>
-      <div class="ta-confirm-msg">${escape_html(action_label)}.${ta_locked_count_html(locked_count)}</div>
+      <div class="ta-confirm-msg">${escape_html(action_label.replace(/ older than…$/, ""))}.${ta_locked_count_html(locked_count)}</div>
       <div class="ta-filter-row">
-        <span class="ta-filter-label">Cancel outbound trades older than</span>
+        <span class="ta-filter-label">Only cancel if older than</span>
         <span class="ta-filter-input-wrap">
           <input class="ta-filter-input" type="number" min="1" max="9999" step="1" value="24" id="ta-duration-input">
           <select class="ta-filter-unit-select" id="ta-duration-unit">
@@ -6717,14 +6958,22 @@ function ta_update_buttons(progress) {
             : `Fetching trades... (page ${progress.fetched_pages || 1})`) +
           wait_suffix;
       } else if (progress.phase === "checking") {
+        // "Kept" trades were checked and left alone; unchecked ones are counted apart.
+        let unchecked = Number(progress.unchecked) || 0;
         status_text =
-          `Checking ${progress.checked}/${progress.total} \u2014 ${progress.done} ${verb_past}, ${progress.skipped} skipped` +
+          `Checking ${progress.checked}/${progress.total} \u2014 ${progress.done} ${verb_past}, ${progress.skipped - unchecked} kept` +
+          (unchecked ? `, ${unchecked} couldn't be checked` : "") +
           wait_suffix;
       } else if (progress.phase === "declining") {
         status_text =
           `${verb_ing} ${progress.done}/${progress.total}...` + wait_suffix;
       }
       status_el.textContent = status_text;
+      // Fills the bar under the row: checked share while checking, done share while declining.
+      let shown = progress.phase === "checking" ? progress.checked : progress.phase === "declining" ? progress.done : 0;
+      let ratio = progress.total > 0 ? Math.min(1, Math.max(0, shown / progress.total)) : 0;
+      if (btn.style.getPropertyValue("--ta-progress") !== String(ratio))
+        btn.style.setProperty("--ta-progress", String(ratio));
       ta_announce(`run:${action.id}`, `${verb_ing} trades started.`);
       // A Stop whose message was lost leaves the run going; let the user press Stop again.
       if (stop_btn) stop_btn.disabled = false;
@@ -6802,8 +7051,8 @@ function ta_update_buttons(progress) {
           let unchecked = Number(progress.unchecked) || 0;
           status_el.textContent =
             progress.skipped > 0
-              ? `Done! ${progress.done} ${verb_past}, ${progress.skipped} skipped` +
-                (unchecked ? ` (${unchecked} couldn't be checked).` : ".")
+              ? `Done! ${progress.done} ${verb_past}, ${progress.skipped - unchecked} kept` +
+                (unchecked ? `, ${unchecked} couldn't be checked.` : ".")
               : `Done! ${progress.done} trades ${verb_past}.`;
         }
         ta_announce(`end:${action.id}:${status_el.textContent}`, status_el.textContent);
@@ -6943,7 +7192,7 @@ function render_bulk_cancel_into(bulk_inner) {
             <button type="button" class="ta-btn-main">
               <span class="ta-btn-icon">${cancel_icon}</span>
               <span class="ta-btn-text">
-                <span class="ta-btn-label">${escape_html(a.label)}</span>
+                <span class="ta-btn-label">${escape_html(ta_row_label(a.label))}</span>
                 <span class="ta-btn-status"></span>
               </span>
             </button>
@@ -6967,7 +7216,7 @@ function render_bulk_cancel_into(bulk_inner) {
             <button type="button" class="ta-btn-main">
               <span class="ta-btn-icon">${cancel_icon}</span>
               <span class="ta-btn-text">
-                <span class="ta-btn-label">${escape_html(a.label)}</span>
+                <span class="ta-btn-label">${escape_html(ta_row_label(a.label))}</span>
                 <span class="ta-btn-status"></span>
               </span>
             </button>
@@ -7199,7 +7448,8 @@ function ms_trade_limit_hint_text(limit) {
   let count = Number.isFinite(Number(limit?.count))
     ? Math.max(0, Number(limit.count))
     : max - remaining;
-  if (remaining <= 0) return `0/${max} left today`;
+  // Our count can only estimate Roblox's; at 0 a run asks Roblox with its first send.
+  if (remaining <= 0) return `0/${max} left today (estimate)`;
   return `${remaining} left today · ${count}/${max}`;
 }
 
@@ -7835,7 +8085,7 @@ function ms_start_polling(root) {
       let line = root.querySelector("#ms-progress-line");
       if (line) {
         line.textContent =
-          "Lost contact with the extension. Reopen the popup to check progress.";
+          "Lost contact with the extension. Reopen the settings to check progress.";
         line.classList.add("ta-err");
       }
       return;
@@ -8063,7 +8313,7 @@ async function render_mass_send_panel(root) {
 
   if (run !== ms_render_run) return;
   root.innerHTML = `
-    <p class="ta-lede">Send the same offer to recent owners of your requested items. Runs in the background even if you close this popup.</p>
+    <p class="ta-lede">Send the same offer to recent owners of your requested items. Runs in the background even if you close the settings.</p>
     <div class="ta-card">
       <div class="ta-card-head">
         <div>
@@ -8118,7 +8368,7 @@ async function render_mass_send_panel(root) {
               )}
             </span>
             <span class="ms-config-row-control">
-              <input type="number" id="ms-max-trades" min="1" max="${trades_left != null && trades_left > 0 ? trades_left : 100}" step="1" value="${cfg.max_trades}" ${trades_left === 0 ? "disabled" : ""} />
+              <input type="number" id="ms-max-trades" min="1" max="${trades_left != null && trades_left > 0 ? trades_left : 100}" step="1" value="${cfg.max_trades}" />
               <span class="ms-config-suffix">trades</span>
             </span>
           </label>
@@ -8400,7 +8650,6 @@ async function render_mass_send_panel(root) {
     let hint = root.querySelector("#ms-trade-limit-hint");
     if (max_el) {
       max_el.max = String(left != null && left > 0 ? left : 100);
-      max_el.disabled = left === 0;
       if (left != null && left > 0) {
         let next = ms_clamp_max_trades(max_el.value, left);
         if (String(next) !== String(max_el.value)) max_el.value = String(next);
@@ -8836,15 +9085,7 @@ async function render_mass_send_panel(root) {
     if (fresh_limit && Number.isFinite(Number(fresh_limit.remaining))) {
       ms_sync_trade_limit_ui(fresh_limit);
       let left = Math.max(0, Number(fresh_limit.remaining));
-      if (left <= 0) {
-        let line = root.querySelector("#ms-progress-line");
-        if (line) {
-          line.textContent = `Roblox 24h trade limit reached (0/${Number(fresh_limit.max) || 100} left).`;
-          line.classList.add("ta-err");
-        }
-        return;
-      }
-      if (cfg.max_trades > left) {
+      if (left > 0 && cfg.max_trades > left) {
         cfg = await ms_save_config({
           ...cfg,
           max_trades: ms_clamp_max_trades(cfg.max_trades, left),
@@ -9063,7 +9304,7 @@ function report_copy_text(report) {
     let page = report.page;
     lines.push(`Page: ${page.url} (${page.viewport}${page.theme ? `, ${page.theme} theme` : ""})`);
   }
-  let head = `Problem report, Trading Extension ${report.extension.variant === "lite" ? "LITE " : ""}${report.extension.version}`;
+  let head = `Problem report, Nevos Trading Extension ${report.extension.variant === "lite" ? "LITE " : ""}${report.extension.version}`;
   let body = lines.length ? `\n\`\`\`\n${lines.join("\n").replace(/`/g, "'")}\n\`\`\`` : "";
   return `${head}\n${report.description || "(no description)"}${body}`;
 }

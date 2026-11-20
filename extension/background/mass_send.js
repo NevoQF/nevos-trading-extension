@@ -609,6 +609,8 @@ async function ms_fetch_tradable_items(user_id, options = {}) {
   let report_status = options.reportStatus === true;
   // Picker loads are read-only; a stale Stop flag must not empty them.
   let ignore_abort = options.ignoreAbort === true;
+  let wait_prev_status = null,
+    wait_owner = ms_state;
   if (report_status && typeof nte_inventory_load_status === "function") {
     nte_inventory_load_status(status_source, "Loading your items…");
   }
@@ -627,7 +629,23 @@ async function ms_fetch_tradable_items(user_id, options = {}) {
       res = await nte_fetch_inventory_with_retries(
         url,
         { credentials: "include" },
-        { source: status_source, silent: !report_status },
+        {
+          source: status_source,
+          silent: !report_status,
+          // A run used to sit on "Resolving your offer items…" through these waits.
+          // "" ends a wait and puts the run's own status back.
+          // Only this run's state: a stopped run still waiting must not write into a newer one.
+          on_wait: (text) => {
+            if (ms_state !== wait_owner || !wait_owner.running || report_status) return;
+            if (text) {
+              wait_prev_status ??= wait_owner.status;
+              wait_owner.status = `Roblox is slowing item loading. ${text}`;
+            } else if (wait_prev_status != null) {
+              wait_owner.status = wait_prev_status;
+              wait_prev_status = null;
+            }
+          },
+        },
       );
     } else {
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -1105,6 +1123,9 @@ async function ms_get_csrf() {
 const ms_max_rate_limit_waits = 5;
 const ms_rate_limit_stuck_error =
   "Roblox kept rate limiting trade sends for 5 minutes. Its limit of 100 trades in 24 hours is probably used up: trades sent from another device or tool count too, even ones already declined. Try again in a few hours.";
+// When our own count already said 0 left, the first 429 confirms it: no waiting.
+const ms_daily_limit_used_error =
+  "Roblox turned down the first trade: its limit of 100 trades in 24 hours is used up. Trades sent from another device or tool count too, even ones already declined. Try again in a few hours.";
 
 async function ms_wait_rate_limit(run_id, attempt = 1) {
   if (!ms_run_live(run_id)) return;
@@ -1138,6 +1159,7 @@ async function ms_send_trade_with_rate_limit(
   their_instances,
   offer_robux = 0,
   request_robux = 0,
+  max_waits = ms_max_rate_limit_waits,
 ) {
   let send = async () => {
     try {
@@ -1166,8 +1188,12 @@ async function ms_send_trade_with_rate_limit(
   let result = await send();
   csrf = result.csrf || csrf;
   for (let attempt = 1; ms_run_live(run_id) && result?.resp?.status === 429; attempt++) {
-    if (attempt > ms_max_rate_limit_waits)
-      return { ...result, csrf, error: ms_rate_limit_stuck_error };
+    if (attempt > max_waits)
+      return {
+        ...result,
+        csrf,
+        error: max_waits ? ms_rate_limit_stuck_error : ms_daily_limit_used_error,
+      };
     await ms_wait_rate_limit(run_id, attempt);
     if (!ms_run_live(run_id)) break;
     result = await send();
@@ -1260,6 +1286,28 @@ function ms_base32_to_bytes(b32) {
   return new Uint8Array(bytes);
 }
 
+// Codes come from the clock, so a PC clock a minute off fails every code. Roblox's Date
+// header is the reference, checked once per worker; only big gaps are corrected.
+let ms_clock_offset_ms = 0;
+let ms_clock_checked = false;
+async function ms_sync_clock() {
+  if (ms_clock_checked) return;
+  ms_clock_checked = true;
+  try {
+    let sent = Date.now();
+    let resp = await fetch_with_timeout(
+      "https://www.roblox.com/robots.txt",
+      { method: "HEAD", cache: "no-store", credentials: "omit" },
+      5000,
+    );
+    // The header has 1 s resolution: +500 ms is its midpoint.
+    let offset =
+      Date.parse(resp.headers.get("date") || "") + 500 - (sent + Date.now()) / 2;
+    if (Math.abs(offset) > 5000) ms_clock_offset_ms = offset;
+  } catch {}
+}
+const ms_now = () => Date.now() + ms_clock_offset_ms;
+
 async function ms_make_totp(secret_b32, digits = 6, step_sec = 30) {
   let key_bytes = ms_base32_to_bytes(secret_b32);
   if (!key_bytes.length) return null;
@@ -1270,7 +1318,7 @@ async function ms_make_totp(secret_b32, digits = 6, step_sec = 30) {
     false,
     ["sign"],
   );
-  let counter = Math.floor(Date.now() / 1000 / step_sec);
+  let counter = Math.floor(ms_now() / 1000 / step_sec);
   let buf = new ArrayBuffer(8);
   new DataView(buf).setBigUint64(0, BigInt(counter), false);
   let sig = await crypto.subtle.sign("HMAC", crypto_key, buf);
@@ -1286,7 +1334,7 @@ async function ms_make_totp(secret_b32, digits = 6, step_sec = 30) {
 }
 
 function ms_totp_seconds_left(step_sec = 30) {
-  let rem = step_sec - (Math.floor(Date.now() / 1000) % step_sec);
+  let rem = step_sec - (Math.floor(ms_now() / 1000) % step_sec);
   return rem === 0 ? step_sec : rem;
 }
 
@@ -1591,6 +1639,7 @@ async function ms_get_2fa_code(avoid_code = null, run_id) {
   if (!ms_run_live(run_id)) return null;
   let avoid = String(avoid_code || ms_last_used_totp || "").replace(/\D/g, "");
   if (secret) {
+    await ms_sync_clock();
     let code = await ms_make_totp(secret);
     if (code && avoid && code === avoid) {
       code = await ms_wait_for_fresh_totp(secret, avoid);
@@ -2063,12 +2112,10 @@ async function ms_run(config) {
     let max_trades = ms_clamp_max_trades(config?.max_trades);
     let limit = await ms_get_trade_daily_limit();
     let remaining = Math.max(0, Number(limit?.remaining) || 0);
-    if (remaining <= 0) {
-      throw new Error(
-        `Roblox 24h trade limit reached (0/${ms_trade_daily_limit_max} left).`,
-      );
-    }
-    if (max_trades > remaining) max_trades = remaining;
+    // Our count is an estimate (open trades sent in 24h plus our own sends), and users saw
+    // "0 left" while Roblox still took their trades. At 0, the first send asks Roblox instead.
+    let limit_unsure = remaining <= 0;
+    if (!limit_unsure && max_trades > remaining) max_trades = remaining;
     let offer_robux = ms_clamp_robux(config?.offer_robux);
     let request_robux = ms_clamp_robux(config?.request_robux);
     let max_owned_days = ms_clamp_max_owned_days(config?.max_owned_days);
@@ -2126,9 +2173,19 @@ async function ms_run(config) {
 
     ms_state.phase = "filtering";
     ms_state.status = "Filtering recipients…";
+    // Pool size after each filter, so an empty pool can say which filter emptied it.
+    let pool_steps = [`${owners.length} owners`];
+    let note_pool = (label, list) => {
+      let last = pool_steps.at(-1);
+      if (!last.startsWith(`${list.length} `)) pool_steps.push(`${list.length} ${label}`);
+    };
     let candidates = ms_filter_owners_by_hours(owners, hours, self_id);
+    let online_hours = ms_clamp_hours(hours);
+    note_pool(online_hours ? `online in the last ${online_hours}h` : "other users", candidates);
     candidates = ms_filter_owners_by_owned_days(candidates, max_owned_days);
+    note_pool(`within max owned days`, candidates);
     candidates = ms_filter_blocked_users(candidates, blocked_users);
+    note_pool("not blocked", candidates);
     if (ms_pending_send) {
       await Promise.race([
         ms_pending_send,
@@ -2139,6 +2196,7 @@ async function ms_run(config) {
     let outbound = await ms_fetch_outbound_user_ids();
     if (ms_abort || is_stale()) throw new Error("Cancelled by user");
     candidates = candidates.filter((row) => !outbound.has(row.user_id));
+    note_pool("without an open trade", candidates);
 
     let avoid_days = Math.max(
       0,
@@ -2152,6 +2210,7 @@ async function ms_run(config) {
         history,
         avoid_days,
       );
+      note_pool(`not sent to in ${avoid_days} days`, candidates);
     }
 
     // Keep the full filtered pool. We'll stop once we successfully send
@@ -2159,12 +2218,13 @@ async function ms_run(config) {
     let target_sends = max_trades;
     ms_state.total = target_sends;
     ms_state.remaining = target_sends;
-    if (!candidates.length) {
-      ms_state.status = "No matching recipients.";
-      ms_state.phase = "done";
-      ms_state.running = false;
-      return;
-    }
+    // An empty pool used to end as "Done — 0 sent" with the reason hidden.
+    if (!candidates.length)
+      throw new Error(
+        owners.length
+          ? `No one left to send to: ${pool_steps.join(" → ")}. Loosen the filter that reached 0 and try again.`
+          : "No owners found for the items you asked for.",
+      );
 
     let csrf = await ms_get_csrf();
     if (!csrf) throw new Error("Could not get Roblox CSRF token.");
@@ -2239,6 +2299,7 @@ async function ms_run(config) {
         ms_copy_instance_ids(their_instances),
         offer_robux,
         request_robux,
+        limit_unsure && !run_state.sent ? 0 : ms_max_rate_limit_waits,
       );
       ms_pending_send = send_promise.catch(() => {});
       let result = await send_promise;

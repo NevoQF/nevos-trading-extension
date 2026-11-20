@@ -303,7 +303,7 @@
     "activeTab"
   ],
   "short_name": "Nevos Trade",
-  "version": "3.10.56",
+  "version": "3.10.57",
   "web_accessible_resources": [
     {
       "matches": [
@@ -324,8 +324,6 @@
         "https://www.roblox.com/*"
       ],
       "resources": [
-        "assets/Averta.otf",
-        "assets/AvertaExtraBold.otf",
         "assets/loading.svg",
         "assets/projected.png",
         "assets/rare.png",
